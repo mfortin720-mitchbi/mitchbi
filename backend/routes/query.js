@@ -62,7 +62,7 @@ SQL:`
       projectId: pid
     });
 
-    const [rows] = await bigquery.query({ query: sql, location: 'US' });
+    const [rows] = await bigquery.query({ query: sql, location: 'northamerica-northeast1' });
     console.log('Query success, rows:', rows.length);
 
     res.json({ success: true, sql, rows, count: rows.length });
@@ -82,7 +82,7 @@ router.post('/sql', async (req, res) => {
     const pid = projectId || parsedCreds.project_id;
 
     const bigquery = new BigQuery({ credentials: parsedCreds, projectId: pid });
-    const [rows] = await bigquery.query({ query: sql, location: 'US' });
+    const [rows] = await bigquery.query({ query: sql, location: 'northamerica-northeast1' });
 
     res.json({ success: true, rows, count: rows.length });
   } catch (err) {
