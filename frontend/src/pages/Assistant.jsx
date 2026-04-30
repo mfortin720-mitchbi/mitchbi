@@ -22,7 +22,7 @@ export default function Assistant({ session }) {
     setLoading(true);
 
     try {
-      const res = await fetch('import.meta.env.VITE_API_URL/api/assistant', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/briefing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
