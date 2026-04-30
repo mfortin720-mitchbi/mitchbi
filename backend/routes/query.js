@@ -5,85 +5,69 @@ const router = express.Router();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// POST /api/query/nl — Natural Language to SQL + Execute
+const initBigQuery = (credentials, projectId) => {
+  const creds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
+  return new BigQuery({ credentials: creds, projectId: projectId || creds.project_id });
+};
+
+// POST /api/query/nl
 router.post('/nl', async (req, res) => {
   try {
-    const { question, credentials, projectId, dataset } = req.body;
+    const { question, credentials, projectId, datasetId, tableId, schema, location } = req.body;
 
-    console.log('Query request received:', { question, projectId, dataset, hasCredentials: !!credentials });
+    if (!credentials) return res.status(400).json({ success: false, error: 'Credentials manquants.' });
 
-    if (!credentials) {
-      return res.status(400).json({ success: false, error: 'Credentials manquants — configure ta connexion BigQuery.' });
+    const creds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
+    const pid = projectId || creds.project_id;
+    const loc = location || 'northamerica-northeast1';
+
+    let schemaContext = '';
+    if (schema?.length > 0) {
+      schemaContext = `\nSchéma de \`${pid}.${datasetId}.${tableId}\`:\n${schema.map(f => `  - ${f.name} (${f.type})`).join('\n')}`;
     }
 
-    // Parser les credentials si string
-    let parsedCreds;
-    try {
-      parsedCreds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
-    } catch (e) {
-      return res.status(400).json({ success: false, error: 'Credentials JSON invalide.' });
-    }
-
-    const pid = projectId || parsedCreds.project_id;
-    console.log('Using project:', pid);
-
-    // Étape 1 — Générer le SQL avec Claude
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 1024,
       messages: [{
         role: 'user',
-        content: `Tu es un expert BigQuery SQL. Convertis cette question en une requête BigQuery SQL valide.
+        content: `Tu es un expert BigQuery SQL. Convertis cette question en SQL BigQuery valide.
 
-Project ID: ${pid}
-Dataset: ${dataset || 'ga4'}
+Project: ${pid} | Dataset: ${datasetId} | Table: ${tableId} | Région: ${loc}
+${schemaContext}
+
 Question: "${question}"
 
 Règles:
-- Syntaxe BigQuery standard
-- Préfixe les tables avec \`${pid}.${dataset || 'ga4'}.\`
-- LIMIT 100 maximum
-- Réponds UNIQUEMENT avec le SQL, sans backticks ni markdown
+- Utilise EXACTEMENT les noms de colonnes du schéma
+- Table complète: \`${pid}.${datasetId}.${tableId}\`
+- LIMIT 100 max
+- Pour GA4: event_timestamp est en microsecondes → TIMESTAMP_MICROS()
+- Réponds UNIQUEMENT avec le SQL brut, sans backticks ni markdown
 
 SQL:`
       }]
     });
 
-    let sql = message.content[0].text.trim()
-      .replace(/```sql/gi, '')
-      .replace(/```/g, '')
-      .trim();
+    let sql = message.content[0].text.trim().replace(/```sql/gi, '').replace(/```/g, '').trim();
+    console.log('SQL généré:', sql);
 
-    console.log('Generated SQL:', sql);
-
-    // Étape 2 — Exécuter sur BigQuery
-    const bigquery = new BigQuery({
-      credentials: parsedCreds,
-      projectId: pid
-    });
-
-    const [rows] = await bigquery.query({ query: sql, location: 'northamerica-northeast1' });
-    console.log('Query success, rows:', rows.length);
+    const bigquery = initBigQuery(creds, pid);
+    const [rows] = await bigquery.query({ query: sql, location: loc });
 
     res.json({ success: true, sql, rows, count: rows.length });
-
   } catch (err) {
     console.error('Query error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/query/sql — Exécuter un SQL directement
+// POST /api/query/sql
 router.post('/sql', async (req, res) => {
   try {
-    const { sql, credentials, projectId } = req.body;
-
-    let parsedCreds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
-    const pid = projectId || parsedCreds.project_id;
-
-    const bigquery = new BigQuery({ credentials: parsedCreds, projectId: pid });
-    const [rows] = await bigquery.query({ query: sql, location: 'northamerica-northeast1' });
-
+    const { sql, credentials, projectId, location } = req.body;
+    const bigquery = initBigQuery(credentials, projectId);
+    const [rows] = await bigquery.query({ query: sql, location: location || 'northamerica-northeast1' });
     res.json({ success: true, rows, count: rows.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
