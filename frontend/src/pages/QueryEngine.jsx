@@ -1,18 +1,30 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../services/supabase';
+
+// Regroupe les tables events_YYYYMMDD en un seul groupe
+const groupTables = (tableList) => {
+  const eventTables = tableList.filter(t => /^events_\d{8}$/.test(t.id));
+  const otherTables = tableList.filter(t => !/^events_\d{8}$/.test(t.id));
+  const groups = [];
+  if (eventTables.length > 0) {
+    groups.push({ id: '__events_group__', label: `events_* (${eventTables.length} tables)`, isGroup: true, tables: eventTables.sort((a, b) => b.id.localeCompare(a.id)) });
+  }
+  return [...groups, ...otherTables.map(t => ({ ...t, isGroup: false }))];
+};
 
 export default function QueryEngine() {
   const [connections, setConnections] = useState([]);
   const [selectedConn, setSelectedConn] = useState(null);
   const [datasets, setDatasets] = useState([]);
   const [expandedDataset, setExpandedDataset] = useState(null);
+  const [expandedGroup, setExpandedGroup] = useState(null);
   const [tables, setTables] = useState({});
   const [selectedTable, setSelectedTable] = useState(null);
   const [schema, setSchema] = useState([]);
   const [loadingDatasets, setLoadingDatasets] = useState(false);
   const [loadingTables, setLoadingTables] = useState(null);
   const [loadingSchema, setLoadingSchema] = useState(false);
+  const [search, setSearch] = useState('');
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -29,21 +41,18 @@ export default function QueryEngine() {
 
   useEffect(() => { if (selectedConn) loadDatasets(); }, [selectedConn]);
 
-  const getCreds = () => {
-    try { return JSON.parse(selectedConn.credentials_encrypted); } catch { return null; }
-  };
+  const getCreds = () => { try { return JSON.parse(selectedConn.credentials_encrypted); } catch { return null; } };
 
   const apiPost = async (endpoint, body) => {
     const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     return res.json();
   };
 
   const loadDatasets = async () => {
     setLoadingDatasets(true);
-    setDatasets([]); setTables({}); setSelectedTable(null); setSchema([]);
+    setDatasets([]); setTables({}); setSelectedTable(null); setSchema([]); setSearch('');
     const creds = getCreds();
     const data = await apiPost('/api/connections/bigquery/datasets', { credentials: creds, projectId: creds.project_id });
     if (data.success) setDatasets(data.datasets);
@@ -53,6 +62,7 @@ export default function QueryEngine() {
   const loadTables = async (datasetId) => {
     if (expandedDataset === datasetId) { setExpandedDataset(null); return; }
     setExpandedDataset(datasetId);
+    setSearch('');
     if (tables[datasetId]) return;
     setLoadingTables(datasetId);
     const creds = getCreds();
@@ -83,13 +93,71 @@ export default function QueryEngine() {
     setLoading(false);
   };
 
+  // Tables filtrées et regroupées
+  const filteredTables = useMemo(() => {
+    const raw = tables[expandedDataset] || [];
+    const grouped = groupTables(raw);
+    if (!search.trim()) return grouped;
+    const s = search.toLowerCase();
+    return grouped.filter(t => {
+      if (t.isGroup) return t.tables.some(st => st.id.toLowerCase().includes(s));
+      return t.id.toLowerCase().includes(s);
+    });
+  }, [tables, expandedDataset, search]);
+
   const columns = result?.rows?.length > 0 ? Object.keys(result.rows[0]) : [];
+
+  const TableRow = ({ t, datasetId }) => {
+    if (t.isGroup) {
+      return (
+        <div>
+          <div onClick={() => setExpandedGroup(expandedGroup === t.id ? null : t.id)} style={{
+            padding: '5px 14px 5px 24px', cursor: 'pointer', fontSize: 12,
+            color: '#666', display: 'flex', alignItems: 'center', gap: 6,
+            background: '#0f1117'
+          }}>
+            <span style={{ fontSize: 9 }}>{expandedGroup === t.id ? '▼' : '▶'}</span>
+            <span>📅</span>
+            <span style={{ color: '#E8A838' }}>{t.label}</span>
+          </div>
+          {expandedGroup === t.id && (
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {t.tables
+                .filter(st => !search || st.id.toLowerCase().includes(search.toLowerCase()))
+                .map(st => (
+                  <div key={st.id} onClick={() => loadSchema(datasetId, st.id)} style={{
+                    padding: '4px 14px 4px 44px', cursor: 'pointer', fontSize: 11,
+                    color: selectedTable?.tableId === st.id ? '#378ADD' : '#555',
+                    background: selectedTable?.tableId === st.id ? '#0d1f35' : 'transparent',
+                    borderLeft: selectedTable?.tableId === st.id ? '2px solid #378ADD' : '2px solid transparent',
+                  }}>
+                    {st.id}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div onClick={() => loadSchema(datasetId, t.id)} style={{
+        padding: '5px 14px 5px 32px', cursor: 'pointer', fontSize: 12,
+        color: selectedTable?.tableId === t.id ? '#378ADD' : '#555',
+        background: selectedTable?.tableId === t.id ? '#0d1f35' : 'transparent',
+        borderLeft: selectedTable?.tableId === t.id ? '2px solid #378ADD' : '2px solid transparent',
+        display: 'flex', alignItems: 'center', gap: 6
+      }}>
+        <span style={{ fontSize: 10 }}>📋</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.id}</span>
+      </div>
+    );
+  };
 
   return (
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 108px)' }}>
 
       {/* LEFT — Explorer */}
-      <div style={{ width: 240, flexShrink: 0, background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ width: 260, flexShrink: 0, background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Connection selector */}
         <div style={{ padding: '12px 14px', borderBottom: '0.5px solid #1e2130' }}>
@@ -98,12 +166,20 @@ export default function QueryEngine() {
             style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12 }}>
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          {selectedConn && (
-            <div style={{ fontSize: 11, color: '#444', marginTop: 4 }}>
-              📍 {selectedConn.location || 'northamerica-northeast1'}
-            </div>
-          )}
+          {selectedConn && <div style={{ fontSize: 11, color: '#444', marginTop: 4 }}>📍 {selectedConn.location || 'northamerica-northeast1'}</div>}
         </div>
+
+        {/* Search */}
+        {expandedDataset && (
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid #1e2130' }}>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Rechercher une table..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12, boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
 
         {/* Tree */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
@@ -123,26 +199,21 @@ export default function QueryEngine() {
                 <span>◈</span>
                 <span>{ds.id}</span>
                 {loadingTables === ds.id && <span style={{ fontSize: 10, color: '#444', marginLeft: 'auto' }}>...</span>}
+                {tables[ds.id] && <span style={{ fontSize: 10, color: '#333', marginLeft: 'auto' }}>{tables[ds.id].length}</span>}
               </div>
 
-              {expandedDataset === ds.id && tables[ds.id] && tables[ds.id].map(t => (
-                <div key={t.id} onClick={() => loadSchema(ds.id, t.id)} style={{
-                  padding: '5px 14px 5px 32px', cursor: 'pointer', fontSize: 12,
-                  color: selectedTable?.tableId === t.id ? '#378ADD' : '#555',
-                  background: selectedTable?.tableId === t.id ? '#0d1f35' : 'transparent',
-                  borderLeft: selectedTable?.tableId === t.id ? '2px solid #378ADD' : '2px solid transparent',
-                  display: 'flex', alignItems: 'center', gap: 6
-                }}>
-                  <span style={{ fontSize: 10 }}>📋</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.id}</span>
+              {expandedDataset === ds.id && (
+                <div>
+                  {filteredTables.map(t => <TableRow key={t.id} t={t} datasetId={ds.id} />)}
+                  {filteredTables.length === 0 && <div style={{ padding: '6px 14px 6px 32px', fontSize: 12, color: '#333' }}>Aucun résultat</div>}
                 </div>
-              ))}
+              )}
             </div>
           ))}
         </div>
       </div>
 
-      {/* RIGHT — Query + Results */}
+      {/* RIGHT */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'hidden' }}>
 
         {/* Schema */}
@@ -193,10 +264,8 @@ export default function QueryEngine() {
           )}
         </div>
 
-        {/* Error */}
         {error && <div style={{ padding: '12px 16px', borderRadius: 8, background: '#2b0d0d', color: '#D85A30', fontSize: 13, flexShrink: 0 }}>❌ {error}</div>}
 
-        {/* Results */}
         {result && (
           <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', overflow: 'hidden', flex: 1 }}>
             <div style={{ padding: '10px 16px', borderBottom: '0.5px solid #1e2130', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
