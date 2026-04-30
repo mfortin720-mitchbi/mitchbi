@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 
 const CONNECTION_TYPES = [
   { id: 'bigquery', label: 'BigQuery', icon: '◈', color: '#4285F4' },
@@ -22,13 +23,56 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-export default function Connections() {
+export default function Connections({ session }) {
   const [connections, setConnections] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedType, setSelectedType] = useState('bigquery');
   const [form, setForm] = useState({ name: '', projectId: '', credentials: '' });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [loadingConns, setLoadingConns] = useState(true);
+
+  // Charger les connexions depuis Supabase au démarrage
+  useEffect(() => {
+    loadConnections();
+  }, []);
+
+  const loadConnections = async () => {
+    setLoadingConns(true);
+    try {
+      const { data, error } = await supabase
+        .from('connections')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Reconstruire les connexions avec les credentials
+      const conns = (data || []).map(c => {
+        let projectId = '';
+        let datasets = [];
+        try {
+          const creds = JSON.parse(c.credentials_encrypted);
+          projectId = creds.project_id || '';
+        } catch {}
+        return {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          projectId,
+          credentials: c.credentials_encrypted,
+          status: c.status,
+          datasets,
+          addedAt: new Date(c.created_at).toLocaleDateString('fr-CA')
+        };
+      });
+      setConnections(conns);
+    } catch (err) {
+      console.error('Load connections error:', err);
+    } finally {
+      setLoadingConns(false);
+    }
+  };
 
   const testConnection = async () => {
     if (!form.credentials || !form.projectId) {
@@ -56,9 +100,23 @@ export default function Connections() {
       setTestResult(data);
 
       if (data.success) {
-        // Ajouter la connexion à la liste
+        // Sauvegarder dans Supabase
+        const { data: saved, error } = await supabase
+          .from('connections')
+          .insert({
+            name: form.name || `BigQuery — ${form.projectId}`,
+            type: selectedType,
+            credentials_encrypted: form.credentials,
+            status: 'active',
+            user_id: session?.user?.id
+          })
+          .select()
+          .single();
+
+        if (error) console.error('Save error:', error);
+
         const newConn = {
-          id: Date.now(),
+          id: saved?.id || Date.now(),
           name: form.name || `BigQuery — ${form.projectId}`,
           type: selectedType,
           projectId: form.projectId,
@@ -78,14 +136,17 @@ export default function Connections() {
     }
   };
 
+  const deleteConnection = async (id) => {
+    await supabase.from('connections').delete().eq('id', id);
+    setConnections(connections.filter(c => c.id !== id));
+  };
+
   return (
     <div>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <div style={{ fontSize: 14, color: '#555' }}>
-            Connecte tes sources de données — BigQuery, Snowflake, Shopify et plus.
-          </div>
+        <div style={{ fontSize: 14, color: '#555' }}>
+          Connecte tes sources de données — BigQuery, Snowflake, Shopify et plus.
         </div>
         <button onClick={() => setShowAdd(true)} style={{
           padding: '8px 18px', borderRadius: 8, border: 'none',
@@ -96,7 +157,7 @@ export default function Connections() {
         </button>
       </div>
 
-      {/* Connection types */}
+      {/* Connection type counters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
         {CONNECTION_TYPES.map(t => (
           <div key={t.id} style={{
@@ -114,8 +175,13 @@ export default function Connections() {
         ))}
       </div>
 
-      {/* Connections list */}
-      {connections.length === 0 && !showAdd && (
+      {/* Loading */}
+      {loadingConns && (
+        <div style={{ color: '#444', fontSize: 13, padding: 20 }}>Chargement des connexions...</div>
+      )}
+
+      {/* Empty state */}
+      {!loadingConns && connections.length === 0 && !showAdd && (
         <div style={{
           background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130',
           padding: 48, textAlign: 'center', color: '#333', fontSize: 14
@@ -126,6 +192,7 @@ export default function Connections() {
         </div>
       )}
 
+      {/* Connections list */}
       {connections.map(conn => (
         <div key={conn.id} style={{
           background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130',
@@ -145,23 +212,16 @@ export default function Connections() {
               <div style={{ fontSize: 12, color: '#444' }}>
                 {conn.projectId} · Ajouté le {conn.addedAt}
               </div>
-              {conn.datasets && (
+              {conn.datasets?.length > 0 && (
                 <div style={{ fontSize: 11, color: '#333', marginTop: 2 }}>
-                  Datasets : {conn.datasets.slice(0, 3).join(', ')}{conn.datasets.length > 3 ? '...' : ''}
+                  Datasets : {conn.datasets.slice(0, 3).join(', ')}
                 </div>
               )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <StatusBadge status={conn.status} />
-            <button style={{
-              padding: '5px 12px', borderRadius: 6,
-              border: '0.5px solid #1e2130', background: 'transparent',
-              color: '#555', cursor: 'pointer', fontSize: 12
-            }}>
-              Tester
-            </button>
-            <button onClick={() => setConnections(connections.filter(c => c.id !== conn.id))} style={{
+            <button onClick={() => deleteConnection(conn.id)} style={{
               padding: '5px 12px', borderRadius: 6,
               border: '0.5px solid #2b0d0d', background: 'transparent',
               color: '#D85A30', cursor: 'pointer', fontSize: 12
@@ -176,8 +236,7 @@ export default function Connections() {
       {showAdd && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
           <div style={{
             background: '#13151f', borderRadius: 12, border: '0.5px solid #1e2130',
@@ -187,7 +246,6 @@ export default function Connections() {
               Ajouter une connexion
             </div>
 
-            {/* Type selector */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
               {CONNECTION_TYPES.map(t => (
                 <button key={t.id} onClick={() => setSelectedType(t.id)} style={{
@@ -195,110 +253,55 @@ export default function Connections() {
                   border: '0.5px solid',
                   borderColor: selectedType === t.id ? t.color : '#1e2130',
                   background: selectedType === t.id ? `${t.color}22` : 'transparent',
-                  color: selectedType === t.id ? t.color : '#555',
-                  fontSize: 13
+                  color: selectedType === t.id ? t.color : '#555', fontSize: 13
                 }}>
                   {t.icon} {t.label}
                 </button>
               ))}
             </div>
 
-            {/* BigQuery form */}
             {selectedType === 'bigquery' && (
               <div>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>
-                    Nom de la connexion
-                  </label>
-                  <input
-                    value={form.name}
-                    onChange={e => setForm({ ...form, name: e.target.value })}
+                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Nom de la connexion</label>
+                  <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                     placeholder="ex: BigQuery — Royal Distributing"
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: 8,
-                      border: '0.5px solid #1e2130', background: '#0f1117',
-                      color: '#fff', fontSize: 14, boxSizing: 'border-box'
-                    }}
-                  />
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>
-                    Project ID GCP *
-                  </label>
-                  <input
-                    value={form.projectId}
-                    onChange={e => setForm({ ...form, projectId: e.target.value })}
+                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Project ID GCP *</label>
+                  <input value={form.projectId} onChange={e => setForm({ ...form, projectId: e.target.value })}
                     placeholder="ex: my-project-123456"
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: 8,
-                      border: '0.5px solid #1e2130', background: '#0f1117',
-                      color: '#fff', fontSize: 14, boxSizing: 'border-box'
-                    }}
-                  />
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
                 </div>
                 <div style={{ marginBottom: 20 }}>
-                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>
-                    Service Account JSON *
-                  </label>
-                  <textarea
-                    value={form.credentials}
-                    onChange={e => setForm({ ...form, credentials: e.target.value })}
+                  <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 6 }}>Service Account JSON *</label>
+                  <textarea value={form.credentials} onChange={e => setForm({ ...form, credentials: e.target.value })}
                     placeholder='Colle le contenu de ton fichier .json ici...'
                     rows={6}
-                    style={{
-                      width: '100%', padding: '10px 14px', borderRadius: 8,
-                      border: '0.5px solid #1e2130', background: '#0f1117',
-                      color: '#fff', fontSize: 12, boxSizing: 'border-box',
-                      fontFamily: 'monospace', resize: 'vertical'
-                    }}
-                  />
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12, boxSizing: 'border-box', fontFamily: 'monospace', resize: 'vertical' }} />
                 </div>
               </div>
             )}
 
             {selectedType !== 'bigquery' && (
-              <div style={{
-                padding: 24, background: '#0f1117', borderRadius: 8,
-                border: '0.5px solid #1e2130', textAlign: 'center',
-                color: '#444', fontSize: 13, marginBottom: 20
-              }}>
+              <div style={{ padding: 24, background: '#0f1117', borderRadius: 8, border: '0.5px solid #1e2130', textAlign: 'center', color: '#444', fontSize: 13, marginBottom: 20 }}>
                 Connexion {CONNECTION_TYPES.find(t => t.id === selectedType)?.label} — disponible prochainement 🚀
               </div>
             )}
 
-            {/* Test result */}
             {testResult && (
-              <div style={{
-                padding: '10px 14px', borderRadius: 8, marginBottom: 16,
-                background: testResult.success ? '#0d2b1a' : '#2b0d0d',
-                color: testResult.success ? '#1D9E75' : '#D85A30',
-                fontSize: 13
-              }}>
+              <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 16, background: testResult.success ? '#0d2b1a' : '#2b0d0d', color: testResult.success ? '#1D9E75' : '#D85A30', fontSize: 13 }}>
                 {testResult.success ? testResult.message : `❌ ${testResult.error}`}
-                {testResult.datasets && (
-                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-                    Datasets : {testResult.datasets.join(', ')}
-                  </div>
-                )}
               </div>
             )}
 
-            {/* Actions */}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setShowAdd(false); setTestResult(null); }} style={{
-                padding: '10px 20px', borderRadius: 8,
-                border: '0.5px solid #1e2130', background: 'transparent',
-                color: '#555', cursor: 'pointer', fontSize: 13
-              }}>
+              <button onClick={() => { setShowAdd(false); setTestResult(null); }} style={{ padding: '10px 20px', borderRadius: 8, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 13 }}>
                 Annuler
               </button>
               {selectedType === 'bigquery' && (
-                <button onClick={testConnection} disabled={testing} style={{
-                  padding: '10px 20px', borderRadius: 8, border: 'none',
-                  background: testing ? '#1e2130' : '#378ADD',
-                  color: testing ? '#555' : '#fff',
-                  cursor: testing ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500
-                }}>
+                <button onClick={testConnection} disabled={testing} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: testing ? '#1e2130' : '#378ADD', color: testing ? '#555' : '#fff', cursor: testing ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500 }}>
                   {testing ? 'Test en cours...' : 'Tester & Connecter'}
                 </button>
               )}

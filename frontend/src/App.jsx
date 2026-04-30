@@ -53,7 +53,7 @@ export default function App() {
       case 'assistant': 
         return <Assistant session={session} />;
       case 'connections': 
-        return <Connections />;
+        return <Connections session={session} />;
       case 'query': 
         return <QueryEngine />;
   
