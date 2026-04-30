@@ -1,10 +1,12 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 
 const SAMPLE_QUESTIONS = [
   'Montre-moi les 10 pages les plus visitées ce mois-ci',
-  'Quel est le nombre de sessions par source de trafic en utilisant ga4_channel_alldims ?',
-  'Quels sont les événements les plus fréquents ?'
+  'Quel est le nombre de sessions par source de trafic ?',
+  'Quels sont les événements les plus fréquents ?',
+  'Montre-moi les utilisateurs actifs par jour cette semaine',
 ];
 
 export default function QueryEngine() {
