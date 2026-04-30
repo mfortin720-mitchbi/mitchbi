@@ -22,7 +22,7 @@ export default function Assistant({ session }) {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:3001/api/assistant', {
+      const res = await fetch('import.meta.env.VITE_API_URL/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
