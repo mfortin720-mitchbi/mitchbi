@@ -14,8 +14,8 @@ const CATEGORY_COLORS = {
 
 const StatusBadge = ({ status }) => {
   const config = {
-    pending: { bg: '#1a1a2b', text: '#378ADD', label: '⏳ À valider' },
-    verified: { bg: '#0d2b1a', text: '#1D9E75', label: '✅ Vérifié' },
+    pending:   { bg: '#1a1a2b', text: '#378ADD', label: '⏳ À valider' },
+    verified:  { bg: '#0d2b1a', text: '#1D9E75', label: '✅ Vérifié' },
     corrected: { bg: '#2b1a0d', text: '#E8A838', label: '✏️ Corrigé' },
   };
   const c = config[status] || config.pending;
@@ -35,6 +35,8 @@ export default function Invoices({ session }) {
   const [scanResult, setScanResult] = useState(null);
   const [settings, setSettings] = useState({ scan_interval_hours: 4 });
   const [activeTab, setActiveTab] = useState('invoices');
+  const [showScanOptions, setShowScanOptions] = useState(false);
+  const [scanDates, setScanDates] = useState({ from: '', to: '' });
 
   const API = import.meta.env.VITE_API_URL;
 
@@ -72,20 +74,16 @@ export default function Invoices({ session }) {
     setLoading(false);
   }, [loadInvoices, loadStats, loadGmailStatus]);
 
-  // Initial load + check OAuth callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmailParam = params.get('gmail');
     if (gmailParam) {
       window.history.replaceState({}, '', window.location.pathname);
-      if (gmailParam === 'connected') {
-        setTimeout(() => loadAll(), 1000);
-      }
+      if (gmailParam === 'connected') setTimeout(() => loadAll(), 1000);
     }
     loadAll();
   }, []);
 
-  // Reload when filter changes
   useEffect(() => {
     if (!loading) loadInvoices(filter.category, filter.verified);
   }, [filter]);
@@ -98,15 +96,32 @@ export default function Invoices({ session }) {
     } catch (err) { console.error(err); }
   };
 
-  const scan = async () => {
-    setScanning(true); setScanResult(null);
+  const scan = async (dateFrom = null, dateTo = null) => {
+    setScanning(true); setScanResult(null); setShowScanOptions(false);
     try {
-      const res = await fetch(`${API}/api/invoices/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch(`${API}/api/invoices/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateFrom, dateTo })
+      });
       const data = await res.json();
       setScanResult(data);
       if (data.success) await loadAll();
     } catch (err) { setScanResult({ success: false, error: err.message }); }
     finally { setScanning(false); }
+  };
+
+  const scanIncremental = () => {
+    // Depuis le dernier scan ou depuis la date de début configurée
+    const from = settings?.last_scan_at
+      ? settings.last_scan_at.split('T')[0]
+      : '2025-01-01';
+    scan(from, null);
+  };
+
+  const scanCustom = () => {
+    if (!scanDates.from) return;
+    scan(scanDates.from, scanDates.to || null);
   };
 
   const verify = async (id) => {
@@ -130,7 +145,7 @@ export default function Invoices({ session }) {
   return (
     <div>
       {/* Header tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
           { id: 'invoices', label: '📋 Factures' },
           { id: 'stats', label: '📊 Stats' },
@@ -145,6 +160,7 @@ export default function Invoices({ session }) {
             {tab.label}
           </button>
         ))}
+
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           {pendingCount > 0 && (
             <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, background: '#1a1a2b', color: '#378ADD' }}>
@@ -154,14 +170,74 @@ export default function Invoices({ session }) {
           <button onClick={exportCSV} style={{ padding: '7px 14px', borderRadius: 6, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 12 }}>
             ↓ Export CSV
           </button>
+
+          {/* Scan buttons */}
           {gmailStatus.connected && (
-            <button onClick={scan} disabled={scanning} style={{
-              padding: '7px 16px', borderRadius: 6, border: 'none',
-              cursor: scanning ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500,
-              background: scanning ? '#1e2130' : '#378ADD', color: scanning ? '#555' : '#fff'
-            }}>
-              {scanning ? 'Scan en cours...' : '↺ Scanner Gmail'}
-            </button>
+            <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 0 }}>
+                <button onClick={scanIncremental} disabled={scanning} style={{
+                  padding: '7px 14px', borderRadius: '6px 0 0 6px', border: 'none',
+                  cursor: scanning ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500,
+                  background: scanning ? '#1e2130' : '#378ADD', color: scanning ? '#555' : '#fff'
+                }}>
+                  {scanning ? 'Scan...' : '↺ Scanner'}
+                </button>
+                <button onClick={() => setShowScanOptions(!showScanOptions)} disabled={scanning} style={{
+                  padding: '7px 10px', borderRadius: '0 6px 6px 0', border: 'none', borderLeft: '1px solid #2a5a8c',
+                  cursor: scanning ? 'not-allowed' : 'pointer', fontSize: 12,
+                  background: scanning ? '#1e2130' : '#2a6aad', color: scanning ? '#555' : '#fff'
+                }}>
+                  ▾
+                </button>
+              </div>
+
+              {/* Dropdown scan options */}
+              {showScanOptions && (
+                <div style={{
+                  position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 100,
+                  background: '#13151f', border: '0.5px solid #1e2130', borderRadius: 8,
+                  padding: 16, width: 300, boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                }}>
+                  <div style={{ fontSize: 13, color: '#fff', fontWeight: 500, marginBottom: 12 }}>Options de scan</div>
+
+                  {/* Incremental */}
+                  <button onClick={scanIncremental} style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6, border: '0.5px solid #1e2130',
+                    background: '#0d1f35', color: '#378ADD', cursor: 'pointer', fontSize: 13, textAlign: 'left', marginBottom: 8
+                  }}>
+                    ↺ Scan incrémental
+                    <div style={{ fontSize: 11, color: '#444', marginTop: 2 }}>
+                      Depuis : {settings?.last_scan_at ? new Date(settings.last_scan_at).toLocaleDateString('fr-CA') : '2025-01-01'}
+                    </div>
+                  </button>
+
+                  {/* Custom range */}
+                  <div style={{ borderTop: '0.5px solid #1e2130', paddingTop: 12, marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Période personnalisée</div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Du</div>
+                        <input type="date" value={scanDates.from} onChange={e => setScanDates(d => ({ ...d, from: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Au</div>
+                        <input type="date" value={scanDates.to} onChange={e => setScanDates(d => ({ ...d, to: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12, boxSizing: 'border-box' }} />
+                      </div>
+                    </div>
+                    <button onClick={scanCustom} disabled={!scanDates.from} style={{
+                      width: '100%', padding: '8px', borderRadius: 6, border: 'none',
+                      background: scanDates.from ? '#378ADD' : '#1e2130',
+                      color: scanDates.from ? '#fff' : '#555',
+                      cursor: scanDates.from ? 'pointer' : 'not-allowed', fontSize: 13
+                    }}>
+                      Scanner cette période
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -181,14 +257,16 @@ export default function Invoices({ session }) {
 
       {/* Gmail connected banner */}
       {gmailStatus.connected && (
-        <div style={{ background: '#0d2b1a', borderRadius: 8, border: '0.5px solid #1e2130', padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
+        <div style={{ background: '#0d2b1a', borderRadius: 8, border: '0.5px solid #1e2130', padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, flexWrap: 'wrap' }}>
           <span style={{ color: '#1D9E75' }}>✅ Gmail connecté</span>
-          <span style={{ color: '#444' }}>{gmailStatus.email}</span>
+          <span style={{ color: '#555' }}>{gmailStatus.email}</span>
           {settings?.last_scan_at && (
-            <span style={{ color: '#444' }}>Dernier scan : {new Date(settings.last_scan_at).toLocaleString('fr-CA')}</span>
+            <span style={{ color: '#444' }}>Dernier scan : {new Date(settings.last_scan_at).toLocaleDateString('fr-CA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
           )}
           {settings?.next_scan_at && (
-            <span style={{ color: '#444', marginLeft: 'auto' }}>Prochain : {new Date(settings.next_scan_at).toLocaleString('fr-CA')}</span>
+            <span style={{ color: '#444', marginLeft: 'auto' }}>
+              Prochain scan auto : {new Date(settings.next_scan_at).toLocaleDateString('fr-CA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
           )}
         </div>
       )}
@@ -197,7 +275,7 @@ export default function Invoices({ session }) {
       {scanResult && (
         <div style={{ padding: '12px 16px', borderRadius: 8, marginBottom: 16, background: scanResult.success ? '#0d2b1a' : '#2b0d0d', color: scanResult.success ? '#1D9E75' : '#D85A30', fontSize: 13 }}>
           {scanResult.success
-            ? `✅ Scan terminé — ${scanResult.processed} nouvelles factures, ${scanResult.skipped} ignorées sur ${scanResult.total} emails`
+            ? `✅ Scan terminé — ${scanResult.processed} nouvelles factures, ${scanResult.skipped} ignorées sur ${scanResult.total} emails trouvés`
             : `❌ ${scanResult.error}`}
         </div>
       )}
@@ -218,6 +296,9 @@ export default function Invoices({ session }) {
               <option value="verified">Vérifiés</option>
               <option value="corrected">Corrigés</option>
             </select>
+            <span style={{ fontSize: 12, color: '#444', alignSelf: 'center', marginLeft: 'auto' }}>
+              {invoices.length} facture{invoices.length !== 1 ? 's' : ''}
+            </span>
           </div>
 
           {loading ? (
@@ -248,7 +329,7 @@ export default function Invoices({ session }) {
                         <div style={{ color: '#fff' }}>{inv.sender_name || inv.sender_email}</div>
                         <div style={{ fontSize: 11, color: '#444' }}>{inv.sender_email}</div>
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#888', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '10px 14px', color: '#888', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {inv.subject}
                       </td>
                       <td style={{ padding: '10px 14px', color: '#fff', whiteSpace: 'nowrap', fontWeight: 500 }}>
@@ -282,10 +363,10 @@ export default function Invoices({ session }) {
                                 <button onClick={() => verify(inv.id)} style={{ padding: '3px 10px', borderRadius: 4, border: 'none', background: '#0d2b1a', color: '#1D9E75', cursor: 'pointer', fontSize: 11 }}>✅ Valider</button>
                               )}
                               <button onClick={() => { setEditingId(inv.id); setEditCategory(inv.category); setEditNotes(inv.notes || ''); }}
-                                style={{ padding: '3px 10px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✏️ Éditer</button>
+                                style={{ padding: '3px 10px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✏️</button>
                               {inv.drive_file_url && (
                                 <a href={inv.drive_file_url} target="_blank" rel="noreferrer"
-                                  style={{ padding: '3px 10px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11, textDecoration: 'none' }}>📄 PDF</a>
+                                  style={{ padding: '3px 10px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11, textDecoration: 'none' }}>📄</a>
                               )}
                             </>
                           )}
@@ -348,7 +429,7 @@ export default function Invoices({ session }) {
 
       {/* SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 24, maxWidth: 500 }}>
+        <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 24, maxWidth: 520 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginBottom: 20 }}>Paramètres Invoice Manager</div>
 
           <div style={{ marginBottom: 20 }}>
@@ -368,7 +449,7 @@ export default function Invoices({ session }) {
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Scanner depuis le</label>
+            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Date de début du scan initial</label>
             <input type="date" defaultValue="2025-01-01"
               style={{ padding: '8px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 13 }} />
           </div>
@@ -391,7 +472,8 @@ export default function Invoices({ session }) {
 
           <div style={{ padding: '12px 16px', borderRadius: 8, background: '#0f1117', border: '0.5px solid #1e2130', fontSize: 12, color: '#444' }}>
             <div style={{ marginBottom: 4 }}>📁 Google Drive : <span style={{ color: '#555' }}>MitchBI - Factures/</span></div>
-            <div>🕐 Prochain scan : <span style={{ color: '#555' }}>{settings?.next_scan_at ? new Date(settings.next_scan_at).toLocaleString('fr-CA') : 'Non planifié'}</span></div>
+            <div style={{ marginBottom: 4 }}>🕐 Dernier scan : <span style={{ color: '#555' }}>{settings?.last_scan_at ? new Date(settings.last_scan_at).toLocaleString('fr-CA') : 'Jamais'}</span></div>
+            <div>⏭ Prochain scan : <span style={{ color: '#555' }}>{settings?.next_scan_at ? new Date(settings.next_scan_at).toLocaleString('fr-CA') : 'Non planifié'}</span></div>
           </div>
         </div>
       )}
