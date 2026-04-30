@@ -6,6 +6,7 @@ import Topbar from './components/Topbar';
 import Briefing from './pages/Briefing';
 import Assistant from './pages/Assistant';
 import Connections from './pages/Connections';
+import QueryEngine from './pages/QueryEngine';
 
 export default function App() {
   const [session, setSession] = useState(null);
