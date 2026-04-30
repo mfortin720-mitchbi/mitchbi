@@ -304,7 +304,8 @@ export default function Invoices({ session }) {
             </div>
           ) : (
             <div style={{ border: '0.5px solid #1e2130', borderRadius: 10, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: '#13151f' }}>
                     {['Date', 'Expéditeur', 'Sujet', 'Type', 'Catégorie suggérée', 'Montant', 'Statut', 'Actions'].map(h => (
@@ -401,6 +402,7 @@ export default function Invoices({ session }) {
                 </tbody>
               </table>
             </div>
+        </div>
           )}
         </div>
       )}
