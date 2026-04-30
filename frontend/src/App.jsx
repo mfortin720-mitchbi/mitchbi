@@ -7,6 +7,7 @@ import Briefing from './pages/Briefing';
 import Assistant from './pages/Assistant';
 import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
+import Invoices from './pages/Invoices';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -56,6 +57,7 @@ export default function App() {
         return <Connections session={session} />;
       case 'query': 
         return <QueryEngine />;
+      case 'invoices': return <Invoices />;
   
       default:
         return (
