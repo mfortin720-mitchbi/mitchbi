@@ -140,4 +140,104 @@ export default function QueryEngine() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && runQuery()}
-            placeholder='ex: Montre-moi les sessions par source ce mois-ci dans ga4_channel_alldims'
+            placeholder='ex: "Montre-moi les sessions par source ce mois-ci dans ga4_channel_alldims"'
+            style={{
+              flex: 1, padding: '10px 14px', borderRadius: 8,
+              border: '0.5px solid #1e2130', background: '#0f1117',
+              color: '#fff', fontSize: 14
+            }}
+          />
+          <button onClick={() => runQuery()} disabled={loading || !selectedConn} style={{
+            padding: '10px 20px', borderRadius: 8, border: 'none',
+            background: loading || !selectedConn ? '#1e2130' : '#378ADD',
+            color: loading || !selectedConn ? '#555' : '#fff',
+            cursor: loading || !selectedConn ? 'not-allowed' : 'pointer',
+            fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap'
+          }}>
+            {loading ? 'Génération...' : 'Exécuter ↗'}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          {SAMPLE_QUESTIONS.map((q, i) => (
+            <button key={i} onClick={() => { setQuestion(q); runQuery(q); }} style={{
+              padding: '4px 12px', borderRadius: 20,
+              border: '0.5px solid #1e2130', background: 'transparent',
+              color: '#444', fontSize: 12, cursor: 'pointer'
+            }}>
+              {q}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{
+          padding: '12px 16px', borderRadius: 8, marginBottom: 16,
+          background: '#2b0d0d', color: '#D85A30', fontSize: 13
+        }}>
+          ❌ {error}
+        </div>
+      )}
+
+      {/* Results */}
+      {result && (
+        <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', overflow: 'hidden' }}>
+          <div style={{
+            padding: '12px 20px', borderBottom: '0.5px solid #1e2130',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+          }}>
+            <div style={{ fontSize: 13, color: '#fff' }}>
+              ✅ {result.count} résultat(s) · <span style={{ color: '#378ADD' }}>{dataset}</span>
+            </div>
+            <button onClick={() => setShowSQL(!showSQL)} style={{
+              padding: '4px 12px', borderRadius: 6,
+              border: '0.5px solid #1e2130', background: 'transparent',
+              color: '#555', cursor: 'pointer', fontSize: 12
+            }}>
+              {showSQL ? 'Cacher SQL' : 'Voir SQL'}
+            </button>
+          </div>
+
+          {showSQL && (
+            <div style={{ padding: '12px 20px', borderBottom: '0.5px solid #1e2130', background: '#0f1117' }}>
+              <pre style={{ margin: 0, fontSize: 12, color: '#378ADD', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                {result.sql}
+              </pre>
+            </div>
+          )}
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#0f1117' }}>
+                  {columns.map(col => (
+                    <th key={col} style={{
+                      padding: '10px 16px', textAlign: 'left',
+                      fontWeight: 500, fontSize: 12, color: '#555',
+                      borderBottom: '0.5px solid #1e2130', whiteSpace: 'nowrap'
+                    }}>
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '0.5px solid #1e2130' }}>
+                    {columns.map(col => (
+                      <td key={col} style={{ padding: '10px 16px', color: '#ccc', whiteSpace: 'nowrap' }}>
+                        {String(row[col] ?? '')}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
