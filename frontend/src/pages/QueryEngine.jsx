@@ -140,4 +140,4 @@ export default function QueryEngine() {
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && runQuery()}
-            placeholder='ex: "Montre-moi les sessions par
+            placeholder='ex: Montre-moi les sessions par source ce mois-ci dans ga4_channel_alldims'
