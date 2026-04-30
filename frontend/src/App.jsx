@@ -53,6 +53,9 @@ export default function App() {
         return <Assistant session={session} />;
       case 'connections': 
         return <Connections />;
+      case 'query': 
+        return <QueryEngine />;
+  
       default:
         return (
           <div style={{
