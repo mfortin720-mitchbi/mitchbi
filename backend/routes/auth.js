@@ -3,7 +3,7 @@ const { google } = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
 const router = express.Router();
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const getSupabase = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 const getOAuthClient = () => new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -17,7 +17,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email'
 ];
 
-// GET /api/auth/google — Générer l'URL d'autorisation
+// GET /api/auth/google
 router.get('/google', (req, res) => {
   const oauth2Client = getOAuthClient();
   const url = oauth2Client.generateAuthUrl({
@@ -28,20 +28,18 @@ router.get('/google', (req, res) => {
   res.json({ url });
 });
 
-// GET /api/auth/google/callback — Recevoir le code et sauvegarder les tokens
+// GET /api/auth/google/callback
 router.get('/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
     const oauth2Client = getOAuthClient();
     const { tokens } = await oauth2Client.getToken(code);
 
-    // Récupérer l'email de l'utilisateur
     oauth2Client.setCredentials(tokens);
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data: userInfo } = await oauth2.userinfo.get();
 
-    // Sauvegarder les tokens dans Supabase
-    const { error } = await supabase
+    await getSupabase()
       .from('invoice_settings')
       .upsert({
         gmail_connected: true,
@@ -50,20 +48,19 @@ router.get('/google/callback', async (req, res) => {
         google_refresh_token: tokens.refresh_token,
         google_token_expiry: tokens.expiry_date,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id' });
+      }, { onConflict: 'id' });
 
-    // Rediriger vers MitchBI avec succès
-    res.redirect(`${process.env.FRONTEND_URL || 'https://mitchbi.com'}/invoices?gmail=connected`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://mitchbi.com'}?gmail=connected`);
   } catch (err) {
     console.error('OAuth callback error:', err);
-    res.redirect(`${process.env.FRONTEND_URL || 'https://mitchbi.com'}/invoices?gmail=error`);
+    res.redirect(`${process.env.FRONTEND_URL || 'https://mitchbi.com'}?gmail=error`);
   }
 });
 
-// GET /api/auth/google/status — Vérifier si Gmail est connecté
+// GET /api/auth/google/status
 router.get('/google/status', async (req, res) => {
   try {
-    const { data } = await supabase
+    const { data } = await getSupabase()
       .from('invoice_settings')
       .select('gmail_connected, gmail_email, last_scan_at, next_scan_at, scan_interval_hours')
       .single();
