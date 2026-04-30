@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Briefing from './pages/Briefing';
 import Assistant from './pages/Assistant';
+import Connections from './pages/Connections';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -50,6 +51,8 @@ export default function App() {
         return <Briefing session={session} />;
       case 'assistant': 
         return <Assistant session={session} />;
+      case 'connections': 
+        return <Connections />;
       default:
         return (
           <div style={{

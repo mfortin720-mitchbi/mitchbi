@@ -21,6 +21,9 @@ app.use('/api/briefing', briefingRoute);
 const assistantRoute = require('./routes/assistant');
 app.use('/api/assistant', assistantRoute);
 
+const connectionsRoute = require('./routes/connections');
+app.use('/api/connections', connectionsRoute);
+
 app.get('/', (req, res) => {
   res.json({ message: '🚀 MitchBI API is running!', version: '1.0.0', status: 'ok' });
 });
