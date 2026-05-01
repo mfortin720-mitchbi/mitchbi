@@ -34,7 +34,7 @@ const isExcluded = (h, m) => {
 
 // Fetch Yahoo Finance
 const fetchYahoo = async (ticker, period, interval) => {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${period}&interval=${interval}&includePrePost=true`;
+  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${period}&interval=${interval}&includePrePost=true`;
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Yahoo ${res.status}`);
   const json = await res.json();
