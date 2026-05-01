@@ -333,6 +333,22 @@ export default function Invoices({ session }) {
                             <a href={draft.drive_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#1D9E75', textDecoration: 'none' }}>📄 PDF</a>
                           )}
                         </div>
+                        <td style={{ padding: '9px 12px', maxWidth: 160 }}>
+                        <div style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.subject}</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                            {draft.gmail_url && (
+                            <a href={draft.gmail_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#378ADD', textDecoration: 'none' }}>📧 Email</a>
+                            )}
+                            {draft.drive_file_url && (
+                            <a href={draft.drive_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#1D9E75', textDecoration: 'none' }}>📄 PDF</a>
+                            )}
+                        </div>
+                        {draft.pdf_filename && (
+                            <div style={{ fontSize: 10, color: '#333', marginTop: 2, fontFamily: 'monospace' }}>
+                            📁 {draft.pdf_filename}
+                            </div>
+                        )}
+                        </td>
                       </td>
                       <td style={{ padding: '9px 12px' }}>
                         <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: '#1a1d27', color: '#555' }}>

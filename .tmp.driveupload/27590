@@ -1,0 +1,30 @@
+0000000000000000000000000000000000000000 58d80ac3fa3105cf4d7b600f80f5a17fceeadfbd mfort <mfortin720@gmail.com> 1777506243 -0400	commit (initial): Initial commit — MitchBI v1.0
+58d80ac3fa3105cf4d7b600f80f5a17fceeadfbd 58d80ac3fa3105cf4d7b600f80f5a17fceeadfbd mfort <mfortin720@gmail.com> 1777506418 -0400	Branch: renamed refs/heads/main to refs/heads/main
+58d80ac3fa3105cf4d7b600f80f5a17fceeadfbd 86b62ec3e73eb7d4f430d4e96dbe835af35cc242 mfort <mfortin720@gmail.com> 1777506905 -0400	commit: Add vercel.json
+86b62ec3e73eb7d4f430d4e96dbe835af35cc242 559c54c1b126dd6b2fc5a7a34b9b41deef605ab7 mfort <mfortin720@gmail.com> 1777507120 -0400	commit: Fix vercel.json location
+559c54c1b126dd6b2fc5a7a34b9b41deef605ab7 b420dbfb4d20d6b7eef35ab3e17282d76dd7e8aa mfort <mfortin720@gmail.com> 1777507308 -0400	commit: Update vercel.json with services config
+b420dbfb4d20d6b7eef35ab3e17282d76dd7e8aa bd128b5767e51c1d65876c7b332206c408748640 mfort <mfortin720@gmail.com> 1777509874 -0400	commit: Connect frontend to Railway backend
+bd128b5767e51c1d65876c7b332206c408748640 be8e7acbe22994187292ecfada4574b0e7acaf9c mfort <mfortin720@gmail.com> 1777510688 -0400	commit: Fix API URL interpolation
+be8e7acbe22994187292ecfada4574b0e7acaf9c d432becbb7b78ba73c0a555541200146d07d3aa4 mfort <mfortin720@gmail.com> 1777510838 -0400	commit: Fix CORS for mitchbi.com
+d432becbb7b78ba73c0a555541200146d07d3aa4 9368a364513e403513f8b7d8b193a6dba242dc79 mfort <mfortin720@gmail.com> 1777511020 -0400	commit: Open CORS temporarily
+9368a364513e403513f8b7d8b193a6dba242dc79 c350fd0c6fdbe3dd77c58d2d676733328a271d9d mfort <mfortin720@gmail.com> 1777512758 -0400	commit: Add BigQuery Connections Manager
+c350fd0c6fdbe3dd77c58d2d676733328a271d9d 4488d62a6f2d5907b05f0c5720b4b22a960948fd mfort <mfortin720@gmail.com> 1777513326 -0400	commit: Add NL Query Engine with BigQuery
+4488d62a6f2d5907b05f0c5720b4b22a960948fd 6a925ba1bfc4d6ee874443fe674c3b27c962a2c8 mfort <mfortin720@gmail.com> 1777513771 -0400	commit: adding queryengine as import in app.jsx
+6a925ba1bfc4d6ee874443fe674c3b27c962a2c8 2ccf408b89d0162c20c5fedc76eca41b52c8b244 mfort <mfortin720@gmail.com> 1777514370 -0400	commit: Persist connections in Supabase
+2ccf408b89d0162c20c5fedc76eca41b52c8b244 f532c7dd85f1743a79c091b0756eef9fe0b5e094 mfort <mfortin720@gmail.com> 1777515069 -0400	commit: Fix BigQuery credentials passing
+f532c7dd85f1743a79c091b0756eef9fe0b5e094 367b42d14a2567661d0e98ce89d60eacbdb4bd81 mfort <mfortin720@gmail.com> 1777515481 -0400	commit: Fix QueryEngine load credentials from Supabase
+367b42d14a2567661d0e98ce89d60eacbdb4bd81 1b7773ea7312f545783161a18ed9d5200d36d551 mfort <mfortin720@gmail.com> 1777515596 -0400	commit: Persist connections in Supabase2
+1b7773ea7312f545783161a18ed9d5200d36d551 e6860468d3b35d533fd39294522a0b5e16a06b18 mfort <mfortin720@gmail.com> 1777515691 -0400	commit: Fix QueryEngine load credentials from Supabase
+e6860468d3b35d533fd39294522a0b5e16a06b18 7b3f9ae238da46d00d4d1f88665b5fdb8eae890c mfort <mfortin720@gmail.com> 1777515902 -0400	commit: Fix QueryEngine load credentials from Supabase
+7b3f9ae238da46d00d4d1f88665b5fdb8eae890c 3c5a45529bafb06a1660ef4c844b17458d21276e mfort <mfortin720@gmail.com> 1777516145 -0400	commit: Persist connections in Supabase
+3c5a45529bafb06a1660ef4c844b17458d21276e 05f60f439f290cb7037b2837b0bcaa42775cbabc mfort <mfortin720@gmail.com> 1777516410 -0400	commit: Fix BigQuery location to northamerica-northeast1
+05f60f439f290cb7037b2837b0bcaa42775cbabc efcc9466e92ed90c0378b4f49d6cc649cb977471 mfort <mfortin720@gmail.com> 1777547526 -0400	commit: Add location selector + schema explorer
+efcc9466e92ed90c0378b4f49d6cc649cb977471 fddf748876ddb9b04e2d6a0db86a4c6459afc336 mfort <mfortin720@gmail.com> 1777547684 -0400	commit: Fix JSX in backend connections route
+fddf748876ddb9b04e2d6a0db86a4c6459afc336 3bae5f5ad45304efdd4e9d6d45cdc4cf6a490207 mfort <mfortin720@gmail.com> 1777548981 -0400	commit: Add table search and events_* grouping
+3bae5f5ad45304efdd4e9d6d45cdc4cf6a490207 a56bf609f76ccef80264412e73939c555adf2591 mfort <mfortin720@gmail.com> 1777551303 -0400	commit: Add Invoice Manager with Gmail + Drive
+a56bf609f76ccef80264412e73939c555adf2591 237473142fd9f3bc826f81f88cc45408b316b624 mfort <mfortin720@gmail.com> 1777551551 -0400	commit: Add Invoice Manager frontend
+237473142fd9f3bc826f81f88cc45408b316b624 b0d16dfb7860f9959d1c1635aeacb1c1a71a2756 mfort <mfortin720@gmail.com> 1777552107 -0400	commit: Fix Gmail OAuth redirect and invoice UI
+b0d16dfb7860f9959d1c1635aeacb1c1a71a2756 a26364673eca191e688a586752141b99b0f30f16 mfort <mfortin720@gmail.com> 1777553332 -0400	commit: Fix lazy init Supabase and Anthropic in invoices
+a26364673eca191e688a586752141b99b0f30f16 404dc658d8c5ad26ad22a4599e6e7216abf8057e mfort <mfortin720@gmail.com> 1777589022 -0400	commit: Add incremental scan with date range
+404dc658d8c5ad26ad22a4599e6e7216abf8057e 6eb7e360f47e232bb753706cdd3eac94ec891b98 mfort <mfortin720@gmail.com> 1777591963 -0400	commit: Invoice Manager v2
+6eb7e360f47e232bb753706cdd3eac94ec891b98 9fc631ffb68c690425e3702d36523c42582378bc mfort <mfortin720@gmail.com> 1777592726 -0400	commit: Fix invoice table scroll

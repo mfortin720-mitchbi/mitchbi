@@ -353,9 +353,15 @@ router.post('/drafts/:id/classify', async (req, res) => {
     const categoryFolderId = await getOrCreateFolder(drive, draft.final_category || 'Autre', rootFolderId);
 
     // Nom du fichier
-    const vendorClean = (draft.suggested_vendor_name || draft.sender_name || 'Unknown').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
+    const vendorClean = (draft.suggested_vendor_name || draft.sender_name || 'Unknown')
+  .replace(/[^a-zA-Z0-9\s]/g, '')
+  .trim()
+  .replace(/\s+/g, '_')
+  .substring(0, 30);
     const dateStr = draft.received_at ? new Date(draft.received_at).toISOString().split('T')[0] : 'unknown';
-    const fileName = `${vendorClean}_${dateStr}.pdf`;
+    const amountStr = draft.final_amount ? `_${draft.final_amount}${draft.final_currency || 'USD'}` : '';
+    const invoiceNum = draft.final_invoice_number ? `_${draft.final_invoice_number.replace(/[^a-zA-Z0-9]/g, '-').substring(0, 20)}` : '';
+    const fileName = `${vendorClean}_${dateStr}${amountStr}${invoiceNum}.pdf`;
 
     // Anti-doublon Drive
     const existingFileId = await fileExistsInDrive(drive, fileName, categoryFolderId);
