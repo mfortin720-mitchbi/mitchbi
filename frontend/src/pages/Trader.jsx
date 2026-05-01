@@ -445,7 +445,27 @@ export default function Trader() {
           </div>
         )}
       </div>
-
+{/* Accès rapide */}
+<div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: '14px 20px', marginBottom: 16 }}>
+  <div style={{ fontSize: 12, color: '#888', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Accès rapide — Analyse détaillée</div>
+  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    {Object.entries(ALL_INSTRUMENTS).filter(([,v]) => v.topstep).map(([ticker, info]) => (
+      <button key={ticker} onClick={() => openDetail(ticker)} style={{
+        padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13,
+        border: '0.5px solid #1e2130', background: '#0f1117',
+        color: '#ccc', display: 'flex', alignItems: 'center', gap: 6,
+        transition: 'border-color 0.2s'
+      }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = '#378ADD'}
+        onMouseLeave={e => e.currentTarget.style.borderColor = '#1e2130'}
+      >
+        <span>{info.emoji}</span>
+        <span style={{ fontWeight: 500 }}>{ticker.replace('=F','')}</span>
+        <span style={{ fontSize: 11, color: '#555' }}>{info.name}</span>
+      </button>
+    ))}
+  </div>
+</div>
       {/* Sélecteur instruments */}
       <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: '14px 20px', marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: '#888', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
