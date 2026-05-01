@@ -23,6 +23,7 @@ export default function Invoices({ session }) {
   const [categories, setCategories] = useState([]);
   const [gmailStatus, setGmailStatus] = useState({ connected: false });
   const [settings, setSettings] = useState({ scan_interval_hours: 4 });
+  const [scanRules, setScanRules] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
@@ -34,9 +35,9 @@ export default function Invoices({ session }) {
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
   const [classifying, setClassifying] = useState(null);
-  // New category modal
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCat, setNewCat] = useState({ name: '', color: '#378ADD', icon: '📄', keywords: '' });
+  const [newSender, setNewSender] = useState('');
 
   const API = import.meta.env.VITE_API_URL;
 
@@ -68,11 +69,19 @@ export default function Invoices({ session }) {
     if (data.settings) setSettings(data.settings);
   }, [API]);
 
+  const loadScanRules = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/invoices/scan-rules`);
+      const data = await res.json();
+      if (data.success) setScanRules(data.rules);
+    } catch (err) { console.error(err); }
+  }, [API]);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadDrafts(), loadStats(), loadGmailStatus(), loadCategories()]);
+    await Promise.all([loadDrafts(), loadStats(), loadGmailStatus(), loadCategories(), loadScanRules()]);
     setLoading(false);
-  }, [loadDrafts, loadStats, loadGmailStatus, loadCategories]);
+  }, [loadDrafts, loadStats, loadGmailStatus, loadCategories, loadScanRules]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -127,6 +136,7 @@ export default function Invoices({ session }) {
       if (data.success) {
         setDrafts(prev => prev.map(d => d.id === id ? data.draft : d));
         await loadStats();
+        await loadScanRules(); // refresh auto_senders
       }
     } catch (err) { console.error(err); }
     finally { setClassifying(null); }
@@ -157,10 +167,28 @@ export default function Invoices({ session }) {
     }
   };
 
+  const updateScanRules = async (updates) => {
+    await fetch(`${API}/api/invoices/scan-rules`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    setScanRules(r => ({ ...r, ...updates }));
+  };
+
+  const addSender = async () => {
+    if (!newSender.trim()) return;
+    const updated = [...(scanRules?.known_senders || []), newSender.trim()];
+    await updateScanRules({ known_senders: updated });
+    setNewSender('');
+  };
+
+  const removeSender = async (list, index) => {
+    const updated = scanRules[list].filter((_, i) => i !== index);
+    await updateScanRules({ [list]: updated });
+  };
+
   const exportCSV = () => window.open(`${API}/api/invoices/export/csv`, '_blank');
-
   const getCatColor = (name) => categories.find(c => c.name === name)?.color || '#555';
-
   const pendingCount = drafts.filter(d => d.status === 'pending_review').length;
 
   return (
@@ -168,10 +196,10 @@ export default function Invoices({ session }) {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
-          { id: 'drafts', label: `📋 Factures${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
-          { id: 'stats', label: '📊 Stats' },
+          { id: 'drafts',     label: `📋 Factures${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
+          { id: 'stats',      label: '📊 Stats' },
           { id: 'categories', label: '🏷 Catégories' },
-          { id: 'settings', label: '⚙️ Paramètres' },
+          { id: 'settings',   label: '⚙️ Paramètres' },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
             padding: '7px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 13,
@@ -192,9 +220,7 @@ export default function Invoices({ session }) {
                   padding: '7px 14px', borderRadius: '6px 0 0 6px', border: 'none',
                   cursor: scanning ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500,
                   background: scanning ? '#1e2130' : '#378ADD', color: scanning ? '#555' : '#fff'
-                }}>
-                  {scanning ? '⏳ Scan...' : '↺ Scanner'}
-                </button>
+                }}>{scanning ? '⏳ Scan...' : '↺ Scanner'}</button>
                 <button onClick={() => setShowScanOptions(!showScanOptions)} disabled={scanning} style={{
                   padding: '7px 10px', borderRadius: '0 6px 6px 0', border: 'none', borderLeft: '1px solid #2a5a8c',
                   cursor: 'pointer', fontSize: 12, background: '#2a6aad', color: '#fff'
@@ -231,7 +257,7 @@ export default function Invoices({ session }) {
                           style={{ width: '100%', padding: '5px 8px', borderRadius: 5, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12, boxSizing: 'border-box' }} />
                       </div>
                     </div>
-                    <button onClick={() => { scan(scanDates.from, scanDates.to || null); }} disabled={!scanDates.from} style={{
+                    <button onClick={() => scan(scanDates.from, scanDates.to || null)} disabled={!scanDates.from} style={{
                       width: '100%', padding: '7px', borderRadius: 5, border: 'none',
                       background: scanDates.from ? '#378ADD' : '#1e2130',
                       color: scanDates.from ? '#fff' : '#555',
@@ -269,7 +295,7 @@ export default function Invoices({ session }) {
       {scanResult && (
         <div style={{ padding: '10px 16px', borderRadius: 8, marginBottom: 16, fontSize: 13, background: scanResult.success ? '#0d2b1a' : '#2b0d0d', color: scanResult.success ? '#1D9E75' : '#D85A30' }}>
           {scanResult.success
-            ? `✅ Scan terminé — ${scanResult.processed} nouveaux emails, ${scanResult.skipped} déjà vus, ${scanResult.errors} erreurs`
+            ? `✅ Scan terminé — ${scanResult.processed} nouveaux, ${scanResult.skipped} déjà vus, ${scanResult.filtered} filtrés, ${scanResult.errors} erreurs sur ${scanResult.total} emails`
             : `❌ ${scanResult.error}`}
         </div>
       )}
@@ -277,7 +303,6 @@ export default function Invoices({ session }) {
       {/* DRAFTS TAB */}
       {activeTab === 'drafts' && (
         <div>
-          {/* Filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               style={{ padding: '6px 10px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#13151f', color: filterStatus ? '#fff' : '#555', fontSize: 12 }}>
@@ -304,121 +329,110 @@ export default function Invoices({ session }) {
             </div>
           ) : (
             <div style={{ border: '0.5px solid #1e2130', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr style={{ background: '#13151f' }}>
-                    {['Date', 'Expéditeur', 'Sujet', 'Type', 'Catégorie suggérée', 'Montant', 'Statut', 'Actions'].map(h => (
-                      <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 500, fontSize: 11, color: '#555', borderBottom: '0.5px solid #1e2130', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {drafts.map(draft => (
-                    <tr key={draft.id} style={{ borderBottom: '0.5px solid #1e2130', background: draft.status === 'not_invoice' ? '#111' : 'transparent' }}>
-                      <td style={{ padding: '9px 12px', color: '#888', whiteSpace: 'nowrap' }}>
-                        {draft.received_at ? new Date(draft.received_at).toLocaleDateString('fr-CA') : '—'}
-                      </td>
-                      <td style={{ padding: '9px 12px', maxWidth: 150 }}>
-                        <div style={{ color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.suggested_vendor_name || draft.sender_name}</div>
-                        <div style={{ fontSize: 10, color: '#444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.sender_email}</div>
-                      </td>
-                      <td style={{ padding: '9px 12px', maxWidth: 160 }}>
-                        <div style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.subject}</div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-                          {draft.gmail_url && (
-                            <a href={draft.gmail_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#378ADD', textDecoration: 'none' }}>📧 Email</a>
-                          )}
-                          {draft.drive_file_url && (
-                            <a href={draft.drive_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#1D9E75', textDecoration: 'none' }}>📄 PDF</a>
-                          )}
-                        </div>
-                        <td style={{ padding: '9px 12px', maxWidth: 160 }}>
-                        <div style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.subject}</div>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#13151f' }}>
+                      {['Date', 'Expéditeur', 'Sujet / Liens', 'Type', 'Catégorie', 'Montant', 'Statut', 'Actions'].map(h => (
+                        <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 500, fontSize: 11, color: '#555', borderBottom: '0.5px solid #1e2130', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drafts.map(draft => (
+                      <tr key={draft.id} style={{ borderBottom: '0.5px solid #1e2130', background: draft.status === 'not_invoice' ? '#111' : 'transparent' }}>
+                        <td style={{ padding: '9px 12px', color: '#888', whiteSpace: 'nowrap' }}>
+                          {draft.received_at ? new Date(draft.received_at).toLocaleDateString('fr-CA') : '—'}
+                        </td>
+                        <td style={{ padding: '9px 12px', maxWidth: 150 }}>
+                          <div style={{ color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.suggested_vendor_name || draft.sender_name}</div>
+                          <div style={{ fontSize: 10, color: '#444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.sender_email}</div>
+                        </td>
+                        <td style={{ padding: '9px 12px', maxWidth: 180 }}>
+                          <div style={{ color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draft.subject}</div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
                             {draft.gmail_url && (
-                            <a href={draft.gmail_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#378ADD', textDecoration: 'none' }}>📧 Email</a>
+                              <a href={draft.gmail_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#378ADD', textDecoration: 'none' }}>📧 Email</a>
                             )}
                             {draft.drive_file_url && (
-                            <a href={draft.drive_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#1D9E75', textDecoration: 'none' }}>📄 PDF</a>
+                              <a href={draft.drive_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#1D9E75', textDecoration: 'none' }}>📄 PDF</a>
                             )}
-                        </div>
-                        {draft.pdf_filename && (
-                            <div style={{ fontSize: 10, color: '#333', marginTop: 2, fontFamily: 'monospace' }}>
-                            📁 {draft.pdf_filename}
+                          </div>
+                          {draft.pdf_filename && (
+                            <div style={{ fontSize: 10, color: '#333', marginTop: 2, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📁 {draft.pdf_filename}
                             </div>
-                        )}
-                        </td>
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: '#1a1d27', color: '#555' }}>
-                          {draft.has_pdf ? '📎 PDF' : '📧 Email'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        {editingId === draft.id ? (
-                          <select value={editData.final_category} onChange={e => setEditData(d => ({ ...d, final_category: e.target.value }))}
-                            style={{ padding: '3px 6px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }}>
-                            {categories.map(c => <option key={c.id} value={c.name}>{c.icon} {c.name}</option>)}
-                          </select>
-                        ) : (
-                          <div>
-                            <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${getCatColor(draft.final_category)}22`, color: getCatColor(draft.final_category) }}>
-                              {draft.final_category}
-                            </span>
-                            <ConfidenceBadge score={draft.confidence_score} />
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        {editingId === draft.id ? (
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            <input type="number" value={editData.final_amount || ''} onChange={e => setEditData(d => ({ ...d, final_amount: e.target.value }))}
-                              placeholder="0.00" style={{ width: 70, padding: '3px 6px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }} />
-                            <select value={editData.final_currency} onChange={e => setEditData(d => ({ ...d, final_currency: e.target.value }))}
-                              style={{ padding: '3px 4px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }}>
-                              {['USD', 'CAD', 'EUR'].map(c => <option key={c}>{c}</option>)}
-                            </select>
-                          </div>
-                        ) : (
-                          <span style={{ color: '#fff', fontWeight: 500 }}>
-                            {draft.final_amount ? `${draft.final_amount} ${draft.final_currency}` : <span style={{ color: '#444' }}>—</span>}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <StatusBadge status={draft.status} />
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {editingId === draft.id ? (
-                            <>
-                              <button onClick={() => updateDraft(draft.id, editData)} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 11 }}>💾</button>
-                              <button onClick={() => setEditingId(null)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✕</button>
-                            </>
-                          ) : (
-                            <>
-                              {draft.status === 'pending_review' && (
-                                <>
-                                  <button onClick={() => classifyDraft(draft.id)} disabled={classifying === draft.id} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', background: '#0d2b1a', color: '#1D9E75', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap' }}>
-                                    {classifying === draft.id ? '...' : '✅ Classifier'}
-                                  </button>
-                                  <button onClick={() => markNotInvoice(draft.id)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11 }}>🚫</button>
-                                </>
-                              )}
-                              <button onClick={() => { setEditingId(draft.id); setEditData({ final_category: draft.final_category, final_amount: draft.final_amount, final_currency: draft.final_currency || 'USD' }); }}
-                                style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-                              <button onClick={() => deleteDraft(draft.id)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #2b0d0d', background: 'transparent', color: '#D85A30', cursor: 'pointer', fontSize: 11 }}>🗑</button>
-                            </>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: '#1a1d27', color: '#555' }}>
+                            {draft.has_pdf ? '📎 PDF' : '📧 Email'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          {editingId === draft.id ? (
+                            <select value={editData.final_category} onChange={e => setEditData(d => ({ ...d, final_category: e.target.value }))}
+                              style={{ padding: '3px 6px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }}>
+                              {categories.map(c => <option key={c.id} value={c.name}>{c.icon} {c.name}</option>)}
+                            </select>
+                          ) : (
+                            <div>
+                              <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: `${getCatColor(draft.final_category)}22`, color: getCatColor(draft.final_category) }}>
+                                {draft.final_category}
+                              </span>
+                              <ConfidenceBadge score={draft.confidence_score} />
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          {editingId === draft.id ? (
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              <input type="number" value={editData.final_amount || ''} onChange={e => setEditData(d => ({ ...d, final_amount: e.target.value }))}
+                                placeholder="0.00" style={{ width: 65, padding: '3px 5px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }} />
+                              <select value={editData.final_currency || 'USD'} onChange={e => setEditData(d => ({ ...d, final_currency: e.target.value }))}
+                                style={{ padding: '3px 4px', borderRadius: 4, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 11 }}>
+                                {['USD', 'CAD', 'EUR'].map(c => <option key={c}>{c}</option>)}
+                              </select>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#fff', fontWeight: 500 }}>
+                              {draft.final_amount ? `${draft.final_amount} ${draft.final_currency}` : <span style={{ color: '#444' }}>—</span>}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <StatusBadge status={draft.status} />
+                        </td>
+                        <td style={{ padding: '9px 12px' }}>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {editingId === draft.id ? (
+                              <>
+                                <button onClick={() => updateDraft(draft.id, editData)} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 11 }}>💾</button>
+                                <button onClick={() => setEditingId(null)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✕</button>
+                              </>
+                            ) : (
+                              <>
+                                {draft.status === 'pending_review' && (
+                                  <>
+                                    <button onClick={() => classifyDraft(draft.id)} disabled={classifying === draft.id} style={{ padding: '3px 8px', borderRadius: 4, border: 'none', background: '#0d2b1a', color: '#1D9E75', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap' }}>
+                                      {classifying === draft.id ? '...' : '✅ Classifier'}
+                                    </button>
+                                    <button onClick={() => markNotInvoice(draft.id)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#888', cursor: 'pointer', fontSize: 11 }}>🚫</button>
+                                  </>
+                                )}
+                                <button onClick={() => { setEditingId(draft.id); setEditData({ final_category: draft.final_category, final_amount: draft.final_amount, final_currency: draft.final_currency || 'USD' }); }}
+                                  style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                                <button onClick={() => deleteDraft(draft.id)} style={{ padding: '3px 8px', borderRadius: 4, border: '0.5px solid #2b0d0d', background: 'transparent', color: '#D85A30', cursor: 'pointer', fontSize: 11 }}>🗑</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-        </div>
           )}
         </div>
       )}
@@ -428,11 +442,11 @@ export default function Invoices({ session }) {
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 24 }}>
             {[
-              { label: 'Total scannés', value: stats.count },
-              { label: 'À valider', value: stats.byStatus?.pending_review || 0, color: '#378ADD' },
-              { label: 'Classifiés', value: stats.byStatus?.classified || 0, color: '#1D9E75' },
-              { label: 'Pas une facture', value: stats.byStatus?.not_invoice || 0, color: '#888' },
-              { label: 'Total dépenses', value: `$${(stats.total || 0).toFixed(2)}` },
+              { label: 'Total scannés',    value: stats.count },
+              { label: 'À valider',        value: stats.byStatus?.pending_review || 0, color: '#378ADD' },
+              { label: 'Classifiés',       value: stats.byStatus?.classified || 0,     color: '#1D9E75' },
+              { label: 'Pas une facture',  value: stats.byStatus?.not_invoice || 0,    color: '#888' },
+              { label: 'Total dépenses',   value: `$${(stats.total || 0).toFixed(2)}` },
             ].map(kpi => (
               <div key={kpi.label} style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: '14px 18px' }}>
                 <div style={{ fontSize: 11, color: '#444', marginBottom: 6, textTransform: 'uppercase' }}>{kpi.label}</div>
@@ -478,7 +492,6 @@ export default function Invoices({ session }) {
               + Nouvelle catégorie
             </button>
           </div>
-
           <div style={{ display: 'grid', gap: 10 }}>
             {categories.map(cat => (
               <div key={cat.id} style={{ background: '#13151f', borderRadius: 8, border: '0.5px solid #1e2130', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -486,19 +499,14 @@ export default function Invoices({ session }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontWeight: 500, color: cat.color || '#fff' }}>{cat.name}</span>
-                    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, background: `${cat.color}22`, color: cat.color }}>{cat.color}</span>
                   </div>
                   {cat.keywords?.length > 0 && (
-                    <div style={{ fontSize: 11, color: '#444', marginTop: 3 }}>
-                      Mots-clés : {cat.keywords.join(', ')}
-                    </div>
+                    <div style={{ fontSize: 11, color: '#444', marginTop: 3 }}>Mots-clés : {cat.keywords.join(', ')}</div>
                   )}
                 </div>
               </div>
             ))}
           </div>
-
-          {/* New category modal */}
           {showNewCat && (
             <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
               <div style={{ background: '#13151f', borderRadius: 12, border: '0.5px solid #1e2130', padding: 28, width: '100%', maxWidth: 460 }}>
@@ -528,36 +536,134 @@ export default function Invoices({ session }) {
 
       {/* SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 24, maxWidth: 500 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#fff', marginBottom: 20 }}>Paramètres Invoice Manager</div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Fréquence de scan automatique</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[1, 2, 4, 8, 12, 24].map(h => (
-                <button key={h} onClick={() => setSettings(s => ({ ...s, scan_interval_hours: h }))} style={{
-                  padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13,
-                  border: '0.5px solid', borderColor: settings.scan_interval_hours === h ? '#378ADD' : '#1e2130',
-                  background: settings.scan_interval_hours === h ? '#0d1f35' : 'transparent',
-                  color: settings.scan_interval_hours === h ? '#378ADD' : '#555'
-                }}>{h}h</button>
-              ))}
+        <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
+
+          {/* Règles de scan */}
+          <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 4 }}>🔍 Règles de scan Gmail</div>
+            <div style={{ fontSize: 12, color: '#444', marginBottom: 20 }}>Scanne tous les dossiers sauf Spam et Corbeille</div>
+
+            {/* Expéditeurs connus */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>
+                📧 Expéditeurs connus
+                <span style={{ color: '#378ADD', marginLeft: 8 }}>{scanRules?.known_senders?.length || 0} expéditeurs</span>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {(scanRules?.known_senders || []).map((s, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: '#0d1f35', color: '#378ADD', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {s}
+                    <button onClick={() => removeSender('known_senders', i)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 10, padding: 0 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={newSender} onChange={e => setNewSender(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addSender()}
+                  placeholder="ex: billing@service.com"
+                  style={{ flex: 1, padding: '7px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#fff', fontSize: 12 }} />
+                <button onClick={addSender} style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 12 }}>+ Ajouter</button>
+              </div>
+            </div>
+
+            {/* Expéditeurs auto-appris */}
+            {(scanRules?.auto_senders?.length || 0) > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>
+                  🤖 Appris automatiquement
+                  <span style={{ color: '#1D9E75', marginLeft: 8 }}>{scanRules.auto_senders.length} expéditeurs</span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {scanRules.auto_senders.map((s, i) => (
+                    <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: '#0d2b1a', color: '#1D9E75', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {s}
+                      <button onClick={() => removeSender('auto_senders', i)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 10, padding: 0 }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Mots-clés inclusion */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>🔑 Mots-clés de détection</label>
+              <textarea value={(scanRules?.subject_keywords || []).join(', ')}
+                onChange={e => setScanRules(r => ({ ...r, subject_keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) }))}
+                onBlur={() => updateScanRules({ subject_keywords: scanRules.subject_keywords })}
+                rows={3}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#ccc', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+              <div style={{ fontSize: 11, color: '#333', marginTop: 3 }}>Séparés par virgules — sauvegarde automatique au clic dehors</div>
+            </div>
+
+            {/* Mots-clés exclusion */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>🚫 Mots-clés à ignorer</label>
+              <textarea value={(scanRules?.exclude_keywords || []).join(', ')}
+                onChange={e => setScanRules(r => ({ ...r, exclude_keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) }))}
+                onBlur={() => updateScanRules({ exclude_keywords: scanRules.exclude_keywords })}
+                rows={2}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#ccc', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+            </div>
+
+            {/* Prompt Claude */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>✦ Instructions Claude</label>
+              <textarea value={scanRules?.claude_instructions || ''}
+                onChange={e => setScanRules(r => ({ ...r, claude_instructions: e.target.value }))}
+                onBlur={() => updateScanRules({ claude_instructions: scanRules.claude_instructions })}
+                rows={4}
+                placeholder="Instructions pour Claude lors de la classification..."
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: '#0f1117', color: '#ccc', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }} />
+            </div>
+
+            {/* Seuil confiance */}
+            <div>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>
+                🎯 Seuil de confiance : <span style={{ color: '#fff' }}>{scanRules?.min_confidence || 70}%</span>
+              </label>
+              <input type="range" min="50" max="95" step="5"
+                value={scanRules?.min_confidence || 70}
+                onChange={e => setScanRules(r => ({ ...r, min_confidence: parseInt(e.target.value) }))}
+                onMouseUp={() => updateScanRules({ min_confidence: scanRules.min_confidence })}
+                style={{ width: '100%' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#333' }}>
+                <span>50% (inclusif)</span><span>95% (strict)</span>
+              </div>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Compte Gmail</label>
-            {gmailStatus.connected ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: '#1D9E75', fontSize: 13 }}>✅ {gmailStatus.email}</span>
-                <button onClick={connectGmail} style={{ padding: '4px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 12 }}>Reconnecter</button>
+
+          {/* Paramètres généraux */}
+          <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 16 }}>⚙️ Général</div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Fréquence de scan automatique</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {[1, 2, 4, 8, 12, 24].map(h => (
+                  <button key={h} onClick={() => setSettings(s => ({ ...s, scan_interval_hours: h }))} style={{
+                    padding: '6px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 13,
+                    border: '0.5px solid', borderColor: settings.scan_interval_hours === h ? '#378ADD' : '#1e2130',
+                    background: settings.scan_interval_hours === h ? '#0d1f35' : 'transparent',
+                    color: settings.scan_interval_hours === h ? '#378ADD' : '#555'
+                  }}>{h}h</button>
+                ))}
               </div>
-            ) : (
-              <button onClick={connectGmail} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 13 }}>Connecter Gmail</button>
-            )}
-          </div>
-          <div style={{ padding: '12px 16px', borderRadius: 8, background: '#0f1117', border: '0.5px solid #1e2130', fontSize: 12, color: '#444' }}>
-            <div style={{ marginBottom: 4 }}>📁 Drive : <span style={{ color: '#555' }}>MitchBI - Factures/</span></div>
-            <div style={{ marginBottom: 4 }}>🕐 Dernier scan : <span style={{ color: '#555' }}>{settings?.last_scan_at ? new Date(settings.last_scan_at).toLocaleString('fr-CA') : 'Jamais'}</span></div>
-            <div>⏭ Prochain : <span style={{ color: '#555' }}>{settings?.next_scan_at ? new Date(settings.next_scan_at).toLocaleString('fr-CA') : 'Non planifié'}</span></div>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 8 }}>Compte Gmail</label>
+              {gmailStatus.connected ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ color: '#1D9E75', fontSize: 13 }}>✅ {gmailStatus.email}</span>
+                  <button onClick={connectGmail} style={{ padding: '4px 12px', borderRadius: 6, border: '0.5px solid #1e2130', background: 'transparent', color: '#555', cursor: 'pointer', fontSize: 12 }}>Reconnecter</button>
+                </div>
+              ) : (
+                <button onClick={connectGmail} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 13 }}>Connecter Gmail</button>
+              )}
+            </div>
+            <div style={{ padding: '12px 16px', borderRadius: 8, background: '#0f1117', border: '0.5px solid #1e2130', fontSize: 12, color: '#444' }}>
+              <div style={{ marginBottom: 4 }}>📁 Drive : <span style={{ color: '#555' }}>MitchBI - Factures/</span></div>
+              <div style={{ marginBottom: 4 }}>🕐 Dernier scan : <span style={{ color: '#555' }}>{settings?.last_scan_at ? new Date(settings.last_scan_at).toLocaleString('fr-CA') : 'Jamais'}</span></div>
+              <div>⏭ Prochain : <span style={{ color: '#555' }}>{settings?.next_scan_at ? new Date(settings.next_scan_at).toLocaleString('fr-CA') : 'Non planifié'}</span></div>
+            </div>
           </div>
         </div>
       )}
