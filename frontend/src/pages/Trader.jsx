@@ -202,7 +202,7 @@ export default function Trader() {
               <PlotDiv
                 traces={[{
                   type: 'candlestick',
-                  x: a.candleData.map(d => new Date(d.localMs)),
+                  x: a.candleData.map(d => d.localStr),
                   open: a.candleData.map(d => d.open),
                   high: a.candleData.map(d => d.high),
                   low:  a.candleData.map(d => d.low),
@@ -221,7 +221,7 @@ export default function Trader() {
               <PlotDiv
                 traces={[{
                   type: 'scatter',
-                  x: a.candleData.filter(d => d.rsi !== null).map(d => new Date(d.localMs)),
+                  x: a.candleData.filter(d => d.rsi !== null).map(d => d.localStr),
                   y: a.candleData.filter(d => d.rsi !== null).map(d => d.rsi),
                   name: 'RSI', line: { color: '#9B59B6', width: 1.5 },
                   fill: 'tozeroy', fillcolor: 'rgba(155,89,182,0.08)'
