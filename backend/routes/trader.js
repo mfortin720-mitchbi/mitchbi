@@ -327,4 +327,17 @@ Réponds en français, sois précis et actionnable.`
   }
 });
 
+// GET /api/trader/data — Données seulement, sans Claude
+router.post('/data', async (req, res) => {
+  try {
+    const { ticker, period = '10d', interval = '5m', params = {} } = req.body;
+    const rawData = await fetchYahooData(ticker, period, interval);
+    const analysis = analyzeInstrument(rawData, ticker, params);
+    res.json({ success: true, analysis });
+  } catch (err) {
+    console.error('Data error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

@@ -51,7 +51,7 @@ const CandleChart = ({ data, ticker }) => {
 
   useEffect(() => {
     if (!plotlyLoaded || !ref.current || !data?.length) return;
-    const last100 = data.slice(-100);
+    const last100 = data  //.slice(-100);
     window.Plotly.newPlot(ref.current, [{
       type: 'candlestick',
       x: last100.map(d => new Date(d.timestamp)),
@@ -201,8 +201,10 @@ export default function Trader() {
   const [recommendation, setRecommendation] = useState('');
   const [currentHour, setCurrentHour] = useState(null);
   const [selectedTicker, setSelectedTicker] = useState(null); // Vue détaillée
+  const [loadingData, setLoadingData] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const [claudeAnalysis, setClaudeAnalysis] = useState(null);
 
   const toggleTicker = (ticker) => {
     setSelectedTickers(prev =>
@@ -231,14 +233,28 @@ export default function Trader() {
   const openDetail = async (ticker) => {
     setSelectedTicker(ticker);
     setDetailData(null);
-    setAnalyzing(true);
+    setClaudeAnalysis(null);
+    setLoadingData(true);
     try {
-      const res = await fetch(`${API}/api/trader/analyze`, {
+      const res = await fetch(`${API}/api/trader/data`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, period, interval, params })
       });
       const data = await res.json();
       if (data.success) setDetailData(data);
+    } catch (err) { console.error(err); }
+    finally { setLoadingData(false); }
+  };
+
+  const runClaudeAnalysis = async () => {
+    setAnalyzing(true);
+    try {
+      const res = await fetch(`${API}/api/trader/analyze`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: selectedTicker, period, interval, params })
+      });
+      const data = await res.json();
+      if (data.success) setClaudeAnalysis(data.claudeAnalysis);
     } catch (err) { console.error(err); }
     finally { setAnalyzing(false); }
   };
@@ -285,10 +301,10 @@ export default function Trader() {
           </div>
         </div>
 
-        {analyzing ? (
+        {loadingData ? (
           <div style={{ color: '#444', fontSize: 13, padding: 40, textAlign: 'center' }}>
             <div style={{ fontSize: 24, marginBottom: 12 }}>⏳</div>
-            Analyse en cours — téléchargement Yahoo Finance + analyse Claude...
+            Téléchargement des données Yahoo Finance...
           </div>
         ) : detailData ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -335,11 +351,35 @@ export default function Trader() {
               <div style={{ padding: '12px 16px', borderBottom: '0.5px solid #1e2130', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 16 }}>✦</span>
                 <span style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>Analyse Claude — {info.name}</span>
-                <span style={{ fontSize: 11, color: '#444', marginLeft: 'auto' }}>Basé sur ta méthode DCA</span>
+                {!claudeAnalysis && !analyzing && (
+                  <button onClick={runClaudeAnalysis} style={{
+                    marginLeft: 'auto', padding: '6px 16px', borderRadius: 6, border: 'none',
+                    background: '#378ADD', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 500
+                  }}>
+                    ✦ Lancer l'analyse Claude
+                  </button>
+                )}
+                {analyzing && (
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: '#444' }}>⏳ Analyse en cours...</span>
+                )}
               </div>
-              <div style={{ padding: '16px 20px', fontSize: 13, lineHeight: 1.8, color: '#ccc', whiteSpace: 'pre-wrap' }}>
-                {detailData.claudeAnalysis}
-              </div>
+              {!claudeAnalysis && !analyzing && (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: '#444', fontSize: 13 }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>✦</div>
+                  Clique sur "Lancer l'analyse Claude" pour obtenir les recommandations basées sur ta méthode DCA
+                </div>
+              )}
+              {analyzing && (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: '#444', fontSize: 13 }}>
+                  <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
+                  Claude analyse les vagues critiques et les patterns...
+                </div>
+              )}
+              {claudeAnalysis && (
+                <div style={{ padding: '16px 20px', fontSize: 13, lineHeight: 1.8, color: '#ccc', whiteSpace: 'pre-wrap' }}>
+                  {claudeAnalysis}
+                </div>
+              )}
             </div>
 
             {/* Statut session */}
