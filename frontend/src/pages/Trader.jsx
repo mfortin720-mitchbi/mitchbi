@@ -255,11 +255,11 @@ export default function Trader() {
               <div style={{ background: '#13151f', borderRadius: 10, border: '0.5px solid #1e2130', padding: 16 }}>
                 <PlotDiv
                   traces={[
-                    { type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.high), name:'High', line:{color:'#26a69a',width:2}, mode:'lines+markers' },
-                    { type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.low),  name:'Low',  line:{color:'#ef5350',width:2}, mode:'lines+markers' },
-                    { type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.close),name:'Close',line:{color:'white',width:1,dash:'dot'},mode:'lines' },
+                    { type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.high),  name:'High',  line:{color:'#26a69a',width:2}, mode:'lines+markers', marker:{size:5} },
+{ type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.low),   name:'Low',   line:{color:'#ef5350',width:2}, mode:'lines+markers', marker:{size:5} },
+{ type:'scatter', x: a.dailyStats.map(d=>d.date), y: a.dailyStats.map(d=>d.close), name:'Close', line:{color:'#E8A838',width:2,dash:'dot'}, mode:'lines+markers', marker:{symbol:'diamond',size:5,color:'#E8A838'} },
                   ]}
-                  layout={{ title:'Structure de Prix (High/Low/Close)', height:300, xaxis:{title:'Date'}, yaxis:{title:'Prix (USD)'} }}
+                  layout={{ title:'Structure de Prix (High/Low/Close)', height:300,legend: { bgcolor:'rgba(0,0,0,0)', font:{color:'#ccc'} }, xaxis:{title:'Date'}, yaxis:{title:'Prix (USD)'} }}
                   deps={[a.dailyStats.length]}
                 />
               </div>
