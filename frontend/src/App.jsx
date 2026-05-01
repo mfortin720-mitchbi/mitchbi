@@ -8,6 +8,7 @@ import Assistant from './pages/Assistant';
 import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
 import Invoices from './pages/Invoices';
+import Trader from './pages/Trader';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -58,6 +59,8 @@ export default function App() {
       case 'query': 
         return <QueryEngine />;
       case 'invoices': return <Invoices />;
+
+      case 'trader': return <Trader />;
   
       default:
         return (
