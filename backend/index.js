@@ -28,9 +28,9 @@ const queryRoute = require('./routes/query');
 app.use('/api/query', queryRoute);
 
 const authRoute = require('./routes/auth');
-const invoicesRoute = require('./routes/invoices');
 app.use('/api/auth', authRoute);
-app.use('/api/invoices', invoicesRoute);
+// const invoicesRoute = require('./routes/invoices');
+// app.use('/api/invoices', invoicesRoute);
 
 // TEMP BISECT: still disabled
 // const traderRoute = require('./routes/trader');
