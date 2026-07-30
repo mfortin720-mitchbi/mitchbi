@@ -35,6 +35,9 @@ app.use('/api/invoices', invoicesRoute);
 const traderRoute = require('./routes/trader');
 app.use('/api/trader', traderRoute);
 
+const tradingImperiumRoute = require('./routes/tradingImperium');
+app.use('/api/trading-imperium', tradingImperiumRoute);
+
 app.get('/', (req, res) => {
   res.json({ message: '🚀 MitchBI API is running!', version: '1.0.0', status: 'ok' });
 });

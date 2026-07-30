@@ -4,6 +4,7 @@ const MODULE_TITLES = {
   briefing:    { title: 'Morning Briefing',  subtitle: 'Ton résumé AI du jour' },
   analytics:   { title: 'Analytics Hub',     subtitle: 'Google Ads · GA4 · Shopify' },
   trader:      { title: 'Trader Desk',       subtitle: 'Portfolio & marchés en temps réel' },
+  'trading-imperium': { title: 'Trading Imperium', subtitle: '6 licences prop firm · MT5 en direct' },
   query:       { title: 'NL Query Engine',   subtitle: 'BigQuery · Snowflake' },
   scripts:     { title: 'Script Studio',     subtitle: 'Python · SQL · JavaScript' },
   invoices:    { title: 'Invoice Manager',   subtitle: 'Gestion des factures' },

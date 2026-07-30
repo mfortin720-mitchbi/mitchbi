@@ -9,6 +9,7 @@ import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
 import Invoices from './pages/Invoices';
 import Trader from './pages/Trader';
+import TradingImperium from './pages/TradingImperium';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -61,7 +62,8 @@ export default function App() {
       case 'invoices': return <Invoices />;
 
       case 'trader': return <Trader />;
-  
+      case 'trading-imperium': return <TradingImperium />;
+
       default:
         return (
           <div style={{

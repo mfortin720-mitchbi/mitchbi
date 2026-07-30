@@ -4,6 +4,7 @@ const MENU_ITEMS = [
   { id: 'briefing',   icon: '☀',  label: 'Morning Briefing' },
   { id: 'analytics',  icon: '◈',  label: 'Analytics Hub' },
   { id: 'trader',     icon: '▲',  label: 'Trader Desk' },
+  { id: 'trading-imperium', icon: '♛', label: 'Trading Imperium' },
   { id: 'query',      icon: '⬡',  label: 'NL Query Engine' },
   { id: 'scripts',    icon: '⟨⟩', label: 'Script Studio' },
   { id: 'invoices',   icon: '✉',  label: 'Invoice Manager' },
