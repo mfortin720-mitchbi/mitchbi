@@ -27,17 +27,17 @@ app.use('/api/connections', connectionsRoute);
 const queryRoute = require('./routes/query');
 app.use('/api/query', queryRoute);
 
-// TEMP BISECT: disabled to isolate pre-existing 500 crash
-// const authRoute = require('./routes/auth');
-// const invoicesRoute = require('./routes/invoices');
-// app.use('/api/auth', authRoute);
-// app.use('/api/invoices', invoicesRoute);
-//
+const authRoute = require('./routes/auth');
+const invoicesRoute = require('./routes/invoices');
+app.use('/api/auth', authRoute);
+app.use('/api/invoices', invoicesRoute);
+
+// TEMP BISECT: still disabled
 // const traderRoute = require('./routes/trader');
 // app.use('/api/trader', traderRoute);
-
-const tradingImperiumRoute = require('./routes/tradingImperium');
-app.use('/api/trading-imperium', tradingImperiumRoute);
+//
+// const tradingImperiumRoute = require('./routes/tradingImperium');
+// app.use('/api/trading-imperium', tradingImperiumRoute);
 
 app.get('/', (req, res) => {
   res.json({ message: '🚀 MitchBI API is running!', version: '1.0.0', status: 'ok' });
