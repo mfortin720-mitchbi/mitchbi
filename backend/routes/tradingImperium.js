@@ -44,7 +44,7 @@ router.get('/history', async (req, res) => {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = await run(
-      `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.daily_accounts_view\` ${where} ORDER BY account_id, day`,
+      `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.daily_balance_history_view\` ${where} ORDER BY account_id, day`,
       params
     );
     res.json({ success: true, history: rows });

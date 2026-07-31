@@ -140,6 +140,16 @@ export default function TradingImperium() {
     [events, filterAccount]
   );
 
+  // Nombre de trades fermés par jour, tous comptes filtrés confondus (barres, axe droit)
+  const dailyTradeCounts = useMemo(() => {
+    const map = {};
+    for (const row of history) {
+      const day = row.day.value || row.day;
+      map[day] = (map[day] || 0) + (row.trades_closed || 0);
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [history]);
+
   return (
     <div>
       {/* ── Bandeau balance — toujours visible ─────────────────────────── */}
@@ -249,18 +259,30 @@ export default function TradingImperium() {
           )}
           {!loadingHistory && history.length > 0 && (
             <PlotDiv
-              traces={Object.entries(historyByAccount).map(([accountId, rows]) => ({
-                type: 'scatter', mode: 'lines+markers',
-                x: rows.map(r => r.day.value || r.day),
-                y: rows.map(r => r.balance),
-                name: accountId,
-                line: { width: 2 }
-              }))}
+              traces={[
+                ...Object.entries(historyByAccount).map(([accountId, rows]) => ({
+                  type: 'scatter', mode: 'lines+markers',
+                  x: rows.map(r => r.day.value || r.day),
+                  y: rows.map(r => r.balance),
+                  name: accountId,
+                  line: { width: 2 },
+                  yaxis: 'y'
+                })),
+                {
+                  type: 'bar',
+                  x: dailyTradeCounts.map(([day]) => day),
+                  y: dailyTradeCounts.map(([, count]) => count),
+                  name: 'Trades/jour',
+                  marker: { color: 'rgba(150,150,150,0.35)' },
+                  yaxis: 'y2'
+                }
+              ]}
               layout={{
-                title: 'Évolution de la balance par compte',
-                height: 420,
+                title: 'Évolution de la balance par compte (barres = trades fermés/jour)',
+                height: 440,
                 xaxis: { title: 'Date' },
                 yaxis: { title: 'Balance (USD)' },
+                yaxis2: { title: 'Trades/jour', overlaying: 'y', side: 'right', showgrid: false, rangemode: 'tozero' },
                 shapes: resetEvents.map(e => ({
                   type: 'line', xref: 'x', yref: 'paper',
                   x0: e.event_time.value || e.event_time, x1: e.event_time.value || e.event_time,
@@ -272,7 +294,7 @@ export default function TradingImperium() {
                   text: 'Reset', showarrow: false, font: { color: GOLD, size: 10 }
                 }))
               }}
-              deps={[history.length, resetEvents.length]}
+              deps={[history.length, resetEvents.length, dailyTradeCounts.length]}
             />
           )}
         </Card>
