@@ -184,6 +184,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [trades, summaryGroupBy]);
 
+  // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
+  // pas par symbole. Sert à montrer que le P&L Net (trading pur) peut être compensé par un reset côté firme.
+  const resetsByLogin = useMemo(() => {
+    const map = {};
+    for (const e of events) {
+      if (e.event_type === 'reset') map[e.login] = (map[e.login] || 0) + (e.amount || 0);
+    }
+    return map;
+  }, [events]);
+
   return (
     <div>
       {/* ── Bandeau balance — toujours visible, 6 indicateurs sur une seule ligne ── */}
@@ -414,7 +424,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
-                      {[summaryGroupBy === 'login' ? 'Login' : 'Symbole', 'Total Trades', 'Gagnants', 'Perdants', 'Win Rate', 'Loss Rate', 'P&L Net'].map(h => (
+                      {[
+                        summaryGroupBy === 'login' ? 'Login' : 'Symbole', 'Total Trades', 'Gagnants', 'Perdants',
+                        'Win Rate', 'Loss Rate', 'P&L Net', ...(summaryGroupBy === 'login' ? ['Reset'] : [])
+                      ].map(h => (
                         <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
                       ))}
                     </tr>
@@ -424,6 +437,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       const winRate = row.total ? (row.wins / row.total) * 100 : 0;
                       const lossRate = row.total ? (row.losses / row.total) * 100 : 0;
                       const winDominant = row.wins >= row.losses;
+                      const reset = resetsByLogin[row.key];
                       return (
                         <tr key={row.key} style={{ borderBottom: '0.5px solid #1a1d27' }}>
                           <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>
@@ -435,6 +449,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                           <td style={{ padding: '8px 12px', color: winDominant ? GREEN : MUTED, fontWeight: winDominant ? 600 : 400 }}>{winRate.toFixed(2)}%</td>
                           <td style={{ padding: '8px 12px', color: !winDominant ? RED : MUTED, fontWeight: !winDominant ? 600 : 400 }}>{lossRate.toFixed(2)}%</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600, color: row.pnl >= 0 ? GREEN : RED }}>{fmtMoney(row.pnl)}</td>
+                          {summaryGroupBy === 'login' && (
+                            <td style={{ padding: '8px 12px', color: reset ? GOLD : MUTED, fontWeight: reset ? 600 : 400 }}>
+                              {reset ? `+${fmtMoney(reset)}` : '—'}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
