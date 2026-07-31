@@ -175,7 +175,9 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const tradesSummary = useMemo(() => {
     const map = {};
     for (const t of trades) {
-      const key = summaryGroupBy === 'login' ? t.login : t.symbol;
+      // Normalise le symbole (retire le suffixe broker, ex: "GBPUSD.raw" -> "GBPUSD")
+      // pour que tous les firmes tradant le même instrument s'agrègent ensemble.
+      const key = summaryGroupBy === 'login' ? t.login : t.symbol.split('.')[0];
       if (!map[key]) map[key] = { key, total: 0, wins: 0, losses: 0, pnl: 0, logins: new Set() };
       map[key].total += 1;
       if (t.net_pnl >= 0) map[key].wins += 1; else map[key].losses += 1;
