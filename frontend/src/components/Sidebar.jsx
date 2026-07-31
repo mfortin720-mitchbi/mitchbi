@@ -1,22 +1,14 @@
 import { useState } from 'react';
 
+// Autres modules (briefing/analytics/query/scripts/scraper/assistant/connections/users/settings)
+// temporairement retirés de la nav — seuls Trader Desk et Trading Imperium sont utilisés pour l'instant.
+// Le code des pages reste en place, prêt à être réactivé.
 const MENU_ITEMS = [
-  { id: 'briefing',   icon: '☀',  label: 'Morning Briefing' },
-  { id: 'analytics',  icon: '◈',  label: 'Analytics Hub' },
   { id: 'trader',     icon: '▲',  label: 'Trader Desk' },
   { id: 'trading-imperium', icon: '♛', label: 'Trading Imperium' },
-  { id: 'query',      icon: '⬡',  label: 'NL Query Engine' },
-  { id: 'scripts',    icon: '⟨⟩', label: 'Script Studio' },
-  { id: 'invoices',   icon: '✉',  label: 'Invoice Manager' },
-  { id: 'scraper',    icon: '◎',  label: 'Content Scraper' },
-  { id: 'assistant',  icon: '✦',  label: 'AI Assistant' },
 ];
 
-const BOTTOM_ITEMS = [
-  { id: 'connections', icon: '⚡', label: 'Connections' },
-  { id: 'users',       icon: '👥', label: 'Users & Access' },
-  { id: 'settings',    icon: '⚙',  label: 'Settings' },
-];
+const BOTTOM_ITEMS = [];
 
 export default function Sidebar({ active, onNavigate, collapsed, onToggle }) {
   return (

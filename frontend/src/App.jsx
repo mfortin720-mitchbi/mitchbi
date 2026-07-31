@@ -7,14 +7,13 @@ import Briefing from './pages/Briefing';
 import Assistant from './pages/Assistant';
 import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
-import Invoices from './pages/Invoices';
 import Trader from './pages/Trader';
 import TradingImperium from './pages/TradingImperium';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState('briefing');
+  const [active, setActive] = useState('trader');
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -57,9 +56,8 @@ export default function App() {
         return <Assistant session={session} />;
       case 'connections': 
         return <Connections session={session} />;
-      case 'query': 
+      case 'query':
         return <QueryEngine />;
-      case 'invoices': return <Invoices />;
 
       case 'trader': return <Trader />;
       case 'trading-imperium': return <TradingImperium />;

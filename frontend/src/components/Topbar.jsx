@@ -7,7 +7,6 @@ const MODULE_TITLES = {
   'trading-imperium': { title: 'Trading Imperium', subtitle: '6 licences prop firm · MT5 en direct' },
   query:       { title: 'NL Query Engine',   subtitle: 'BigQuery · Snowflake' },
   scripts:     { title: 'Script Studio',     subtitle: 'Python · SQL · JavaScript' },
-  invoices:    { title: 'Invoice Manager',   subtitle: 'Gestion des factures' },
   scraper:     { title: 'Content Scraper',   subtitle: 'Scraping & génération de contenu AI' },
   assistant:   { title: 'AI Assistant',      subtitle: 'Ton conseiller NexusIQ' },
   connections: { title: 'Connections',       subtitle: 'Gérer tes sources de données' },
