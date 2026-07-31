@@ -176,12 +176,15 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     const map = {};
     for (const t of trades) {
       const key = summaryGroupBy === 'login' ? t.login : t.symbol;
-      if (!map[key]) map[key] = { key, total: 0, wins: 0, losses: 0, pnl: 0 };
+      if (!map[key]) map[key] = { key, total: 0, wins: 0, losses: 0, pnl: 0, logins: new Set() };
       map[key].total += 1;
       if (t.net_pnl >= 0) map[key].wins += 1; else map[key].losses += 1;
       map[key].pnl += t.net_pnl;
+      map[key].logins.add(t.login);
     }
-    return Object.values(map).sort((a, b) => b.total - a.total);
+    return Object.values(map)
+      .map(row => ({ ...row, loginCount: row.logins.size }))
+      .sort((a, b) => b.total - a.total);
   }, [trades, summaryGroupBy]);
 
   // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
@@ -426,7 +429,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                     <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
                       {[
                         summaryGroupBy === 'login' ? 'Login' : 'Symbole', 'Total Trades', 'Gagnants', 'Perdants',
-                        'Win Rate', 'Loss Rate', 'P&L Net', ...(summaryGroupBy === 'login' ? ['Reset'] : [])
+                        'Win Rate', 'Loss Rate', 'P&L Net',
+                        ...(summaryGroupBy === 'login' ? ['Reset'] : ['Logins actifs'])
                       ].map(h => (
                         <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
                       ))}
@@ -449,10 +453,12 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                           <td style={{ padding: '8px 12px', color: winDominant ? GREEN : MUTED, fontWeight: winDominant ? 600 : 400 }}>{winRate.toFixed(2)}%</td>
                           <td style={{ padding: '8px 12px', color: !winDominant ? RED : MUTED, fontWeight: !winDominant ? 600 : 400 }}>{lossRate.toFixed(2)}%</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600, color: row.pnl >= 0 ? GREEN : RED }}>{fmtMoney(row.pnl)}</td>
-                          {summaryGroupBy === 'login' && (
+                          {summaryGroupBy === 'login' ? (
                             <td style={{ padding: '8px 12px', color: reset ? GOLD : MUTED, fontWeight: reset ? 600 : 400 }}>
                               {reset ? `+${fmtMoney(reset)}` : '—'}
                             </td>
+                          ) : (
+                            <td style={{ padding: '8px 12px', color: '#ccc' }}>{row.loginCount}</td>
                           )}
                         </tr>
                       );
