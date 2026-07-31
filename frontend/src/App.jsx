@@ -20,7 +20,7 @@ const TI_ID_BY_TAB = { overview: 'trading-imperium', trades: 'trading-imperium-t
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState('trader');
+  const [active, setActive] = useState('trading-imperium');
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {

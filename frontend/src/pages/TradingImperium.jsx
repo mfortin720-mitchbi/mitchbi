@@ -69,6 +69,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   const [trades, setTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
+  const [tradesViewMode, setTradesViewMode] = useState('list'); // 'list' | 'summary'
+  const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol'
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
@@ -168,6 +170,19 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     }
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
   }, [history]);
+
+  // Sommaire Trades — groupe les trades filtrés par login ou par symbole
+  const tradesSummary = useMemo(() => {
+    const map = {};
+    for (const t of trades) {
+      const key = summaryGroupBy === 'login' ? t.login : t.symbol;
+      if (!map[key]) map[key] = { key, total: 0, wins: 0, losses: 0, pnl: 0 };
+      map[key].total += 1;
+      if (t.net_pnl >= 0) map[key].wins += 1; else map[key].losses += 1;
+      map[key].pnl += t.net_pnl;
+    }
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [trades, summaryGroupBy]);
 
   return (
     <div>
@@ -327,40 +342,108 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
       {/* ── Trades ──────────────────────────────────────────────────────── */}
       {activeTab === 'trades' && (
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          {loadingTrades && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement des trades...</div>}
-          {!loadingTrades && trades.length === 0 && (
-            <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>Aucun trade complété pour ce filtre.</div>
-          )}
-          {!loadingTrades && trades.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
-                    {['Compte', 'Symbole', 'Sens', 'Ouvert', 'Fermé', 'Entrée', 'Sortie', 'P&L net', 'Raison'].map(h => (
-                      <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((t, i) => (
-                    <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{labelForLogin(t.login)}</td>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.symbol}</td>
-                      <td style={{ padding: '8px 12px', color: t.direction === 'BUY' ? GREEN : RED }}>{t.direction}</td>
-                      <td style={{ padding: '8px 12px', color: MUTED }}>{fmtDateTime(t.opened_at?.value || t.opened_at)}</td>
-                      <td style={{ padding: '8px 12px', color: MUTED }}>{fmtDateTime(t.closed_at?.value || t.closed_at)}</td>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.entry_price}</td>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.exit_price}</td>
-                      <td style={{ padding: '8px 12px', fontWeight: 600, color: t.net_pnl >= 0 ? GREEN : RED }}>{fmtMoney(t.net_pnl)}</td>
-                      <td style={{ padding: '8px 12px', color: MUTED }}>{t.close_reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <>
+          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Affichage</div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[{ id: 'list', label: 'Liste' }, { id: 'summary', label: 'Sommaire' }].map(v => (
+                  <button key={v.id} onClick={() => setTradesViewMode(v.id)} style={{
+                    padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                    border: '0.5px solid', borderColor: tradesViewMode === v.id ? BLUE : '#1e2130',
+                    background: tradesViewMode === v.id ? '#0d1f35' : 'transparent',
+                    color: tradesViewMode === v.id ? BLUE : MUTED
+                  }}>{v.label}</button>
+                ))}
+              </div>
             </div>
-          )}
-        </Card>
+            {tradesViewMode === 'summary' && (
+              <div>
+                <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Grouper par</div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[{ id: 'login', label: 'Login' }, { id: 'symbol', label: 'Symbole' }].map(g => (
+                    <button key={g.id} onClick={() => setSummaryGroupBy(g.id)} style={{
+                      padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                      border: '0.5px solid', borderColor: summaryGroupBy === g.id ? GOLD : '#1e2130',
+                      background: summaryGroupBy === g.id ? '#2b1f0a' : 'transparent',
+                      color: summaryGroupBy === g.id ? GOLD : MUTED
+                    }}>{g.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            {loadingTrades && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement des trades...</div>}
+            {!loadingTrades && trades.length === 0 && (
+              <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>Aucun trade complété pour ce filtre.</div>
+            )}
+
+            {!loadingTrades && trades.length > 0 && tradesViewMode === 'list' && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
+                      {['Compte', 'Symbole', 'Sens', 'Ouvert', 'Fermé', 'Entrée', 'Sortie', 'P&L net', 'Raison'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trades.map((t, i) => (
+                      <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                        <td style={{ padding: '8px 12px', color: '#ccc' }}>{labelForLogin(t.login)}</td>
+                        <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.symbol}</td>
+                        <td style={{ padding: '8px 12px', color: t.direction === 'BUY' ? GREEN : RED }}>{t.direction}</td>
+                        <td style={{ padding: '8px 12px', color: MUTED }}>{fmtDateTime(t.opened_at?.value || t.opened_at)}</td>
+                        <td style={{ padding: '8px 12px', color: MUTED }}>{fmtDateTime(t.closed_at?.value || t.closed_at)}</td>
+                        <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.entry_price}</td>
+                        <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.exit_price}</td>
+                        <td style={{ padding: '8px 12px', fontWeight: 600, color: t.net_pnl >= 0 ? GREEN : RED }}>{fmtMoney(t.net_pnl)}</td>
+                        <td style={{ padding: '8px 12px', color: MUTED }}>{t.close_reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {!loadingTrades && trades.length > 0 && tradesViewMode === 'summary' && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
+                      {[summaryGroupBy === 'login' ? 'Login' : 'Symbole', 'Total Trades', 'Gagnants', 'Perdants', 'Win Rate', 'Loss Rate', 'P&L Net'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tradesSummary.map(row => {
+                      const winRate = row.total ? (row.wins / row.total) * 100 : 0;
+                      const lossRate = row.total ? (row.losses / row.total) * 100 : 0;
+                      const winDominant = row.wins >= row.losses;
+                      return (
+                        <tr key={row.key} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                          <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>
+                            {summaryGroupBy === 'login' ? labelForLogin(row.key) : row.key}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{row.total}</td>
+                          <td style={{ padding: '8px 12px', color: GREEN }}>{row.wins}</td>
+                          <td style={{ padding: '8px 12px', color: RED }}>{row.losses}</td>
+                          <td style={{ padding: '8px 12px', color: winDominant ? GREEN : MUTED, fontWeight: winDominant ? 600 : 400 }}>{winRate.toFixed(2)}%</td>
+                          <td style={{ padding: '8px 12px', color: !winDominant ? RED : MUTED, fontWeight: !winDominant ? 600 : 400 }}>{lossRate.toFixed(2)}%</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 600, color: row.pnl >= 0 ? GREEN : RED }}>{fmtMoney(row.pnl)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
       )}
 
       {/* ── Événements ──────────────────────────────────────────────────── */}
