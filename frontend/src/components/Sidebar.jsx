@@ -1,14 +1,42 @@
-import { useState } from 'react';
-
 // Autres modules (briefing/analytics/query/scripts/scraper/assistant/connections/users/settings)
 // temporairement retirés de la nav — seuls Trader Desk et Trading Imperium sont utilisés pour l'instant.
 // Le code des pages reste en place, prêt à être réactivé.
 const MENU_ITEMS = [
   { id: 'trader',     icon: '▲',  label: 'Trader Desk' },
-  { id: 'trading-imperium', icon: '♛', label: 'Trading Imperium' },
+  {
+    id: 'trading-imperium', icon: '♛', label: 'Trading Imperium',
+    subItems: [
+      { id: 'trading-imperium', label: 'Vue d’ensemble' },
+      { id: 'trading-imperium-trades', label: 'Trades' },
+      { id: 'trading-imperium-events', label: 'Événements' },
+    ]
+  },
 ];
 
 const BOTTOM_ITEMS = [];
+
+const NavButton = ({ item, active, onNavigate, collapsed, indent }) => (
+  <button onClick={() => onNavigate(item.id)} style={{
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: collapsed ? '9px 16px' : `9px 20px 9px ${indent ? 36 : 20}px`,
+    background: active ? '#1a1d2e' : 'transparent',
+    border: 'none',
+    borderLeft: active ? '2px solid #378ADD' : '2px solid transparent',
+    cursor: 'pointer',
+    color: active ? '#fff' : (indent ? '#666' : '#555'),
+    fontSize: indent ? 12 : 13,
+    textAlign: 'left',
+    transition: 'all 0.15s',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden'
+  }}>
+    {item.icon && <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>}
+    {!collapsed && <span>{item.label}</span>}
+  </button>
+);
 
 export default function Sidebar({ active, onNavigate, collapsed, onToggle }) {
   return (
@@ -52,55 +80,27 @@ export default function Sidebar({ active, onNavigate, collapsed, onToggle }) {
             Modules
           </div>
         )}
-        {MENU_ITEMS.map(item => (
-          <button key={item.id} onClick={() => onNavigate(item.id)} style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: collapsed ? '10px 16px' : '9px 20px',
-            background: active === item.id ? '#1a1d2e' : 'transparent',
-            border: 'none',
-            borderLeft: active === item.id ? '2px solid #378ADD' : '2px solid transparent',
-            cursor: 'pointer',
-            color: active === item.id ? '#fff' : '#555',
-            fontSize: 13,
-            textAlign: 'left',
-            transition: 'all 0.15s',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden'
-          }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
-            {!collapsed && <span>{item.label}</span>}
-          </button>
-        ))}
+        {MENU_ITEMS.map(item => {
+          const isActiveGroup = item.subItems ? item.subItems.some(s => s.id === active) : active === item.id;
+          return (
+            <div key={item.id}>
+              <NavButton item={item} active={isActiveGroup && !item.subItems} onNavigate={onNavigate} collapsed={collapsed} />
+              {item.subItems && isActiveGroup && !collapsed && item.subItems.map(sub => (
+                <NavButton key={sub.id} item={sub} active={active === sub.id} onNavigate={onNavigate} collapsed={collapsed} indent />
+              ))}
+            </div>
+          );
+        })}
       </nav>
 
       {/* Bottom nav */}
-      <div style={{ borderTop: '0.5px solid #1e2130', padding: '8px 0' }}>
-        {BOTTOM_ITEMS.map(item => (
-          <button key={item.id} onClick={() => onNavigate(item.id)} style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: collapsed ? '9px 16px' : '9px 20px',
-            background: active === item.id ? '#1a1d2e' : 'transparent',
-            border: 'none',
-            borderLeft: active === item.id ? '2px solid #378ADD' : '2px solid transparent',
-            cursor: 'pointer',
-            color: active === item.id ? '#fff' : '#444',
-            fontSize: 13,
-            textAlign: 'left',
-            transition: 'all 0.15s',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden'
-          }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
-            {!collapsed && <span>{item.label}</span>}
-          </button>
-        ))}
-      </div>
+      {BOTTOM_ITEMS.length > 0 && (
+        <div style={{ borderTop: '0.5px solid #1e2130', padding: '8px 0' }}>
+          {BOTTOM_ITEMS.map(item => (
+            <NavButton key={item.id} item={item} active={active === item.id} onNavigate={onNavigate} collapsed={collapsed} />
+          ))}
+        </div>
+      )}
 
       {/* Version */}
       {!collapsed && (

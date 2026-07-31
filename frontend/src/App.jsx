@@ -10,6 +10,13 @@ import QueryEngine from './pages/QueryEngine';
 import Trader from './pages/Trader';
 import TradingImperium from './pages/TradingImperium';
 
+const TI_TAB_BY_ID = {
+  'trading-imperium': 'overview',
+  'trading-imperium-trades': 'trades',
+  'trading-imperium-events': 'events',
+};
+const TI_ID_BY_TAB = { overview: 'trading-imperium', trades: 'trading-imperium-trades', events: 'trading-imperium-events' };
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,15 +59,24 @@ export default function App() {
     switch (active) {
       case 'briefing':
         return <Briefing session={session} />;
-      case 'assistant': 
+      case 'assistant':
         return <Assistant session={session} />;
-      case 'connections': 
+      case 'connections':
         return <Connections session={session} />;
       case 'query':
         return <QueryEngine />;
 
       case 'trader': return <Trader />;
-      case 'trading-imperium': return <TradingImperium />;
+
+      case 'trading-imperium':
+      case 'trading-imperium-trades':
+      case 'trading-imperium-events':
+        return (
+          <TradingImperium
+            activeTab={TI_TAB_BY_ID[active]}
+            onTabChange={tab => setActive(TI_ID_BY_TAB[tab])}
+          />
+        );
 
       default:
         return (
