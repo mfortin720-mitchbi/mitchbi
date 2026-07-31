@@ -221,7 +221,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <div><div style={{ fontSize: 10, color: MUTED }}>P&amp;L</div><div style={{ fontSize: 12, color: acc.pnl >= 0 ? GREEN : RED }}>{fmtMoney(acc.pnl)} ({fmtPct(acc.pnl_pct)})</div></div>
                   <div><div style={{ fontSize: 10, color: MUTED }}>DRAWDOWN</div><div style={{ fontSize: 12, color: acc.drawdown_pct > 0 ? RED : '#ccc' }}>{fmtPct(acc.drawdown_pct)}</div></div>
                 </div>
-                <div style={{ fontSize: 10, color: MUTED }}>{acc.open_positions_count} position(s) · maj {fmtDateTime(acc.last_updated)}</div>
+                <div style={{ fontSize: 10, color: MUTED }}>{acc.open_positions_count} position(s) · maj {fmtDateTime(acc.last_updated?.value || acc.last_updated)}</div>
               </Card>
             );
           })}
