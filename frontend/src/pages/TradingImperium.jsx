@@ -60,7 +60,8 @@ export default function TradingImperium() {
   const [activeTab, setActiveTab] = useState('overview');
 
   const [filterFirm, setFilterFirm] = useState('all');
-  const [filterAccount, setFilterAccount] = useState('all');
+  const [filterLogin, setFilterLogin] = useState('all');
+  const [filterSymbol, setFilterSymbol] = useState('all');
 
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -91,7 +92,8 @@ export default function TradingImperium() {
     try {
       const params = new URLSearchParams();
       if (filterFirm !== 'all') params.set('firm', filterFirm);
-      if (filterAccount !== 'all') params.set('accountId', filterAccount);
+      if (filterLogin !== 'all') params.set('login', filterLogin);
+      if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
       const res = await fetch(`${API}/api/trading-imperium/history?${params}`);
       const d = await res.json();
       if (d.success) setHistory(d.history);
@@ -103,7 +105,8 @@ export default function TradingImperium() {
     setLoadingTrades(true);
     try {
       const params = new URLSearchParams();
-      if (filterAccount !== 'all') params.set('accountId', filterAccount);
+      if (filterLogin !== 'all') params.set('login', filterLogin);
+      if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
       const res = await fetch(`${API}/api/trading-imperium/trades?${params}`);
       const d = await res.json();
       if (d.success) setTrades(d.trades);
@@ -112,10 +115,19 @@ export default function TradingImperium() {
   };
 
   useEffect(() => { loadAccounts(); loadEvents(); }, []);
-  useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterAccount]);
-  useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterAccount]);
+  useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
+  useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
+  const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
+
+  // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
+  const accountLabel = useMemo(() => {
+    const map = {};
+    for (const a of accounts) map[a.login] = `${a.license_firm} ${a.login}`;
+    return map;
+  }, [accounts]);
+  const labelForLogin = login => accountLabel[login] || login;
 
   const totals = useMemo(() => {
     const balance = accounts.reduce((s, a) => s + (a.balance || 0), 0);
@@ -125,19 +137,25 @@ export default function TradingImperium() {
     return { balance, equity, deposit, pnl, pnlPct: deposit ? (pnl / deposit) * 100 : 0 };
   }, [accounts]);
 
+  // Clique sur une case compte → filtre le graphique du bas sur ce login et affiche la Vue d'ensemble
+  const selectAccount = login => {
+    setFilterLogin(prev => (prev === login ? 'all' : login));
+    setActiveTab('overview');
+  };
+
   // ── Graphique évolution (Overview) ────────────────────────────────────────
-  const historyByAccount = useMemo(() => {
+  const historyByLogin = useMemo(() => {
     const map = {};
     for (const row of history) {
-      if (!map[row.account_id]) map[row.account_id] = [];
-      map[row.account_id].push(row);
+      if (!map[row.login]) map[row.login] = [];
+      map[row.login].push(row);
     }
     return map;
   }, [history]);
 
   const resetEvents = useMemo(
-    () => events.filter(e => e.event_type === 'reset' && (filterAccount === 'all' || e.account_id === filterAccount)),
-    [events, filterAccount]
+    () => events.filter(e => e.event_type === 'reset' && (filterLogin === 'all' || e.login === filterLogin)),
+    [events, filterLogin]
   );
 
   // Nombre de trades fermés par jour, tous comptes filtrés confondus (barres, axe droit)
@@ -175,8 +193,17 @@ export default function TradingImperium() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px,1fr))', gap: 12, marginBottom: 20 }}>
           {accounts.map(acc => {
             const status = AccountStatus(acc);
+            const selected = filterLogin === acc.login;
             return (
-              <Card key={acc.account_id} style={{ borderColor: `${firmColor(acc.license_firm)}33` }}>
+              <Card
+                key={acc.login}
+                onClick={() => selectAccount(acc.login)}
+                style={{
+                  cursor: 'pointer',
+                  borderColor: selected ? BLUE : `${firmColor(acc.license_firm)}33`,
+                  boxShadow: selected ? `0 0 0 1px ${BLUE}` : 'none'
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: firmColor(acc.license_firm) }} />
                   <div>
@@ -235,15 +262,28 @@ export default function TradingImperium() {
             </div>
           )}
           <div>
-            <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Compte</div>
+            <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Symbole</div>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {['all', ...accounts.map(a => a.account_id)].map(id => (
-                <button key={id} onClick={() => setFilterAccount(id)} style={{
+              {['all', ...symbols].map(s => (
+                <button key={s} onClick={() => setFilterSymbol(s)} style={{
                   padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
-                  border: '0.5px solid', borderColor: filterAccount === id ? BLUE : '#1e2130',
-                  background: filterAccount === id ? '#0d1f35' : 'transparent',
-                  color: filterAccount === id ? BLUE : '#555'
-                }}>{id === 'all' ? 'Tous' : id}</button>
+                  border: '0.5px solid', borderColor: filterSymbol === s ? GOLD : '#1e2130',
+                  background: filterSymbol === s ? '#2b1f0a' : 'transparent',
+                  color: filterSymbol === s ? GOLD : '#555'
+                }}>{s === 'all' ? 'Tous' : s}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>Compte (ou clique une case ci-dessus)</div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {['all', ...accounts.map(a => a.login)].map(login => (
+                <button key={login} onClick={() => setFilterLogin(login)} style={{
+                  padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                  border: '0.5px solid', borderColor: filterLogin === login ? BLUE : '#1e2130',
+                  background: filterLogin === login ? '#0d1f35' : 'transparent',
+                  color: filterLogin === login ? BLUE : '#555'
+                }}>{login === 'all' ? 'Tous' : labelForLogin(login)}</button>
               ))}
             </div>
           </div>
@@ -255,16 +295,16 @@ export default function TradingImperium() {
         <Card>
           {loadingHistory && <div style={{ color: '#444', fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement de l'historique...</div>}
           {!loadingHistory && history.length === 0 && (
-            <div style={{ color: '#444', fontSize: 13, padding: 40, textAlign: 'center' }}>Pas encore assez de données — l'historique s'accumule au fil des jours.</div>
+            <div style={{ color: '#444', fontSize: 13, padding: 40, textAlign: 'center' }}>Aucune donnée pour ce filtre.</div>
           )}
           {!loadingHistory && history.length > 0 && (
             <PlotDiv
               traces={[
-                ...Object.entries(historyByAccount).map(([accountId, rows]) => ({
+                ...Object.entries(historyByLogin).map(([login, rows]) => ({
                   type: 'scatter', mode: 'lines+markers',
                   x: rows.map(r => r.day.value || r.day),
                   y: rows.map(r => r.balance),
-                  name: accountId,
+                  name: labelForLogin(Number(login)),
                   line: { width: 2 },
                   yaxis: 'y'
                 })),
@@ -320,7 +360,7 @@ export default function TradingImperium() {
                 <tbody>
                   {trades.map((t, i) => (
                     <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.account_id}</td>
+                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{labelForLogin(t.login)}</td>
                       <td style={{ padding: '8px 12px', color: '#ccc' }}>{t.symbol}</td>
                       <td style={{ padding: '8px 12px', color: t.direction === 'BUY' ? GREEN : RED }}>{t.direction}</td>
                       <td style={{ padding: '8px 12px', color: '#555' }}>{fmtDateTime(t.opened_at?.value || t.opened_at)}</td>
@@ -357,7 +397,7 @@ export default function TradingImperium() {
                 <tbody>
                   {events.map((e, i) => (
                     <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
-                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{e.account_id}</td>
+                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{labelForLogin(e.login)}</td>
                       <td style={{ padding: '8px 12px', color: '#555' }}>{fmtDateTime(e.event_time?.value || e.event_time)}</td>
                       <td style={{ padding: '8px 12px', color: e.event_type === 'reset' ? GOLD : '#ccc' }}>{e.event_type}</td>
                       <td style={{ padding: '8px 12px', color: e.amount >= 0 ? GREEN : RED }}>{fmtMoney(e.amount)}</td>

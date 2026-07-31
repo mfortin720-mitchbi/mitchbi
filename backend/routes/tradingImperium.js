@@ -31,20 +31,21 @@ router.get('/accounts', async (req, res) => {
   }
 });
 
-// GET /api/trading-imperium/history?accountId=&firm=&days= — daily evolution for charts
+// GET /api/trading-imperium/history?login=&firm=&symbol=&days= — daily balance evolution for charts
 router.get('/history', async (req, res) => {
   try {
-    const { accountId, firm, days } = req.query;
+    const { login, firm, symbol, days } = req.query;
     const conditions = [];
     const params = {};
 
-    if (accountId) { conditions.push('account_id = @accountId'); params.accountId = accountId; }
+    if (login) { conditions.push('login = @login'); params.login = parseInt(login, 10); }
     if (firm) { conditions.push('license_firm = @firm'); params.firm = firm; }
+    if (symbol) { conditions.push('algo_symbol = @symbol'); params.symbol = symbol; }
     if (days) { conditions.push('day >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)'); params.days = parseInt(days, 10); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = await run(
-      `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.daily_balance_history_view\` ${where} ORDER BY account_id, day`,
+      `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.daily_balance_history_view\` ${where} ORDER BY login, day`,
       params
     );
     res.json({ success: true, history: rows });
@@ -54,15 +55,17 @@ router.get('/history', async (req, res) => {
   }
 });
 
-// GET /api/trading-imperium/trades?accountId=&symbol=&limit= — completed round-trip trades
+// GET /api/trading-imperium/trades?login=&symbol=&limit= — completed round-trip trades
 router.get('/trades', async (req, res) => {
   try {
-    const { accountId, symbol, limit } = req.query;
+    const { login, symbol, limit } = req.query;
     const conditions = ['is_closed = TRUE'];
     const params = {};
 
-    if (accountId) { conditions.push('account_id = @accountId'); params.accountId = accountId; }
-    if (symbol) { conditions.push('symbol = @symbol'); params.symbol = symbol; }
+    if (login) { conditions.push('login = @login'); params.login = parseInt(login, 10); }
+    // STARTS_WITH not exact match: broker-suffixed symbols like "GBPUSD.raw" (Alpha Capital)
+    // must still match the clean "GBPUSD" filter value derived from the algo filename.
+    if (symbol) { conditions.push('STARTS_WITH(symbol, @symbol)'); params.symbol = symbol; }
 
     const rowLimit = Math.min(parseInt(limit, 10) || 200, 1000);
     const rows = await run(
@@ -76,14 +79,14 @@ router.get('/trades', async (req, res) => {
   }
 });
 
-// GET /api/trading-imperium/events?accountId= — resets, topups, breaches
+// GET /api/trading-imperium/events?login= — resets, topups, breaches
 router.get('/events', async (req, res) => {
   try {
-    const { accountId } = req.query;
+    const { login } = req.query;
     const conditions = [];
     const params = {};
 
-    if (accountId) { conditions.push('account_id = @accountId'); params.accountId = accountId; }
+    if (login) { conditions.push('login = @login'); params.login = parseInt(login, 10); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = await run(
