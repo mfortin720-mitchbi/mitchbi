@@ -1,6 +1,6 @@
-// Autres modules (briefing/analytics/query/scripts/scraper/assistant/connections/users/settings)
-// temporairement retirés de la nav — seuls Trader Desk et Trading Imperium sont utilisés pour l'instant.
-// Le code des pages reste en place, prêt à être réactivé.
+// Autres modules (briefing/analytics/query/scripts/scraper/connections/users/settings)
+// temporairement retirés de la nav — non utilisés actuellement. Le code des pages reste
+// en place, prêt à être réactivé.
 const MENU_ITEMS = [
   { id: 'trader',     icon: '▲',  label: 'Trader Desk' },
   {
@@ -11,6 +11,7 @@ const MENU_ITEMS = [
       { id: 'trading-imperium-events', label: 'Événements' },
     ]
   },
+  { id: 'assistant',  icon: '✦',  label: 'Assistant' },
 ];
 
 const BOTTOM_ITEMS = [

@@ -23,7 +23,7 @@ export default function Assistant({ session }) {
     setLoading(true);
 
     try {
-      const res = await apiFetch('/api/briefing', {
+      const res = await apiFetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
