@@ -91,9 +91,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [tradesViewMode, setTradesViewMode] = useState('list'); // 'list' | 'summary' | 'chart'
   const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol'
 
-  // ── Trades › Graphique (prix Yahoo Finance + entrées/sorties par login) ────
+  // ── Trades › Graphique (prix réel du broker via price_bars + entrées/sorties par login) ────
   const [chartSymbol, setChartSymbol] = useState(null);
-  const [chartPeriod, setChartPeriod] = useState('10d');
+  const [chartLogin, setChartLogin] = useState(null); // le prix vient du flux broker d'UN compte précis
+  const [chartPeriod, setChartPeriod] = useState('5d');
   const [chartInterval, setChartInterval] = useState('5m');
   const [chartCandles, setChartCandles] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
@@ -145,12 +146,12 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   };
 
   const loadChart = async () => {
-    if (!chartSymbol) return;
+    if (!chartLogin) return;
     setLoadingChart(true);
-    setChartCandles([]); // évite d'afficher les bougies d'un symbole précédent si ce fetch échoue
+    setChartCandles([]); // évite d'afficher les bougies d'un compte précédent si ce fetch échoue
     setChartError(null);
     try {
-      const params = new URLSearchParams({ symbol: chartSymbol, period: chartPeriod, interval: chartInterval });
+      const params = new URLSearchParams({ login: chartLogin, period: chartPeriod, interval: chartInterval });
       const res = await apiFetch(`/api/trading-imperium/chart?${params}`);
       const d = await res.json();
       if (d.success) setChartCandles(d.candles); else setChartError(d.error || 'Erreur inconnue');
@@ -163,8 +164,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
   useEffect(() => {
-    if (activeTab === 'trades' && tradesViewMode === 'chart' && chartSymbol) loadChart();
-  }, [activeTab, tradesViewMode, chartSymbol, chartPeriod, chartInterval]);
+    if (activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin) loadChart();
+  }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
@@ -173,6 +174,22 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => {
     if (!chartSymbol && symbols.length) setChartSymbol(filterSymbol !== 'all' ? filterSymbol : symbols[0]);
   }, [symbols, filterSymbol, chartSymbol]);
+
+  // Comptes qui tradent le symbole du graphique -- price_bars vient du broker de CE compte
+  // précis (pas d'une source générique), donc plusieurs comptes sur le même symbole ont chacun
+  // leur propre flux de prix, comme regarder le chart directement dans MT5.
+  const chartSymbolAccounts = useMemo(
+    () => accounts.filter(a => a.algo_symbol === chartSymbol),
+    [accounts, chartSymbol]
+  );
+
+  // Compte dont on affiche le flux de prix par défaut : celui déjà filtré en haut de page s'il
+  // trade ce symbole, sinon le premier compte trouvé qui le trade.
+  useEffect(() => {
+    if (!chartSymbolAccounts.length) { setChartLogin(null); return; }
+    const keepFilterLogin = filterLogin !== 'all' && chartSymbolAccounts.some(a => a.login === filterLogin);
+    setChartLogin(keepFilterLogin ? filterLogin : chartSymbolAccounts[0].login);
+  }, [chartSymbolAccounts, filterLogin]);
 
   // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
   const accountLabel = useMemo(() => {
@@ -524,6 +541,21 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                     ))}
                   </div>
                 </div>
+                {chartSymbolAccounts.length > 1 && (
+                  <div>
+                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Compte (flux de prix)</div>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {chartSymbolAccounts.map(a => (
+                        <button key={a.login} onClick={() => setChartLogin(a.login)} style={{
+                          padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                          border: '0.5px solid', borderColor: chartLogin === a.login ? BLUE : '#1e2130',
+                          background: chartLogin === a.login ? '#0d1f35' : 'transparent',
+                          color: chartLogin === a.login ? BLUE : MUTED
+                        }}>{labelForLogin(a.login)}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Période</div>
                   <div style={{ display: 'flex', gap: 4 }}>
@@ -560,13 +592,13 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
           {tradesViewMode === 'chart' && (
             <Card>
-              {loadingChart && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement Yahoo Finance...</div>}
+              {loadingChart && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement du flux MT5...</div>}
               {!loadingChart && chartError && (
                 <div style={{ color: RED, fontSize: 13, padding: 40, textAlign: 'center' }}>❌ {chartError}</div>
               )}
               {!loadingChart && !chartError && chartCandles.length === 0 && (
                 <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>
-                  {chartSymbol ? 'Aucune donnée de prix pour ce symbole/période.' : 'Sélectionne un symbole.'}
+                  {chartLogin ? 'Aucune donnée de prix pour ce compte/période.' : 'Sélectionne un symbole.'}
                 </div>
               )}
               {!loadingChart && chartCandles.length > 0 && (
@@ -583,7 +615,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <PlotDiv
                     traces={chartTraces}
                     layout={{
-                      title: `${chartSymbol} — entrées/sorties par compte (${chartInterval})`,
+                      title: `${chartSymbol} — entrées/sorties par compte (${chartInterval}) · flux: ${labelForLogin(chartLogin)}`,
                       height: 480,
                       paper_bgcolor: '#13151f',
                       plot_bgcolor: '#13151f',

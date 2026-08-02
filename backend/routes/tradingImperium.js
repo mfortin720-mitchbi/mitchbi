@@ -1,6 +1,5 @@
 const express = require('express');
 const { BigQuery } = require('@google-cloud/bigquery');
-const { fetchYahoo, mt5SymbolToYahoo } = require('../lib/yahooFinance');
 const router = express.Router();
 
 // Fixed, trusted infra config (not secret) — the live MT5 monitoring pipeline
@@ -109,18 +108,38 @@ router.get('/events', async (req, res) => {
   }
 });
 
-// GET /api/trading-imperium/chart?symbol=&period=&interval= — Yahoo Finance OHLC
-// candles for a symbol, so the frontend can overlay our trades on real price action
-// (same technique as Trader Desk's /api/trader/data, but keyed on the MT5 symbol
-// instead of a futures ticker).
+// GET /api/trading-imperium/chart?login=&period=&interval= — OHLC candles reconstructed from
+// price_bars (1-minute bars pulled straight from that account's own MT5 broker feed, NOT a
+// third-party source), bucketed to the requested interval server-side. Keyed on login rather
+// than symbol because price_bars is per-account -- each broker's feed is its own price series,
+// same as looking at a chart directly in that account's own MT5 terminal.
 router.get('/chart', async (req, res) => {
   try {
-    const { symbol, period = '10d', interval = '5m' } = req.query;
-    if (!symbol) return res.status(400).json({ success: false, error: 'symbol requis' });
+    const { login, period = '10d', interval = '5m' } = req.query;
+    if (!login) return res.status(400).json({ success: false, error: 'login requis' });
 
-    const ticker = mt5SymbolToYahoo(symbol);
-    const candles = await fetchYahoo(ticker, period, interval);
-    res.json({ success: true, ticker, candles });
+    const days = parseInt(period, 10) || 10;
+    const bucketSeconds = interval === '1m' ? 60 : interval === '15m' ? 900 : 300;
+
+    const rows = await run(`
+      SELECT
+        TIMESTAMP_SECONDS(DIV(UNIX_SECONDS(time), @bucketSeconds) * @bucketSeconds) AS bucket_time,
+        ARRAY_AGG(open ORDER BY time ASC LIMIT 1)[OFFSET(0)] AS open,
+        MAX(high) AS high,
+        MIN(low) AS low,
+        ARRAY_AGG(close ORDER BY time DESC LIMIT 1)[OFFSET(0)] AS close,
+        SUM(tick_volume) AS volume
+      FROM \`${PROJECT_ID}.${DATASET_ID}.price_bars\`
+      WHERE login = @login AND time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+      GROUP BY bucket_time
+      ORDER BY bucket_time
+    `, { login: parseInt(login, 10), days, bucketSeconds });
+
+    const candles = rows.map(r => ({
+      ts: new Date(r.bucket_time.value || r.bucket_time).getTime(),
+      open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume
+    }));
+    res.json({ success: true, candles });
   } catch (err) {
     console.error('[trading-imperium] chart error:', err.message);
     res.status(500).json({ success: false, error: err.message });
