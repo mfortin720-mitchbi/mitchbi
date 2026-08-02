@@ -55,6 +55,9 @@ const AccountStatus = (acc) => {
   return { label: '🟢 Actif', color: GREEN };
 };
 
+const CHALLENGE_STATUS_COLORS = { ongoing: BLUE, completed: GREEN, breached: RED };
+const CHALLENGE_STATUS_SUFFIX = { completed: ' ✓', breached: ' ✗' };
+
 export default function TradingImperium({ activeTab = 'overview', onTabChange }) {
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -245,6 +248,17 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   </div>
                   <div style={{ marginLeft: 'auto', fontSize: 11, color: status.color }}>{status.label}</div>
                 </div>
+                {acc.challenge_phase && (
+                  <div style={{
+                    display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                    marginBottom: 7,
+                    color: CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED,
+                    background: `${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}22`,
+                    border: `0.5px solid ${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}55`
+                  }}>
+                    {acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                   <div><div style={{ fontSize: 10, color: MUTED }}>BALANCE</div><div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.balance)}</div></div>
                   <div><div style={{ fontSize: 10, color: MUTED }}>EQUITY</div><div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.equity)}</div></div>

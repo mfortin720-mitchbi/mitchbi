@@ -20,10 +20,18 @@ const getBigQuery = () => {
 
 const run = (query, params = {}) => getBigQuery().query({ query, params, location: LOCATION }).then(([rows]) => rows);
 
-// GET /api/trading-imperium/accounts — latest state of all 6 accounts (top balance bar)
+// GET /api/trading-imperium/accounts — latest state of all 6 accounts (top balance bar),
+// joined with their current challenge phase/status for the phase badge.
 router.get('/accounts', async (req, res) => {
   try {
-    const rows = await run(`SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` ORDER BY license_firm, login`);
+    const rows = await run(`
+      SELECT a.*,
+        c.challenge_phase, c.challenge_target, c.challenge_status,
+        c.phase_start_date, c.phase_end_date, c.initial_login
+      FROM \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a
+      LEFT JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_challenge_view\` c USING (account_id)
+      ORDER BY a.license_firm, a.login
+    `);
     res.json({ success: true, accounts: rows });
   } catch (err) {
     console.error('[trading-imperium] accounts error:', err.message);
