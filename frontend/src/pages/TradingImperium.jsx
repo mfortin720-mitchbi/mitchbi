@@ -71,8 +71,15 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   const [trades, setTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
-  const [tradesViewMode, setTradesViewMode] = useState('list'); // 'list' | 'summary'
+  const [tradesViewMode, setTradesViewMode] = useState('list'); // 'list' | 'summary' | 'chart'
   const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol'
+
+  // ── Trades › Graphique (prix Yahoo Finance + entrées/sorties par login) ────
+  const [chartSymbol, setChartSymbol] = useState(null);
+  const [chartPeriod, setChartPeriod] = useState('10d');
+  const [chartInterval, setChartInterval] = useState('5m');
+  const [chartCandles, setChartCandles] = useState([]);
+  const [loadingChart, setLoadingChart] = useState(false);
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
@@ -119,12 +126,33 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { setLoadingTrades(false); }
   };
 
+  const loadChart = async () => {
+    if (!chartSymbol) return;
+    setLoadingChart(true);
+    try {
+      const params = new URLSearchParams({ symbol: chartSymbol, period: chartPeriod, interval: chartInterval });
+      const res = await apiFetch(`/api/trading-imperium/chart?${params}`);
+      const d = await res.json();
+      if (d.success) setChartCandles(d.candles);
+    } catch (e) { console.error(e); }
+    finally { setLoadingChart(false); }
+  };
+
   useEffect(() => { loadAccounts(); loadEvents(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
+  useEffect(() => {
+    if (activeTab === 'trades' && tradesViewMode === 'chart' && chartSymbol) loadChart();
+  }, [activeTab, tradesViewMode, chartSymbol, chartPeriod, chartInterval]);
+
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
+
+  // Symbole du graphique par défaut : celui déjà filtré, sinon le premier symbole connu
+  useEffect(() => {
+    if (!chartSymbol && symbols.length) setChartSymbol(filterSymbol !== 'all' ? filterSymbol : symbols[0]);
+  }, [symbols, filterSymbol, chartSymbol]);
 
   // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
   const accountLabel = useMemo(() => {
@@ -190,6 +218,52 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       .map(row => ({ ...row, loginCount: row.logins.size }))
       .sort((a, b) => b.total - a.total);
   }, [trades, summaryGroupBy]);
+
+  // Graphique Trades — bougies Yahoo Finance + entrées/sorties de chaque login qui a tradé ce symbole,
+  // une trace par login (segments entrée->sortie séparés par des null) pour pouvoir les toggler dans la légende.
+  const chartTraces = useMemo(() => {
+    if (!chartCandles.length) return [];
+    const candleTrace = {
+      type: 'candlestick',
+      x: chartCandles.map(c => new Date(c.ts).toISOString()),
+      open: chartCandles.map(c => c.open),
+      high: chartCandles.map(c => c.high),
+      low: chartCandles.map(c => c.low),
+      close: chartCandles.map(c => c.close),
+      increasing: { line: { color: GREEN } },
+      decreasing: { line: { color: RED } },
+      name: chartSymbol
+    };
+
+    const chartTrades = trades.filter(t => t.symbol.split('.')[0] === chartSymbol);
+    const byLogin = {};
+    for (const t of chartTrades) (byLogin[t.login] ||= []).push(t);
+
+    const tradeTraces = Object.entries(byLogin).map(([login, ts]) => {
+      const x = [], y = [], symbol = [], color = [], text = [];
+      for (const t of ts) {
+        const win = t.net_pnl >= 0;
+        x.push(t.opened_at?.value || t.opened_at, t.closed_at?.value || t.closed_at, null);
+        y.push(t.entry_price, t.exit_price, null);
+        symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
+        color.push(win ? GREEN : RED, win ? GREEN : RED, 'rgba(0,0,0,0)');
+        text.push(
+          `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
+          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)}`,
+          ''
+        );
+      }
+      return {
+        type: 'scatter', mode: 'lines+markers',
+        x, y, name: labelForLogin(Number(login)),
+        line: { width: 1, color: 'rgba(200,200,200,0.4)' },
+        marker: { size: 9, symbol, color, line: { width: 1, color: '#fff' } },
+        text, hoverinfo: 'text'
+      };
+    });
+
+    return [candleTrace, ...tradeTraces];
+  }, [chartCandles, trades, chartSymbol]);
 
   // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
   // pas par symbole. Sert à montrer que le P&L Net (trading pur) peut être compensé par un reset côté firme.
@@ -375,7 +449,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             <div>
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Affichage</div>
               <div style={{ display: 'flex', gap: 4 }}>
-                {[{ id: 'list', label: 'Liste' }, { id: 'summary', label: 'Sommaire' }].map(v => (
+                {[{ id: 'list', label: 'Liste' }, { id: 'summary', label: 'Sommaire' }, { id: 'chart', label: 'Graphique' }].map(v => (
                   <button key={v.id} onClick={() => setTradesViewMode(v.id)} style={{
                     padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
                     border: '0.5px solid', borderColor: tradesViewMode === v.id ? BLUE : '#1e2130',
@@ -400,8 +474,80 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 </div>
               </div>
             )}
+            {tradesViewMode === 'chart' && (
+              <>
+                <div>
+                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Symbole</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {symbols.map(s => (
+                      <button key={s} onClick={() => setChartSymbol(s)} style={{
+                        padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                        border: '0.5px solid', borderColor: chartSymbol === s ? GOLD : '#1e2130',
+                        background: chartSymbol === s ? '#2b1f0a' : 'transparent',
+                        color: chartSymbol === s ? GOLD : MUTED
+                      }}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Période</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {['5d', '10d', '30d'].map(p => (
+                      <button key={p} onClick={() => setChartPeriod(p)} style={{
+                        padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                        border: '0.5px solid', borderColor: chartPeriod === p ? BLUE : '#1e2130',
+                        background: chartPeriod === p ? '#0d1f35' : 'transparent',
+                        color: chartPeriod === p ? BLUE : MUTED
+                      }}>{p}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Intervalle</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {['1m', '5m', '15m'].map(iv => (
+                      <button key={iv} onClick={() => setChartInterval(iv)} style={{
+                        padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                        border: '0.5px solid', borderColor: chartInterval === iv ? GREEN : '#1e2130',
+                        background: chartInterval === iv ? '#0d2b1a' : 'transparent',
+                        color: chartInterval === iv ? GREEN : MUTED
+                      }}>{iv}</button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={loadChart} style={{
+                  padding: '6px 16px', borderRadius: 5, border: 'none', background: BLUE,
+                  color: '#fff', cursor: 'pointer', fontSize: 12, alignSelf: 'flex-end'
+                }}>↺ Refresh</button>
+              </>
+            )}
           </Card>
 
+          {tradesViewMode === 'chart' && (
+            <Card>
+              {loadingChart && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement Yahoo Finance...</div>}
+              {!loadingChart && chartCandles.length === 0 && (
+                <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>
+                  {chartSymbol ? 'Aucune donnée de prix pour ce symbole/période.' : 'Sélectionne un symbole.'}
+                </div>
+              )}
+              {!loadingChart && chartCandles.length > 0 && (
+                <PlotDiv
+                  traces={chartTraces}
+                  layout={{
+                    title: `${chartSymbol} — entrées/sorties par compte (${chartInterval})`,
+                    height: 480,
+                    xaxis: { type: 'date', rangeslider: { visible: true } },
+                    yaxis: { title: 'Prix' },
+                    legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#ccc' } }
+                  }}
+                  deps={[chartCandles.length, chartTraces.length]}
+                />
+              )}
+            </Card>
+          )}
+
+          {tradesViewMode !== 'chart' && (
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             {loadingTrades && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement des trades...</div>}
             {!loadingTrades && trades.length === 0 && (
@@ -483,6 +629,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
               </div>
             )}
           </Card>
+          )}
         </>
       )}
 

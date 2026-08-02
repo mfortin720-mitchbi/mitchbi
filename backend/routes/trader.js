@@ -1,5 +1,6 @@
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
+const { fetchYahoo } = require('../lib/yahooFinance');
 const router = express.Router();
 
 const getAnthropic = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -55,30 +56,6 @@ const nowMontreal = () => {
   const now = new Date();
   const { h, m } = toMontreal(now.getTime());
   return { h, m, isExcluded: isExcluded(h, m) };
-};
-
-// Fetch Yahoo Finance
-const fetchYahoo = async (ticker, period, interval) => {
-  const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${period}&interval=${interval}&includePrePost=true`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'application/json',
-      'Accept-Language': 'en-US,en;q=0.9',
-    }
-  });
-  if (!res.ok) throw new Error(`Yahoo Finance ${res.status}: ${res.statusText}`);
-  const json = await res.json();
-  const result = json.chart?.result?.[0];
-  if (!result) throw new Error('Aucune donnée retournée par Yahoo Finance');
-  const ts = result.timestamp;
-  const q  = result.indicators.quote[0];
-  return ts.map((t, i) => ({
-    ts: t * 1000,
-    open: q.open[i], high: q.high[i],
-    low: q.low[i],   close: q.close[i],
-    volume: q.volume[i] || 0
-  })).filter(d => d.close != null && d.open != null);
 };
 
 // RSI — calcul sur TOUTES les données

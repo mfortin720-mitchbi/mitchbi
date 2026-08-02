@@ -1,5 +1,6 @@
 const express = require('express');
 const { BigQuery } = require('@google-cloud/bigquery');
+const { fetchYahoo, mt5SymbolToYahoo } = require('../lib/yahooFinance');
 const router = express.Router();
 
 // Fixed, trusted infra config (not secret) — the live MT5 monitoring pipeline
@@ -104,6 +105,24 @@ router.get('/events', async (req, res) => {
     res.json({ success: true, events: rows });
   } catch (err) {
     console.error('[trading-imperium] events error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/trading-imperium/chart?symbol=&period=&interval= — Yahoo Finance OHLC
+// candles for a symbol, so the frontend can overlay our trades on real price action
+// (same technique as Trader Desk's /api/trader/data, but keyed on the MT5 symbol
+// instead of a futures ticker).
+router.get('/chart', async (req, res) => {
+  try {
+    const { symbol, period = '10d', interval = '5m' } = req.query;
+    if (!symbol) return res.status(400).json({ success: false, error: 'symbol requis' });
+
+    const ticker = mt5SymbolToYahoo(symbol);
+    const candles = await fetchYahoo(ticker, period, interval);
+    res.json({ success: true, ticker, candles });
+  } catch (err) {
+    console.error('[trading-imperium] chart error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
