@@ -9,6 +9,7 @@ import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
 import Trader from './pages/Trader';
 import TradingImperium from './pages/TradingImperium';
+import Readme from './pages/Readme';
 
 const TI_TAB_BY_ID = {
   'trading-imperium': 'overview',
@@ -67,6 +68,8 @@ export default function App() {
         return <QueryEngine />;
 
       case 'trader': return <Trader />;
+
+      case 'readme': return <Readme />;
 
       case 'trading-imperium':
       case 'trading-imperium-trades':

@@ -12,6 +12,7 @@ const MODULE_TITLES = {
   scraper:     { title: 'Content Scraper',   subtitle: 'Scraping & génération de contenu AI' },
   assistant:   { title: 'AI Assistant',      subtitle: 'Ton conseiller NexusIQ' },
   connections: { title: 'Connections',       subtitle: 'Gérer tes sources de données' },
+  readme:      { title: 'README',            subtitle: 'Telegram, config.py, traçabilité des licenses' },
   users:       { title: 'Users & Access',    subtitle: 'RBAC · Permissions · Audit' },
   settings:    { title: 'Settings',          subtitle: 'Configuration de MitchBI' },
 };

@@ -13,7 +13,9 @@ const MENU_ITEMS = [
   },
 ];
 
-const BOTTOM_ITEMS = [];
+const BOTTOM_ITEMS = [
+  { id: 'readme', icon: '📖', label: 'README' },
+];
 
 const NavButton = ({ item, active, onNavigate, collapsed, indent }) => (
   <button onClick={() => onNavigate(item.id)} style={{
