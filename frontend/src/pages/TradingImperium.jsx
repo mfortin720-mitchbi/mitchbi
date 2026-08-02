@@ -221,8 +221,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   // Graphique Trades — bougies Yahoo Finance + entrées/sorties de chaque login qui a tradé ce symbole,
   // une trace par login (segments entrée->sortie séparés par des null) pour pouvoir les toggler dans la légende.
-  const chartTraces = useMemo(() => {
-    if (!chartCandles.length) return [];
+  // Les trades dont l'ouverture/fermeture tombe hors de la période de bougies chargée sont exclus (sinon
+  // ils flottent sans bougie derrière, ex: un trade du 5 juillet affiché sur une fenêtre de 10 jours) --
+  // excludedCount permet d'avertir l'utilisateur plutôt que de les faire disparaître silencieusement.
+  const { traces: chartTraces, excludedCount: chartExcludedCount } = useMemo(() => {
+    if (!chartCandles.length) return { traces: [], excludedCount: 0 };
     const candleTrace = {
       type: 'candlestick',
       x: chartCandles.map(c => new Date(c.ts).toISOString()),
@@ -235,7 +238,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       name: chartSymbol
     };
 
-    const chartTrades = trades.filter(t => t.symbol.split('.')[0] === chartSymbol);
+    const minTs = chartCandles[0].ts;
+    const maxTs = chartCandles[chartCandles.length - 1].ts;
+    const allSymbolTrades = trades.filter(t => t.symbol.split('.')[0] === chartSymbol);
+    const chartTrades = allSymbolTrades.filter(t => {
+      const openedTs = new Date(t.opened_at?.value || t.opened_at).getTime();
+      return openedTs >= minTs && openedTs <= maxTs;
+    });
+    const excludedCount = allSymbolTrades.length - chartTrades.length;
     const byLogin = {};
     for (const t of chartTrades) (byLogin[t.login] ||= []).push(t);
 
@@ -262,7 +272,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       };
     });
 
-    return [candleTrace, ...tradeTraces];
+    return { traces: [candleTrace, ...tradeTraces], excludedCount };
   }, [chartCandles, trades, chartSymbol]);
 
   // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
@@ -532,17 +542,35 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 </div>
               )}
               {!loadingChart && chartCandles.length > 0 && (
-                <PlotDiv
-                  traces={chartTraces}
-                  layout={{
-                    title: `${chartSymbol} — entrées/sorties par compte (${chartInterval})`,
-                    height: 480,
-                    xaxis: { type: 'date', rangeslider: { visible: true } },
-                    yaxis: { title: 'Prix' },
-                    legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#ccc' } }
-                  }}
-                  deps={[chartCandles.length, chartTraces.length]}
-                />
+                <>
+                  {chartExcludedCount > 0 && (
+                    <div style={{
+                      fontSize: 12, color: GOLD, background: '#2b1f0a', border: '0.5px solid #4a3a15',
+                      borderRadius: 6, padding: '8px 12px', marginBottom: 10
+                    }}>
+                      ⚠️ {chartExcludedCount} trade(s) sur {chartSymbol} sont hors de la période affichée
+                      ({chartPeriod}) et ne sont pas montrés — élargis la période pour les voir.
+                    </div>
+                  )}
+                  <PlotDiv
+                    traces={chartTraces}
+                    layout={{
+                      title: `${chartSymbol} — entrées/sorties par compte (${chartInterval})`,
+                      height: 480,
+                      paper_bgcolor: '#13151f',
+                      plot_bgcolor: '#13151f',
+                      font: { color: '#ccc' },
+                      xaxis: {
+                        type: 'date',
+                        rangeslider: { visible: true, bgcolor: '#0f1117', bordercolor: '#1e2130' },
+                        gridcolor: '#1e2130'
+                      },
+                      yaxis: { title: 'Prix', gridcolor: '#1e2130' },
+                      legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#ccc' } }
+                    }}
+                    deps={[chartCandles.length, chartTraces.length, chartExcludedCount]}
+                  />
+                </>
               )}
             </Card>
           )}
