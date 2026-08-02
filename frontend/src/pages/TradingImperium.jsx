@@ -16,7 +16,20 @@ const LOGIN_MARKER_COLORS = ['#378ADD', '#9B59B6', '#00BCD4', '#FF6EC7', '#7CB34
 
 const fmtMoney = v => v == null ? '—' : `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtPct = v => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
-const fmtDateTime = v => v ? new Date(v).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+// BigQuery TIMESTAMP fields come back from the backend as a string with NO timezone marker
+// (e.g. "2026-08-02 14:30:00.000000" -- a UTC instant, but written without the "Z"). `new Date(...)`
+// on a marker-less date-time string is interpreted as LOCAL browser time per the JS spec, which
+// silently shifted every trade time by the viewer's UTC offset (4h in Montreal during EDT) --
+// exactly what showed up as trade markers sitting ~4h right of the matching price move on the
+// Trades chart. Force UTC by normalizing to "T"-separated + trailing "Z" before parsing.
+const toUtcIso = v => {
+  if (!v) return null;
+  const s = String(v);
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  return /[Zz]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`;
+};
+const fmtDateTime = v => v ? new Date(toUtcIso(v)).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
 // Charge Plotly une seule fois (même pattern que Trader.jsx)
 const usePlotly = () => {
@@ -249,7 +262,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     const maxTs = chartCandles[chartCandles.length - 1].ts;
     const allSymbolTrades = trades.filter(t => t.symbol.split('.')[0] === chartSymbol);
     const chartTrades = allSymbolTrades.filter(t => {
-      const openedTs = new Date(t.opened_at?.value || t.opened_at).getTime();
+      const openedTs = new Date(toUtcIso(t.opened_at?.value || t.opened_at)).getTime();
       return openedTs >= minTs && openedTs <= maxTs;
     });
     const excludedCount = allSymbolTrades.length - chartTrades.length;
@@ -264,7 +277,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       const x = [], y = [], symbol = [], text = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
-        x.push(t.opened_at?.value || t.opened_at, t.closed_at?.value || t.closed_at);
+        x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at));
         y.push(t.entry_price, t.exit_price);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle');
         text.push(
@@ -445,12 +458,12 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 yaxis2: { title: 'Trades/jour', overlaying: 'y', side: 'right', showgrid: false, rangemode: 'tozero' },
                 shapes: resetEvents.map(e => ({
                   type: 'line', xref: 'x', yref: 'paper',
-                  x0: e.event_time.value || e.event_time, x1: e.event_time.value || e.event_time,
+                  x0: toUtcIso(e.event_time.value || e.event_time), x1: toUtcIso(e.event_time.value || e.event_time),
                   y0: 0, y1: 1,
                   line: { color: GOLD, dash: 'dash', width: 1 }
                 })),
                 annotations: resetEvents.map(e => ({
-                  x: e.event_time.value || e.event_time, y: 1, yref: 'paper',
+                  x: toUtcIso(e.event_time.value || e.event_time), y: 1, yref: 'paper',
                   text: 'Reset', showarrow: false, font: { color: GOLD, size: 10 }
                 }))
               }}
