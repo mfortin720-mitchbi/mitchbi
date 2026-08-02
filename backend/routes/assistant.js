@@ -117,7 +117,12 @@ Voici tout ce qu'il faut savoir sur le pipeline et les processus (extrait du REA
 ${README_CONTEXT}
 
 Tu es direct, précis et professionnel. Tu réponds en français sauf si on te parle en anglais. Cite les
-chiffres exacts retournés par query_bigquery, n'invente jamais de valeur.`;
+chiffres exacts retournés par query_bigquery, n'invente jamais de valeur.
+
+Ta réponse est rendue en Markdown (GFM) dans l'interface. Pour toute donnée tabulaire (résultats de
+query_bigquery avec plusieurs lignes/colonnes, comparaisons, sommaires), utilise un vrai tableau Markdown
+(| Colonne | ... |) plutôt qu'une liste ou du texte aligné manuellement -- il s'affichera comme un vrai
+tableau, pas comme du texte brut.`;
 }
 
 router.post('/', async (req, res) => {

@@ -1,5 +1,41 @@
 import { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { apiFetch } from '../services/api';
+
+const BLUE = '#378ADD';
+const MUTED = '#8b93a5';
+
+// Styled overrides so react-markdown output (tables, code, lists...) matches the app's dark theme.
+const MARKDOWN_COMPONENTS = {
+  table: ({ children }) => (
+    <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead style={{ borderBottom: '1px solid #2a2d3a' }}>{children}</thead>,
+  th: ({ children }) => (
+    <th style={{ textAlign: 'left', padding: '6px 12px', color: MUTED, fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{children}</th>
+  ),
+  td: ({ children }) => <td style={{ padding: '6px 12px', borderTop: '0.5px solid #1e2130', color: '#ddd' }}>{children}</td>,
+  tr: ({ children }) => <tr>{children}</tr>,
+  h1: ({ children }) => <div style={{ color: BLUE, fontWeight: 700, fontSize: 16, margin: '12px 0 6px' }}>{children}</div>,
+  h2: ({ children }) => <div style={{ color: BLUE, fontWeight: 600, fontSize: 15, margin: '10px 0 4px' }}>{children}</div>,
+  h3: ({ children }) => <div style={{ color: BLUE, fontWeight: 600, fontSize: 14, margin: '10px 0 4px' }}>{children}</div>,
+  p: ({ children }) => <p style={{ margin: '4px 0' }}>{children}</p>,
+  ul: ({ children }) => <ul style={{ margin: '4px 0', paddingLeft: 20 }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ margin: '4px 0', paddingLeft: 20 }}>{children}</ol>,
+  li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
+  code: ({ inline, children }) => inline
+    ? <code style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 4, padding: '1px 5px', fontSize: 12.5, color: BLUE }}>{children}</code>
+    : <code>{children}</code>,
+  pre: ({ children }) => (
+    <pre style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 8, padding: 12, overflowX: 'auto', fontSize: 12.5, margin: '8px 0' }}>{children}</pre>
+  ),
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: BLUE }}>{children}</a>,
+  hr: () => <hr style={{ border: 'none', borderTop: '0.5px solid #1e2130', margin: '10px 0' }} />,
+  strong: ({ children }) => <strong style={{ color: '#fff' }}>{children}</strong>,
+};
 
 export default function Assistant({ session }) {
   const [msgs, setMsgs] = useState([{
@@ -82,23 +118,11 @@ export default function Assistant({ session }) {
               background: m.role === 'user' ? '#1a3a5c' : '#13151f',
               border: '0.5px solid',
               borderColor: m.role === 'user' ? '#2a5a8c' : '#1e2130',
-              color: '#ccc', fontSize: 14, lineHeight: 1.6,
-              whiteSpace: 'pre-wrap'
+              color: '#ccc', fontSize: 14, lineHeight: 1.6
             }}>
-              {m.content.split('\n').map((line, j) => {
-  if (line.startsWith('## ') || line.startsWith('### ') || line.startsWith('#### '))
-    return <div key={j} style={{ color: '#378ADD', fontWeight: 600, margin: '10px 0 4px' }}>{line.replace(/^#{2,4} /, '')}</div>;
-  if (line.startsWith('- ') || line.startsWith('• '))
-    return <div key={j} style={{ paddingLeft: 12, borderLeft: '2px solid #1e2130', margin: '3px 0' }}>{line.replace(/^[-•] /, '').replace(/\*\*/g, '')}</div>;
-  if (line.match(/^\d+\. /))
-    return <div key={j} style={{ paddingLeft: 12, borderLeft: '2px solid #378ADD', margin: '3px 0' }}>{line.replace(/\*\*/g, '')}</div>;
-  if (line.startsWith('|'))
-    return <div key={j} style={{ fontFamily: 'monospace', fontSize: 12, color: '#888', margin: '2px 0' }}>{line}</div>;
-  if (line === '---')
-    return <hr key={j} style={{ border: 'none', borderTop: '0.5px solid #1e2130', margin: '10px 0' }} />;
-  if (line.trim() === '') return <br key={j} />;
-  return <div key={j} style={{ margin: '3px 0' }}>{line.replace(/\*\*/g, '')}</div>;
-})}
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {m.content}
+              </ReactMarkdown>
             </div>
           </div>
         ))}
