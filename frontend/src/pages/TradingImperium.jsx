@@ -270,24 +270,28 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     for (const t of chartTrades) (byLogin[t.login] ||= []).push(t);
 
     // Une couleur distincte par compte (pas par gagnant/perdant -- ça se confondait avec le
-    // vert/rouge des chandeliers) ; pas de ligne de connexion entrée->sortie non plus, ça
-    // créait un effet "spaghetti" par-dessus le prix. Gagnant/perdant reste dans le hover.
+    // vert/rouge des chandeliers). Une ligne pointillée relie chaque entrée à sa sortie, dans la
+    // même couleur que le compte -- séparée par un null entre chaque trade pour ne PAS chaîner
+    // les trades entre eux (c'est ça qui créait l'effet spaghetti avant). Gagnant/perdant reste
+    // dans le hover plutôt que dans la couleur.
     const tradeTraces = Object.entries(byLogin).map(([login, ts], i) => {
       const loginColor = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length];
       const x = [], y = [], symbol = [], text = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
-        x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at));
-        y.push(t.entry_price, t.exit_price);
-        symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle');
+        x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at), null);
+        y.push(t.entry_price, t.exit_price, null);
+        symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
         text.push(
           `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
-          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`
+          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`,
+          ''
         );
       }
       return {
-        type: 'scatter', mode: 'markers',
+        type: 'scatter', mode: 'lines+markers',
         x, y, name: labelForLogin(Number(login)),
+        line: { width: 1.5, color: loginColor, dash: 'dot' },
         marker: { size: 11, symbol, color: loginColor, line: { width: 1.5, color: '#fff' } },
         text, hoverinfo: 'text'
       };
