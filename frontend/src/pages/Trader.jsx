@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-
-const API = import.meta.env.VITE_API_URL;
+import { apiFetch } from '../services/api';
 
 const ALL_INSTRUMENTS = {
   'MGC=F':  { name: 'Micro Gold',       emoji: '🥇', category: 'Metals',  topstep: true },
@@ -99,7 +98,7 @@ export default function Trader() {
     if (!selectedTickers.length) return;
     setScanning(true); setScanResults(null); setRecommendation('');
     try {
-      const res = await fetch(`${API}/api/trader/scan`, {
+      const res = await apiFetch('/api/trader/scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tickers: selectedTickers, period, interval, params, scanPrompt })
       });
@@ -112,7 +111,7 @@ export default function Trader() {
   const openDetail = async (ticker) => {
     setSelectedTicker(ticker); setDetailData(null); setClaudeAnalysis(null); setLoadingData(true);
     try {
-      const res = await fetch(`${API}/api/trader/data`, {
+      const res = await apiFetch('/api/trader/data', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, period, interval, params })
       });
@@ -125,7 +124,7 @@ export default function Trader() {
   const runClaude = async () => {
     setAnalyzing(true);
     try {
-      const res = await fetch(`${API}/api/trader/analyze`, {
+      const res = await apiFetch('/api/trader/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: selectedTicker, period, interval, params, analyzePrompt })
       });

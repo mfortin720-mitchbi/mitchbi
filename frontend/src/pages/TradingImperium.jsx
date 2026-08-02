@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-
-const API = import.meta.env.VITE_API_URL;
+import { apiFetch } from '../services/api';
 
 const GREEN = '#1D9E75';
 const RED = '#D85A30';
@@ -78,7 +77,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const loadAccounts = async () => {
     setLoadingAccounts(true);
     try {
-      const res = await fetch(`${API}/api/trading-imperium/accounts`);
+      const res = await apiFetch('/api/trading-imperium/accounts');
       const d = await res.json();
       if (d.success) setAccounts(d.accounts);
     } catch (e) { console.error(e); }
@@ -87,7 +86,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   const loadEvents = async () => {
     try {
-      const res = await fetch(`${API}/api/trading-imperium/events`);
+      const res = await apiFetch('/api/trading-imperium/events');
       const d = await res.json();
       if (d.success) setEvents(d.events);
     } catch (e) { console.error(e); }
@@ -100,7 +99,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       if (filterFirm !== 'all') params.set('firm', filterFirm);
       if (filterLogin !== 'all') params.set('login', filterLogin);
       if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
-      const res = await fetch(`${API}/api/trading-imperium/history?${params}`);
+      const res = await apiFetch(`/api/trading-imperium/history?${params}`);
       const d = await res.json();
       if (d.success) setHistory(d.history);
     } catch (e) { console.error(e); }
@@ -113,7 +112,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       const params = new URLSearchParams();
       if (filterLogin !== 'all') params.set('login', filterLogin);
       if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
-      const res = await fetch(`${API}/api/trading-imperium/trades?${params}`);
+      const res = await apiFetch(`/api/trading-imperium/trades?${params}`);
       const d = await res.json();
       if (d.success) setTrades(d.trades);
     } catch (e) { console.error(e); }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../services/api';
 
 const KPI = ({ label, value, delta, color }) => (
   <div style={{
@@ -35,7 +36,7 @@ export default function Briefing({ session }) {
   const fetchBriefing = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/briefing`, {
+      const res = await apiFetch('/api/briefing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: session?.user?.email })

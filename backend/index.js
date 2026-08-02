@@ -14,6 +14,18 @@ app.use(cors());
 
 app.use(express.json());
 
+app.get('/', (req, res) => {
+  res.json({ message: '🚀 MitchBI API is running!', version: '1.0.0', status: 'ok' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Every /api/* route requires a valid Supabase session from here on.
+const { requireAuth } = require('./middleware/auth');
+app.use('/api', requireAuth);
+
 // Routes
 const briefingRoute = require('./routes/briefing');
 app.use('/api/briefing', briefingRoute);
@@ -32,14 +44,6 @@ app.use('/api/trader', traderRoute);
 
 const tradingImperiumRoute = require('./routes/tradingImperium');
 app.use('/api/trading-imperium', tradingImperiumRoute);
-
-app.get('/', (req, res) => {
-  res.json({ message: '🚀 MitchBI API is running!', version: '1.0.0', status: 'ok' });
-});
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 
 app.listen(PORT, () => {
   console.log(`✅ MitchBI backend running on port ${PORT}`);

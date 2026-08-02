@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { apiFetch } from '../services/api';
 
 export default function Assistant({ session }) {
   const [msgs, setMsgs] = useState([{
@@ -22,7 +23,7 @@ export default function Assistant({ session }) {
     setLoading(true);
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/briefing`, {
+      const res = await apiFetch('/api/briefing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../services/supabase';
+import { apiFetch } from '../services/api';
 
 // Regroupe les tables events_YYYYMMDD en un seul groupe
 const groupTables = (tableList) => {
@@ -44,7 +45,7 @@ export default function QueryEngine() {
   const getCreds = () => { try { return JSON.parse(selectedConn.credentials_encrypted); } catch { return null; } };
 
   const apiPost = async (endpoint, body) => {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
+    const res = await apiFetch(endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     return res.json();

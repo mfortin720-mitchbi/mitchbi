@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
+import { apiFetch } from '../services/api';
 
 const CONNECTION_TYPES = [
   { id: 'bigquery', label: 'BigQuery', icon: '◈', color: '#4285F4' },
@@ -91,7 +92,7 @@ export default function Connections({ session }) {
         return;
       }
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/connections/bigquery/test`, {
+      const res = await apiFetch('/api/connections/bigquery/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credentials: creds, projectId: form.projectId })
