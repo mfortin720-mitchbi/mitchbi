@@ -80,6 +80,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [chartInterval, setChartInterval] = useState('5m');
   const [chartCandles, setChartCandles] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
+  const [chartError, setChartError] = useState(null);
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
@@ -129,12 +130,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const loadChart = async () => {
     if (!chartSymbol) return;
     setLoadingChart(true);
+    setChartCandles([]); // évite d'afficher les bougies d'un symbole précédent si ce fetch échoue
+    setChartError(null);
     try {
       const params = new URLSearchParams({ symbol: chartSymbol, period: chartPeriod, interval: chartInterval });
       const res = await apiFetch(`/api/trading-imperium/chart?${params}`);
       const d = await res.json();
-      if (d.success) setChartCandles(d.candles);
-    } catch (e) { console.error(e); }
+      if (d.success) setChartCandles(d.candles); else setChartError(d.error || 'Erreur inconnue');
+    } catch (e) { console.error(e); setChartError(e.message); }
     finally { setLoadingChart(false); }
   };
 
@@ -536,7 +539,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
           {tradesViewMode === 'chart' && (
             <Card>
               {loadingChart && <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>⏳ Chargement Yahoo Finance...</div>}
-              {!loadingChart && chartCandles.length === 0 && (
+              {!loadingChart && chartError && (
+                <div style={{ color: RED, fontSize: 13, padding: 40, textAlign: 'center' }}>❌ {chartError}</div>
+              )}
+              {!loadingChart && !chartError && chartCandles.length === 0 && (
                 <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>
                   {chartSymbol ? 'Aucune donnée de prix pour ce symbole/période.' : 'Sélectionne un symbole.'}
                 </div>

@@ -25,11 +25,15 @@ async function fetchYahoo(ticker, period, interval) {
   })).filter(d => d.close != null && d.open != null);
 }
 
-// MT5 symbols (e.g. "USDCHF", "GBPUSD.raw", "XAUUSD") -> Yahoo Finance FX/metal
-// cross ticker ("USDCHF=X", "GBPUSD=X", "XAUUSD=X"). Strips the broker suffix first.
+// Metals don't have a Yahoo "=X" spot cross (XAUUSD=X / XAGUSD=X both 404) --
+// use the COMEX futures ticker instead, which tracks spot closely enough for charting.
+const METAL_OVERRIDES = { XAUUSD: 'GC=F', XAGUSD: 'SI=F' };
+
+// MT5 symbols (e.g. "USDCHF", "GBPUSD.raw", "XAUUSD") -> Yahoo Finance ticker
+// ("USDCHF=X", "GBPUSD=X", "GC=F"). Strips the broker suffix first.
 function mt5SymbolToYahoo(symbol) {
   const clean = symbol.split('.')[0].toUpperCase();
-  return `${clean}=X`;
+  return METAL_OVERRIDES[clean] || `${clean}=X`;
 }
 
 module.exports = { fetchYahoo, mt5SymbolToYahoo };
