@@ -289,16 +289,19 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     // Une couleur distincte par compte (pas par gagnant/perdant -- ça se confondait avec le
     // vert/rouge des chandeliers). Une ligne pointillée relie chaque entrée à sa sortie, dans la
     // même couleur que le compte -- séparée par un null entre chaque trade pour ne PAS chaîner
-    // les trades entre eux (c'est ça qui créait l'effet spaghetti avant). Gagnant/perdant reste
-    // dans le hover plutôt que dans la couleur.
+    // les trades entre eux (c'est ça qui créait l'effet spaghetti avant). Trois informations
+    // distinctes par marqueur : couleur de fond = compte, forme = sens (▲ achat / ▼ vente à
+    // l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte).
     const tradeTraces = Object.entries(byLogin).map(([login, ts], i) => {
       const loginColor = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length];
-      const x = [], y = [], symbol = [], text = [];
+      const x = [], y = [], symbol = [], borderColor = [], text = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
+        const resultColor = win ? GREEN : RED;
         x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at), null);
         y.push(t.entry_price, t.exit_price, null);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
+        borderColor.push(resultColor, resultColor, 'rgba(0,0,0,0)');
         text.push(
           `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
           `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`,
@@ -309,7 +312,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
         type: 'scatter', mode: 'lines+markers',
         x, y, name: labelForLogin(Number(login)),
         line: { width: 1.5, color: loginColor, dash: 'dot' },
-        marker: { size: 11, symbol, color: loginColor, line: { width: 1.5, color: '#fff' } },
+        marker: { size: 12, symbol, color: loginColor, line: { width: 2.5, color: borderColor } },
         text, hoverinfo: 'text'
       };
     });
@@ -630,6 +633,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                     }}
                     deps={[chartCandles.length, chartTraces.length, chartExcludedCount]}
                   />
+                  <div style={{ fontSize: 11, color: MUTED, marginTop: 8, textAlign: 'center' }}>
+                    Couleur de fond = compte · ▲ = achat, ▼ = vente (entrée), ● = sortie ·{' '}
+                    contour <span style={{ color: GREEN }}>vert</span> = gain,{' '}
+                    <span style={{ color: RED }}>rouge</span> = perte
+                  </div>
                 </>
               )}
             </Card>
