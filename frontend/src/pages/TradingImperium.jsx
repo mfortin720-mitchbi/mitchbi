@@ -10,6 +10,10 @@ const MUTED = '#8b93a5'; // labels/sous-titres — plus lisible que le gris fonc
 const FIRM_COLORS = { 'Hola Prime': '#378ADD', 'FundedNext': '#E8A838', 'Alpha Capital': '#1D9E75' };
 const firmColor = f => FIRM_COLORS[f] || '#9B59B6';
 
+// Couleurs des marqueurs de trades sur le graphique — volontairement distinctes du
+// vert/rouge des chandeliers (déjà pris) pour rester lisibles par-dessus le prix.
+const LOGIN_MARKER_COLORS = ['#378ADD', '#9B59B6', '#00BCD4', '#FF6EC7', '#7CB342', '#F4A300'];
+
 const fmtMoney = v => v == null ? '—' : `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtPct = v => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 const fmtDateTime = v => v ? new Date(v).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -252,25 +256,26 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     const byLogin = {};
     for (const t of chartTrades) (byLogin[t.login] ||= []).push(t);
 
-    const tradeTraces = Object.entries(byLogin).map(([login, ts]) => {
-      const x = [], y = [], symbol = [], color = [], text = [];
+    // Une couleur distincte par compte (pas par gagnant/perdant -- ça se confondait avec le
+    // vert/rouge des chandeliers) ; pas de ligne de connexion entrée->sortie non plus, ça
+    // créait un effet "spaghetti" par-dessus le prix. Gagnant/perdant reste dans le hover.
+    const tradeTraces = Object.entries(byLogin).map(([login, ts], i) => {
+      const loginColor = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length];
+      const x = [], y = [], symbol = [], text = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
-        x.push(t.opened_at?.value || t.opened_at, t.closed_at?.value || t.closed_at, null);
-        y.push(t.entry_price, t.exit_price, null);
-        symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
-        color.push(win ? GREEN : RED, win ? GREEN : RED, 'rgba(0,0,0,0)');
+        x.push(t.opened_at?.value || t.opened_at, t.closed_at?.value || t.closed_at);
+        y.push(t.entry_price, t.exit_price);
+        symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle');
         text.push(
           `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
-          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)}`,
-          ''
+          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`
         );
       }
       return {
-        type: 'scatter', mode: 'lines+markers',
+        type: 'scatter', mode: 'markers',
         x, y, name: labelForLogin(Number(login)),
-        line: { width: 1, color: 'rgba(200,200,200,0.4)' },
-        marker: { size: 9, symbol, color, line: { width: 1, color: '#fff' } },
+        marker: { size: 11, symbol, color: loginColor, line: { width: 1.5, color: '#fff' } },
         text, hoverinfo: 'text'
       };
     });
