@@ -260,14 +260,20 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     if (activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin) loadChart();
   }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
 
-  // price_bars se met à jour toutes les 5 min côté pipeline, mais rien ne rafraîchissait le graphique
-  // une fois affiché -- laissé ouvert quelques heures, il restait figé sur les données du chargement
-  // initial. Rafraîchit en silence (bougies + positions ouvertes/P&L flottant) toutes les 60s pendant
-  // qu'on regarde le graphique.
+  // price_bars se met à jour toutes les 5 min côté pipeline. Le setInterval(60s) seul ne suffit pas :
+  // les navigateurs throttlent (voire gèlent) les timers d'un onglet en arrière-plan pendant longtemps,
+  // donc un onglet mitchbi resté ouvert-mais-pas-au-premier-plan pendant des heures ne se rafraîchit
+  // presque plus, et affiche un graphique figé sur des données vieilles de plusieurs heures au retour --
+  // confirmé le 2026-08-03 (graphique figé à 14h47 MT5 alors qu'on était à 18h15). document.visibilitychange
+  // n'est PAS soumis à ce throttling : on force un rafraîchissement immédiat dès que l'onglet redevient
+  // visible, en plus du polling normal pendant qu'il reste affiché au premier plan.
   useEffect(() => {
     if (!(activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin)) return;
-    const id = setInterval(() => { loadChart(true); loadAccounts(); }, 60000);
-    return () => clearInterval(id);
+    const refresh = () => { loadChart(true); loadAccounts(); };
+    const id = setInterval(refresh, 60000);
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
 
   // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
@@ -835,6 +841,13 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       )}
                     </div>
                   )}
+                  {/* deps inclut le timestamp de la dernière bougie, pas seulement chartCandles.length --
+                      sur une fenêtre glissante (5j de bougies 5m), le NOMBRE de bougies reste quasi
+                      constant en continu (les vieilles sortent de la fenêtre au même rythme que les
+                      neuves entrent), donc .length seul ne change presque jamais : le rafraîchissement
+                      silencieux (60s) mettait bien chartCandles à jour en React, mais PlotDiv ne
+                      redessinait jamais avec les nouvelles données -- le graphique restait figé à l'écran
+                      sur le dernier vrai redraw (confirmé 2026-08-03 par comparaison directe avec MT5). */}
                   <PlotDiv
                     traces={chartTraces}
                     autoscaleY
@@ -853,7 +866,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       yaxis: { title: 'Prix', gridcolor: '#1e2130' },
                       legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#ccc' } }
                     }}
-                    deps={[chartCandles.length, chartTraces.length, chartExcludedCount, chartSelectedLogins.size, chartSelectedTradeKeys.size]}
+                    deps={[chartCandles[chartCandles.length - 1]?.ts, chartCandles.length, chartTraces.length, chartExcludedCount, chartSelectedLogins.size, chartSelectedTradeKeys.size]}
                   />
                   <div style={{ fontSize: 11, color: MUTED, marginTop: 8, textAlign: 'center' }}>
                     Couleur de fond = compte · ▲ = achat, ▼ = vente (entrée), ● = sortie ·{' '}
