@@ -200,18 +200,19 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { setLoadingTrades(false); }
   };
 
-  const loadChart = async () => {
+  // silent=true (rafraîchissement automatique en arrière-plan) garde l'ancien graphique affiché pendant
+  // le fetch au lieu de le vider -- sinon le graphique clignoterait (vide → chargement → rempli) toutes
+  // les 60s. silent=false (bouton Refresh, changement de compte/symbole/période) réinitialise normalement.
+  const loadChart = async (silent = false) => {
     if (!chartLogin) return;
-    setLoadingChart(true);
-    setChartCandles([]); // évite d'afficher les bougies d'un compte précédent si ce fetch échoue
-    setChartError(null);
+    if (!silent) { setLoadingChart(true); setChartCandles([]); setChartError(null); }
     try {
       const params = new URLSearchParams({ login: chartLogin, period: chartPeriod, interval: chartInterval });
       const res = await apiFetch(`/api/trading-imperium/chart?${params}`);
       const d = await res.json();
-      if (d.success) setChartCandles(d.candles); else setChartError(d.error || 'Erreur inconnue');
-    } catch (e) { console.error(e); setChartError(e.message); }
-    finally { setLoadingChart(false); }
+      if (d.success) setChartCandles(d.candles); else if (!silent) setChartError(d.error || 'Erreur inconnue');
+    } catch (e) { console.error(e); if (!silent) setChartError(e.message); }
+    finally { if (!silent) setLoadingChart(false); }
   };
 
   useEffect(() => { loadAccounts(); loadEvents(); }, []);
@@ -243,6 +244,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   useEffect(() => {
     if (activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin) loadChart();
+  }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
+
+  // price_bars se met à jour toutes les 5 min côté pipeline, mais rien ne rafraîchissait le graphique
+  // une fois affiché -- laissé ouvert quelques heures, il restait figé sur les données du chargement
+  // initial. Rafraîchit en silence (bougies + positions ouvertes/P&L flottant) toutes les 60s pendant
+  // qu'on regarde le graphique.
+  useEffect(() => {
+    if (!(activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin)) return;
+    const id = setInterval(() => { loadChart(true); loadAccounts(); }, 60000);
+    return () => clearInterval(id);
   }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
 
   // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
