@@ -96,6 +96,17 @@ export default function Sidebar({ active, onNavigate, collapsed, onToggle }) {
         })}
       </nav>
 
+      {/* Hub visual */}
+      {!collapsed && (
+        <div style={{ padding: '4px 20px 14px', display: 'flex', justifyContent: 'center' }}>
+          <img
+            src="/mitchbi-hub.png"
+            alt=""
+            style={{ width: '100%', maxWidth: 160, borderRadius: 10, display: 'block' }}
+          />
+        </div>
+      )}
+
       {/* Bottom nav */}
       {BOTTOM_ITEMS.length > 0 && (
         <div style={{ borderTop: '0.5px solid #1e2130', padding: '8px 0' }}>
