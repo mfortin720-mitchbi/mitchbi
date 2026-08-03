@@ -11,3 +11,6 @@ backend/node_modules/
 # Build
 frontend/dist/
 backend/dist/
+
+# Google Drive sync artifacts
+.tmp.driveupload/
