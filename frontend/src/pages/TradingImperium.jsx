@@ -41,6 +41,20 @@ const toUtcIso = v => {
 };
 const fmtDateTime = v => v ? new Date(toUtcIso(v)).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
+// Le graphique de prix affiche l'heure du SERVEUR MT5 (pas UTC, pas l'heure locale du navigateur) --
+// "tout est sur cette échelle de temps" côté utilisateur, qui lit le graphique à côté de son terminal
+// MT5. Offset confirmé empiriquement le 2026-08-03 (VPS/UTC 14:46 == terminal MT5 17:46) = UTC+3.
+// Prend un instant UTC correct (ms epoch ou string déjà passée par toUtcIso) et produit une chaîne
+// ISO "naïve" (sans Z) décalée de +3h -- Plotly affiche les chiffres littéraux d'une chaîne sans Z,
+// donc ce décalage manuel se retrouve affiché tel quel sur l'axe, peu importe le fuseau du visiteur.
+const MT5_SERVER_UTC_OFFSET_HOURS = 3;
+const toMt5Iso = v => {
+  const ms = typeof v === 'number' ? v : new Date(v).getTime();
+  const d = new Date(ms + MT5_SERVER_UTC_OFFSET_HOURS * 3600 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+};
+
 // Charge Plotly une seule fois (même pattern que Trader.jsx)
 const usePlotly = () => {
   const [ready, setReady] = useState(!!window.Plotly);
@@ -334,7 +348,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     if (!chartCandles.length) return { traces: [], excludedCount: 0, tradeList: [], accountPills: [] };
     const candleTrace = {
       type: 'candlestick',
-      x: chartCandles.map(c => new Date(c.ts).toISOString()),
+      x: chartCandles.map(c => toMt5Iso(c.ts)),
       open: chartCandles.map(c => c.open),
       high: chartCandles.map(c => c.high),
       low: chartCandles.map(c => c.low),
@@ -385,7 +399,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       for (const t of ts) {
         const win = t.net_pnl >= 0;
         const resultColor = win ? GREEN : RED;
-        x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at), null);
+        x.push(toMt5Iso(toUtcIso(t.opened_at?.value || t.opened_at)), toMt5Iso(toUtcIso(t.closed_at?.value || t.closed_at)), null);
         y.push(t.entry_price, t.exit_price, null);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
         borderColor.push(resultColor, resultColor, 'rgba(0,0,0,0)');
@@ -426,10 +440,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     let openTrace = null;
     if (openPositions.length) {
       const openColor = loginColors[chartLogin] ?? LOGIN_MARKER_COLORS[loginOrder.length % LOGIN_MARKER_COLORS.length];
-      const lastCandleIso = new Date(chartCandles[chartCandles.length - 1].ts).toISOString();
+      const lastCandleIso = toMt5Iso(chartCandles[chartCandles.length - 1].ts);
       const x = [], y = [], symbol = [], dispText = [], hovertext = [];
       for (const p of openPositions) {
-        x.push(toUtcIso(p.time_open?.value || p.time_open), lastCandleIso, null);
+        x.push(toMt5Iso(toUtcIso(p.time_open?.value || p.time_open)), lastCandleIso, null);
         y.push(p.price_open, p.price_current, null);
         symbol.push(p.type === 'BUY' ? 'triangle-up' : 'triangle-down', 'diamond', 'circle');
         dispText.push('', `${p.profit >= 0 ? '+' : '-'}$${Math.round(Math.abs(p.profit))} (en cours)`, '');
@@ -832,6 +846,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       font: { color: '#ccc' },
                       xaxis: {
                         type: 'date',
+                        title: 'Heure serveur MT5 (UTC+3)',
                         rangeslider: { visible: true, bgcolor: '#0f1117', bordercolor: '#1e2130' },
                         gridcolor: '#1e2130'
                       },
