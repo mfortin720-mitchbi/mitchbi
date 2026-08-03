@@ -62,15 +62,21 @@ const usePlotly = () => {
   return ready;
 };
 
-const PlotDiv = ({ traces, layout, deps, autoscaleY }) => {
+const PlotDiv = ({ traces, layout, deps, autoscaleY, uirevision }) => {
   const ref = useRef(null);
   const plotlyReady = usePlotly();
   useEffect(() => {
     if (!plotlyReady || !ref.current || !traces) return;
     const gd = ref.current;
-    window.Plotly.newPlot(gd, traces, {
+    // Plotly.react (pas newPlot) + uirevision stable : un rafraîchissement silencieux (nouvelles
+    // bougies, même symbole/compte/période) garde le zoom/pan actuel au lieu de repartir en vue
+    // complète à chaque redraw -- newPlot recrée le graphique au complet à chaque fois, perdant le
+    // zoom. uirevision change seulement quand on change vraiment de symbole/compte/période/interval
+    // (voir l'appel plus bas), auquel cas on VEUT repartir en vue complète.
+    window.Plotly.react(gd, traces, {
       template: 'plotly_dark',
       margin: { t: 50, l: 55, r: 20, b: 50 },
+      uirevision: uirevision ?? true,
       ...layout
     }, { responsive: true, displayModeBar: false });
 
@@ -111,6 +117,10 @@ const PlotDiv = ({ traces, layout, deps, autoscaleY }) => {
       const x1 = ev['xaxis.range[1]'];
       if (x0 != null || x1 != null) rescaleY(x0, x1);
     };
+    // newPlot recréait tout le graphique (et donc ses listeners) à chaque redraw -- react() garde la
+    // même instance, donc sans ça chaque rafraîchissement silencieux empilerait un nouveau listener
+    // plotly_relayout par-dessus les précédents.
+    gd.removeAllListeners('plotly_relayout');
     gd.on('plotly_relayout', onRelayout);
   }, [plotlyReady, autoscaleY, ...(deps || [])]);
   return <div ref={ref} style={{ width: '100%' }} />;
@@ -845,6 +855,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <PlotDiv
                     traces={chartTraces}
                     autoscaleY
+                    uirevision={`${chartSymbol}-${chartLogin}-${chartPeriod}-${chartInterval}`}
                     layout={{
                       title: `${chartSymbol} — entrées/sorties par compte (${chartInterval}) · flux: ${labelForLogin(chartLogin)}`,
                       height: 480,
