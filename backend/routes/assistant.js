@@ -67,24 +67,43 @@ PIÈGES CONNUS
   par account_id + login ensemble : un changement de login démarre sa propre courbe.
 `.trim();
 
+// Condensé de README_TABLES.md (repo trading-monitor) -- lineage complet des tables/vues BigQuery.
 const SCHEMA_CONTEXT = `
-TABLES/VUES DISPONIBLES dans royaldistributing.trading (accessibles via l'outil query_bigquery) :
-- latest_accounts_view : état actuel de chaque compte (balance, equity, drawdown_pct, login, license_firm,
-  open_positions_count, algo_symbol, terminal_connected, trade_allowed...), jointe avec le statut de
-  challenge courant.
-- daily_balance_history_view : historique quotidien de balance reconstruit par login (account_id, login,
-  license_firm, algo_symbol, day, balance, trades_closed).
-- trades_view : trades fermés (round-trip), avec symbol, direction, entry_price, exit_price, net_pnl,
-  close_reason, is_closed, position_id, login, closed_at.
-- trade_deals : deals bruts MT5 (une exécution = une ligne ; un trade fermé = 2 deals min. avec le même
-  position_id).
-- account_events_view : resets, topups, breaches par login.
-- challenge_phases : historique append-only des changements de phase/statut (recorded_at, account_id,
-  login, initial_login, firm, challenge_phase, challenge_target, deposit, challenge_status,
-  phase_start_date, phase_end_date, change_reason).
+LINEAGE -- 4 tables BRUTES écrites directement par trading_monitor.py (cycle de 5 min sur le VPS), tout le
+reste est des VUES SQL calculées par-dessus (rien n'écrit dedans directement) :
+  accounts_snapshot_v2 ← mt5.account_info()+positions_get()   trade_deals ← mt5.history_deals_get()
+  price_bars ← mt5.copy_rates_range(symbol, M1)                challenge_phases ← config.py
+
+DEUX IDENTIFIANTS, sens différent : account_id = étiquette interne stable (ex. 'hola_3'), ne change jamais,
+sert à tracer une license à travers ses phases. login = vrai numéro de compte MT5, CHANGE à chaque nouvelle
+phase de challenge. Préfère toujours login pour filtrer/afficher ; account_id seulement pour le lineage.
+
+TABLES/VUES DISPONIBLES (accessibles via l'outil query_bigquery) :
+- accounts_snapshot_v2 : snapshot brut de chaque compte toutes les 5 min (balance, equity, drawdown_pct,
+  positions ouvertes, terminal_connected...). Pour "l'état actuel", préfère latest_accounts_view (dédupliquée).
+- latest_accounts_view : accounts_snapshot_v2 dédupliquée à la dernière ligne par account_id, + pnl/pnl_pct calculés.
+- daily_accounts_view : dernier snapshot du jour par compte -- historique court (depuis le démarrage du poller).
+- trade_deals : deals bruts MT5, une exécution = une ligne. Un trade fermé = 2+ deals partageant le même
+  position_id (entrée entry_name='IN', sortie 'OUT'/'INOUT'/'OUT_BY'). Les deals non-trade (type_name
+  BALANCE/CHARGE/CREDIT/CORRECTION) sont des dépôts/resets, PAS des trades -- voir account_events_view.
+- trades_view : trade_deals regroupés par position_id = un trade complet par ligne (symbol, direction,
+  entry_price, exit_price, net_pnl = SUM(profit)+SUM(commission)+SUM(swap), close_reason, is_closed,
+  closed_at). Les positions encore OUVERTES n'apparaissent PAS ici -- utilise
+  latest_accounts_view.positions pour ça. C'est la table à utiliser pour tout historique de trades.
+- account_events_view : deals non-trade classifiés (event_type: account_created/reset/withdrawal_or_correction).
+- daily_balance_history_view : historique quotidien de balance RECONSTRUIT depuis trade_deals (plus long et
+  plus fiable que daily_accounts_view), partitionné par (account_id, login) -- un changement de login
+  (nouvelle phase) démarre sa propre courbe au lieu de prolonger celle de la phase précédente.
+- price_bars : bougies M1 du flux broker RÉEL de chaque compte (pas Yahoo Finance), une par (account_id, symbol).
+- challenge_phases : historique append-only des changements de phase/statut (recorded_at, account_id, login,
+  initial_login, firm, challenge_phase, challenge_target, deposit, challenge_status, phase_start_date,
+  phase_end_date, change_reason).
 - latest_challenge_view : dernier état de challenge par account_id (le plus récent de challenge_phases).
-Toujours filtrer/agréger avec du BigQuery Standard SQL, et utiliser STARTS_WITH(symbol, 'X') plutôt que
-= pour matcher les symboles à cause du suffixe .raw d'Alpha Capital.
+
+PIÈGES : utilise STARTS_WITH(symbol, 'X') plutôt que = (suffixe broker .raw chez Alpha Capital). Si un trade
+semble manquer malgré une fermeture confirmée par le solde, c'est un problème MT5 connu où
+history_deals_get(date_from, date_to) peut manquer un deal existant -- trading_monitor.py a un filet de
+sécurité (sync_missed_closures) qui le recherche directement par ticket de position.
 `.trim();
 
 const TOOLS = [
