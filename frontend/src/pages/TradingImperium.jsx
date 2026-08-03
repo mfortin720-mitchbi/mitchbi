@@ -102,8 +102,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol'
 
   // ── Trades › Graphique (prix réel du broker via price_bars + entrées/sorties par login) ────
-  const [chartSymbol, setChartSymbol] = useState(null);
-  const [chartLogin, setChartLogin] = useState(null); // le prix vient du flux broker d'UN compte précis
+  // chartSymbol/chartLogin sont dérivés de filterSymbol/filterLogin (pas un état séparé) : avant, il y
+  // avait 2 étages de filtres qui ne se parlaient pas (le filtre du haut et celui du graphique). Un seul
+  // maintenant -- cliquer une case compte, le filtre du haut, ou la pastille du graphique font tous la
+  // même chose.
   const [chartPeriod, setChartPeriod] = useState('5d');
   const [chartInterval, setChartInterval] = useState('5m');
   const [chartCandles, setChartCandles] = useState([]);
@@ -176,33 +178,32 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
-  useEffect(() => {
-    if (activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin) loadChart();
-  }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
-
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
 
-  // Symbole du graphique par défaut : celui déjà filtré, sinon le premier symbole connu
+  // Choisir un compte sélectionne automatiquement son symbole (chaque compte n'en trade qu'un seul).
   useEffect(() => {
-    if (!chartSymbol && symbols.length) setChartSymbol(filterSymbol !== 'all' ? filterSymbol : symbols[0]);
-  }, [symbols, filterSymbol, chartSymbol]);
+    if (filterLogin === 'all') return;
+    const acc = accounts.find(a => a.login === filterLogin);
+    if (acc?.algo_symbol && acc.algo_symbol !== filterSymbol) setFilterSymbol(acc.algo_symbol);
+  }, [filterLogin, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Comptes qui tradent le symbole du graphique -- price_bars vient du broker de CE compte
-  // précis (pas d'une source générique), donc plusieurs comptes sur le même symbole ont chacun
+  // Symbole/compte du graphique : dérivés de filterSymbol/filterLogin, pas un état séparé (voir note plus haut).
+  const chartSymbol = filterSymbol !== 'all' ? filterSymbol : (symbols[0] || null);
+  // Comptes qui tradent ce symbole -- price_bars vient du broker de CE compte précis (pas d'une source
+  // générique), donc plusieurs comptes sur le même symbole (ex. USDCHF: hola_1 et alpha_1) ont chacun
   // leur propre flux de prix, comme regarder le chart directement dans MT5.
   const chartSymbolAccounts = useMemo(
     () => accounts.filter(a => a.algo_symbol === chartSymbol),
     [accounts, chartSymbol]
   );
+  const chartLogin = (filterLogin !== 'all' && chartSymbolAccounts.some(a => a.login === filterLogin))
+    ? filterLogin
+    : (chartSymbolAccounts[0]?.login ?? null);
 
-  // Compte dont on affiche le flux de prix par défaut : celui déjà filtré en haut de page s'il
-  // trade ce symbole, sinon le premier compte trouvé qui le trade.
   useEffect(() => {
-    if (!chartSymbolAccounts.length) { setChartLogin(null); return; }
-    const keepFilterLogin = filterLogin !== 'all' && chartSymbolAccounts.some(a => a.login === filterLogin);
-    setChartLogin(keepFilterLogin ? filterLogin : chartSymbolAccounts[0].login);
-  }, [chartSymbolAccounts, filterLogin]);
+    if (activeTab === 'trades' && tradesViewMode === 'chart' && chartLogin) loadChart();
+  }, [activeTab, tradesViewMode, chartLogin, chartPeriod, chartInterval]);
 
   // login -> "Firme login" pour afficher un libellé clair partout (au lieu de account_id du genre "hola_3")
   const accountLabel = useMemo(() => {
@@ -220,10 +221,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     return { balance, equity, deposit, pnl, pnlPct: deposit ? (pnl / deposit) * 100 : 0 };
   }, [accounts]);
 
-  // Clique sur une case compte → filtre le graphique du bas sur ce login et affiche la Vue d'ensemble
+  // Clique sur une case compte → filtre (le symbole suit automatiquement). Reste dans Trades si on y
+  // est déjà -- ne force la Vue d'ensemble que si on clique depuis un autre onglet.
   const selectAccount = login => {
     setFilterLogin(prev => (prev === login ? 'all' : login));
-    onTabChange?.('overview');
+    if (activeTab !== 'trades') onTabChange?.('overview');
   };
 
   // ── Graphique évolution (Overview) ────────────────────────────────────────
@@ -363,8 +365,44 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
     const accountPills = loginOrder.map(login => ({ login: Number(login), color: loginColors[login] }));
 
-    return { traces: [candleTrace, ...tradeTraces], excludedCount, tradeList, accountPills };
-  }, [chartCandles, trades, chartSymbol, chartSelectedLogins, chartSelectedTradeKeys]);
+    // Position OUVERTE de chartLogin sur ce symbole, si applicable -- trades_view ne couvre QUE les
+    // trades FERMÉS (is_closed=TRUE), un trade encore en cours n'y apparaît jamais, même pas son entrée.
+    // On la tire plutôt de latest_accounts_view.positions (déjà chargée dans `accounts`) pour la montrer
+    // quand même : ▲/▼ à l'entrée (comme un trade fermé), ◆ au prix actuel avec le P&L flottant, contour
+    // bleu (résultat pas encore déterminé, contrairement au vert/rouge des trades fermés).
+    const openAcct = accounts.find(a => a.login === chartLogin);
+    const openPositions = (openAcct?.positions || []).filter(p => p.symbol.split('.')[0] === chartSymbol);
+    let openTrace = null;
+    if (openPositions.length) {
+      const openColor = loginColors[chartLogin] ?? LOGIN_MARKER_COLORS[loginOrder.length % LOGIN_MARKER_COLORS.length];
+      const lastCandleIso = new Date(chartCandles[chartCandles.length - 1].ts).toISOString();
+      const x = [], y = [], symbol = [], dispText = [], hovertext = [];
+      for (const p of openPositions) {
+        x.push(toUtcIso(p.time_open?.value || p.time_open), lastCandleIso, null);
+        y.push(p.price_open, p.price_current, null);
+        symbol.push(p.type === 'BUY' ? 'triangle-up' : 'triangle-down', 'diamond', 'circle');
+        dispText.push('', `${p.profit >= 0 ? '+' : '-'}$${Math.round(Math.abs(p.profit))} (en cours)`, '');
+        hovertext.push(
+          `${labelForLogin(chartLogin)} · ${p.type} · Entrée ${p.price_open} (position ouverte)`,
+          `${labelForLogin(chartLogin)} · En cours · Prix actuel ${p.price_current} · P&L flottant ${fmtMoney(p.profit)}`,
+          ''
+        );
+      }
+      openTrace = {
+        type: 'scatter', mode: 'lines+markers+text',
+        x, y, name: `${labelForLogin(chartLogin)} (en cours)`,
+        line: { width: 1.5, color: openColor, dash: 'dash' },
+        marker: { size: 13, symbol, color: openColor, line: { width: 2.5, color: BLUE } },
+        text: dispText, textposition: 'top center', textfont: { size: 10, color: BLUE },
+        hovertext, hoverinfo: 'text'
+      };
+    }
+
+    return {
+      traces: [candleTrace, ...tradeTraces, ...(openTrace ? [openTrace] : [])],
+      excludedCount, tradeList, accountPills
+    };
+  }, [chartCandles, trades, chartSymbol, chartSelectedLogins, chartSelectedTradeKeys, accounts, chartLogin]);
 
   // Repartir à zéro sur la sélection compte/trades quand on change de symbole -- sinon un login/trade
   // sélectionné pour un symbole reste actif (et invisible) en changeant de symbole.
@@ -522,7 +560,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Symbole</div>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {['all', ...symbols].map(s => (
-                <button key={s} onClick={() => setFilterSymbol(s)} style={{
+                <button key={s} onClick={() => { setFilterSymbol(s); setFilterLogin('all'); }} style={{
                   padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
                   border: '0.5px solid', borderColor: filterSymbol === s ? GOLD : '#1e2130',
                   background: filterSymbol === s ? '#2b1f0a' : 'transparent',
@@ -631,25 +669,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             )}
             {tradesViewMode === 'chart' && (
               <>
-                <div>
-                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Symbole</div>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {symbols.map(s => (
-                      <button key={s} onClick={() => setChartSymbol(s)} style={{
-                        padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
-                        border: '0.5px solid', borderColor: chartSymbol === s ? GOLD : '#1e2130',
-                        background: chartSymbol === s ? '#2b1f0a' : 'transparent',
-                        color: chartSymbol === s ? GOLD : MUTED
-                      }}>{s}</button>
-                    ))}
-                  </div>
-                </div>
                 {chartSymbolAccounts.length > 1 && (
                   <div>
-                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Compte (flux de prix)</div>
+                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>
+                      Compte (flux de prix -- {chartSymbolAccounts.length} comptes tradent {chartSymbol})
+                    </div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {chartSymbolAccounts.map(a => (
-                        <button key={a.login} onClick={() => setChartLogin(a.login)} style={{
+                        <button key={a.login} onClick={() => setFilterLogin(a.login)} style={{
                           padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
                           border: '0.5px solid', borderColor: chartLogin === a.login ? BLUE : '#1e2130',
                           background: chartLogin === a.login ? '#0d1f35' : 'transparent',
@@ -764,7 +791,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <div style={{ fontSize: 11, color: MUTED, marginTop: 8, textAlign: 'center' }}>
                     Couleur de fond = compte · ▲ = achat, ▼ = vente (entrée), ● = sortie ·{' '}
                     contour <span style={{ color: GREEN }}>vert</span> = gain,{' '}
-                    <span style={{ color: RED }}>rouge</span> = perte
+                    <span style={{ color: RED }}>rouge</span> = perte ·{' '}
+                    contour <span style={{ color: BLUE }}>bleu</span> ◆ = position encore ouverte
                   </div>
 
                   {chartTradeList.length > 0 && (
