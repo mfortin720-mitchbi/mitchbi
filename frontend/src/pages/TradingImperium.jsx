@@ -54,17 +54,57 @@ const usePlotly = () => {
   return ready;
 };
 
-const PlotDiv = ({ traces, layout, deps }) => {
+const PlotDiv = ({ traces, layout, deps, autoscaleY }) => {
   const ref = useRef(null);
   const plotlyReady = usePlotly();
   useEffect(() => {
     if (!plotlyReady || !ref.current || !traces) return;
-    window.Plotly.newPlot(ref.current, traces, {
+    const gd = ref.current;
+    window.Plotly.newPlot(gd, traces, {
       template: 'plotly_dark',
       margin: { t: 50, l: 55, r: 20, b: 50 },
       ...layout
     }, { responsive: true, displayModeBar: false });
-  }, [plotlyReady, ...(deps || [])]);
+
+    if (!autoscaleY) return;
+
+    // Par défaut, Plotly ne réajuste PAS l'axe des prix quand on zoome/scroll sur le temps (zoom sur le
+    // graphique principal ou en glissant le range slider) -- l'axe Y garde l'échelle de TOUTES les
+    // données même une fois zoomé sur 2 heures. On recalcule le range Y à partir des valeurs visibles
+    // dans la fenêtre X actuelle à chaque changement de zoom.
+    const rescaleY = (x0, x1) => {
+      const t0 = x0 != null ? new Date(x0).getTime() : -Infinity;
+      const t1 = x1 != null ? new Date(x1).getTime() : Infinity;
+      let min = Infinity, max = -Infinity;
+      for (const trace of gd.data || []) {
+        const xs = trace.x || [];
+        const collect = arr => {
+          if (!arr) return;
+          for (let i = 0; i < xs.length; i++) {
+            const xt = new Date(xs[i]).getTime();
+            if (Number.isNaN(xt) || xt < t0 || xt > t1) continue;
+            const v = arr[i];
+            if (v == null) continue;
+            if (v < min) min = v;
+            if (v > max) max = v;
+          }
+        };
+        if (trace.type === 'candlestick') { collect(trace.low); collect(trace.high); }
+        else collect(trace.y);
+      }
+      if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return;
+      const pad = (max - min) * 0.08;
+      window.Plotly.relayout(gd, { 'yaxis.range': [min - pad, max + pad], 'yaxis.autorange': false });
+    };
+
+    const onRelayout = ev => {
+      if (ev['xaxis.autorange']) { window.Plotly.relayout(gd, { 'yaxis.autorange': true }); return; }
+      const x0 = ev['xaxis.range[0]'];
+      const x1 = ev['xaxis.range[1]'];
+      if (x0 != null || x1 != null) rescaleY(x0, x1);
+    };
+    gd.on('plotly_relayout', onRelayout);
+  }, [plotlyReady, autoscaleY, ...(deps || [])]);
   return <div ref={ref} style={{ width: '100%' }} />;
 };
 
@@ -772,6 +812,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   )}
                   <PlotDiv
                     traces={chartTraces}
+                    autoscaleY
                     layout={{
                       title: `${chartSymbol} — entrées/sorties par compte (${chartInterval}) · flux: ${labelForLogin(chartLogin)}`,
                       height: 480,
