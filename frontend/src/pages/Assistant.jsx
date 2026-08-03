@@ -40,7 +40,7 @@ const MARKDOWN_COMPONENTS = {
 export default function Assistant({ session }) {
   const [msgs, setMsgs] = useState([{
     role: 'assistant',
-    content: `Bonjour ${session?.user?.email?.split('@')[0]} 👋\n\nJe suis NexusIQ, ton assistant AI personnel. Je connais tes rôles — data scientist, stratège digital, directeur BI, trader et gestionnaire de factures.\n\nComment puis-je t'aider aujourd'hui ?`
+    content: `Bonjour ${session?.user?.email?.split('@')[0]} 👋\n\nJe suis NexusIQ. Je connais le pipeline Trading Imperium (tes 6 comptes MT5 en challenge prop firm) et j'ai un accès en direct à BigQuery pour te répondre avec de vraies données — balances, trades, phases de challenge, événements.\n\nComment puis-je t'aider aujourd'hui ?`
   }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,10 +84,12 @@ export default function Assistant({ session }) {
   };
 
   const suggestions = [
-    'Analyse mon portfolio de campagnes Google Ads',
-    'Génère une requête SQL pour mes ventes Shopify',
-    'Quelles sont les tendances crypto cette semaine ?',
-    'Aide-moi à structurer un rapport BI pour mon équipe',
+    'Résume la performance de mes 6 comptes cette semaine, en tableau',
+    'Quel compte a le meilleur win rate ce mois-ci ?',
+    'Montre mes trades sur XAUUSD en tableau (entrée, sortie, P&L)',
+    'Est-ce qu\'un compte est proche du seuil de breach en ce moment ?',
+    'Compare le P&L net de Hola Prime vs Alpha Capital',
+    'Où en sont mes licences dans leur challenge (phase, statut) ?',
   ];
 
   return (

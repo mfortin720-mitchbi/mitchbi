@@ -261,8 +261,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   // Les trades dont l'ouverture/fermeture tombe hors de la période de bougies chargée sont exclus (sinon
   // ils flottent sans bougie derrière, ex: un trade du 5 juillet affiché sur une fenêtre de 10 jours) --
   // excludedCount permet d'avertir l'utilisateur plutôt que de les faire disparaître silencieusement.
-  const { traces: chartTraces, excludedCount: chartExcludedCount } = useMemo(() => {
-    if (!chartCandles.length) return { traces: [], excludedCount: 0 };
+  const { traces: chartTraces, excludedCount: chartExcludedCount, tradeList: chartTradeList } = useMemo(() => {
+    if (!chartCandles.length) return { traces: [], excludedCount: 0, tradeList: [] };
     const candleTrace = {
       type: 'candlestick',
       x: chartCandles.map(c => new Date(c.ts).toISOString()),
@@ -291,10 +291,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     // même couleur que le compte -- séparée par un null entre chaque trade pour ne PAS chaîner
     // les trades entre eux (c'est ça qui créait l'effet spaghetti avant). Trois informations
     // distinctes par marqueur : couleur de fond = compte, forme = sens (▲ achat / ▼ vente à
-    // l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte).
+    // l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte). Le P&L compact
+    // s'affiche aussi directement au point de sortie (label sur le graphique, pas juste au survol).
+    const compactPnl = v => `${v >= 0 ? '+' : '-'}$${Math.round(Math.abs(v))}`;
+    const loginColors = {};
     const tradeTraces = Object.entries(byLogin).map(([login, ts], i) => {
       const loginColor = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length];
-      const x = [], y = [], symbol = [], borderColor = [], text = [];
+      loginColors[login] = loginColor;
+      const x = [], y = [], symbol = [], borderColor = [], hovertext = [], dispText = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
         const resultColor = win ? GREEN : RED;
@@ -302,22 +306,30 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
         y.push(t.entry_price, t.exit_price, null);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
         borderColor.push(resultColor, resultColor, 'rgba(0,0,0,0)');
-        text.push(
+        dispText.push('', compactPnl(t.net_pnl), '');
+        hovertext.push(
           `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
           `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`,
           ''
         );
       }
       return {
-        type: 'scatter', mode: 'lines+markers',
+        type: 'scatter', mode: 'lines+markers+text',
         x, y, name: labelForLogin(Number(login)),
         line: { width: 1.5, color: loginColor, dash: 'dot' },
         marker: { size: 12, symbol, color: loginColor, line: { width: 2.5, color: borderColor } },
-        text, hoverinfo: 'text'
+        text: dispText, textposition: 'top center', textfont: { size: 10, color: '#fff' },
+        hovertext, hoverinfo: 'text'
       };
     });
 
-    return { traces: [candleTrace, ...tradeTraces], excludedCount };
+    // Liste compacte pour le panneau sous le graphique (pastille de couleur au lieu du nom complet
+    // du compte, qui prend trop de place quand il y a beaucoup de trades).
+    const tradeList = [...chartTrades]
+      .sort((a, b) => new Date(toUtcIso(b.closed_at?.value || b.closed_at)) - new Date(toUtcIso(a.closed_at?.value || a.closed_at)))
+      .map(t => ({ ...t, color: loginColors[t.login] || MUTED }));
+
+    return { traces: [candleTrace, ...tradeTraces], excludedCount, tradeList };
   }, [chartCandles, trades, chartSymbol]);
 
   // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
@@ -638,6 +650,41 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                     contour <span style={{ color: GREEN }}>vert</span> = gain,{' '}
                     <span style={{ color: RED }}>rouge</span> = perte
                   </div>
+
+                  {chartTradeList.length > 0 && (
+                    <div style={{ marginTop: 14, borderTop: '0.5px solid #1e2130', paddingTop: 10 }}>
+                      <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Trades affichés ({chartTradeList.length})
+                      </div>
+                      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <tbody>
+                            {chartTradeList.map((t, i) => (
+                              <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                                <td style={{ padding: '5px 8px', width: 16 }}>
+                                  <span title={labelForLogin(t.login)} style={{
+                                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: t.color
+                                  }} />
+                                </td>
+                                <td style={{ padding: '5px 8px', width: 16, color: t.direction === 'BUY' ? GREEN : RED }}>
+                                  {t.direction === 'BUY' ? '▲' : '▼'}
+                                </td>
+                                <td style={{ padding: '5px 8px', color: MUTED, whiteSpace: 'nowrap' }}>
+                                  {fmtDateTime(t.closed_at?.value || t.closed_at)}
+                                </td>
+                                <td style={{ padding: '5px 8px', color: '#ccc', whiteSpace: 'nowrap' }}>
+                                  {t.entry_price} → {t.exit_price}
+                                </td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 600, color: t.net_pnl >= 0 ? GREEN : RED }}>
+                                  {fmtMoney(t.net_pnl)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </Card>
