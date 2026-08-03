@@ -36,6 +36,16 @@ const AccountRow = ({ firm, login, color }) => (
   </div>
 );
 
+const TableRow = ({ name, kind, children }) => (
+  <div style={{ margin: '8px 0', paddingLeft: 12, borderLeft: `2px solid ${kind === 'raw' ? GOLD : '#1e2130'}` }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+      <Code>{name}</Code>
+      {kind === 'raw' && <span style={{ fontSize: 10, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.05em' }}>table brute</span>}
+    </div>
+    <div style={{ color: MUTED, fontSize: 12.5 }}>{children}</div>
+  </div>
+);
+
 export default function Readme() {
   return (
     <div style={{ maxWidth: 820 }}>
@@ -123,6 +133,61 @@ export default function Readme() {
         </p>
       </Section>
 
+      <Section title="🗄️ Schéma BigQuery (tables & lineage)">
+        <p>
+          Tout vit dans <Code>royaldistributing.trading</Code>. Seulement <b>4 tables</b> sont écrites
+          directement par <Code>trading_monitor.py</Code> — tout le reste est des <b>vues SQL</b> calculées
+          par-dessus, jamais écrites directement. Référence complète (avec le SQL de chaque vue) dans{' '}
+          <Code>README_TABLES.md</Code> du repo <Code>trading-monitor</Code>.
+        </p>
+
+        <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '14px 0 4px' }}>
+          Tables brutes
+        </div>
+        <TableRow name="accounts_snapshot_v2" kind="raw">
+          Snapshot de chaque compte toutes les 5 min (balance, equity, positions ouvertes...). Depuis{' '}
+          <Code>mt5.account_info()</Code> + <Code>positions_get()</Code>.
+        </TableRow>
+        <TableRow name="trade_deals" kind="raw">
+          Journal brut des exécutions MT5, une ligne par deal. Depuis <Code>mt5.history_deals_get()</Code>.
+          Un trade fermé = 2+ deals qui partagent le même <Code>position_id</Code>.
+        </TableRow>
+        <TableRow name="price_bars" kind="raw">
+          Bougies M1 du flux broker réel de chaque compte (pas Yahoo Finance). Depuis{' '}
+          <Code>mt5.copy_rates_range()</Code>.
+        </TableRow>
+        <TableRow name="challenge_phases" kind="raw">
+          Historique append-only des changements de phase/statut. Source : <Code>config.py</Code> (ou une
+          commande Telegram), pas MT5.
+        </TableRow>
+
+        <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '14px 0 4px' }}>
+          Vues dérivées
+        </div>
+        <TableRow name="latest_accounts_view">
+          <Code>accounts_snapshot_v2</Code> dédupliquée à la dernière ligne par compte, + pnl/pnl_pct
+          calculés. À utiliser pour "l'état actuel", pas la table brute.
+        </TableRow>
+        <TableRow name="daily_accounts_view">
+          Dernier snapshot du jour par compte — historique court (depuis le démarrage du poller).
+        </TableRow>
+        <TableRow name="trades_view">
+          <Code>trade_deals</Code> regroupés par <Code>position_id</Code> = un trade complet par ligne
+          (entrée, sortie, P&amp;L net). Alimente l'onglet Trades et le graphique.
+        </TableRow>
+        <TableRow name="account_events_view">
+          Deals non-trade (dépôts, resets, corrections) classifiés — évite qu'un saut de balance soit un
+          mystère.
+        </TableRow>
+        <TableRow name="daily_balance_history_view">
+          Historique de balance reconstruit depuis les deals (plus long/fiable qu'un simple snapshot).
+          Alimente le graphique d'évolution de la Vue d'ensemble.
+        </TableRow>
+        <TableRow name="latest_challenge_view">
+          Dernier état de challenge par compte — source du badge de phase sur les cases de compte.
+        </TableRow>
+      </Section>
+
       <Section title="⚡ Pièges connus">
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           <li>
@@ -134,6 +199,12 @@ export default function Readme() {
             L'historique de balance quotidien est reconstruit à partir des deals (pas d'un simple snapshot),
             et partitionné par <Code>account_id</Code> + <Code>login</Code> ensemble : un changement de login
             (nouvelle phase) démarre sa propre courbe au lieu de prolonger celle de la phase précédente.
+          </li>
+          <li>
+            Rare (vu une fois le 2026-08-03) : MT5 peut ne rien retourner pour une requête d'historique par
+            plage de dates alors que le deal existe bel et bien (retrouvable par ticket de position direct).
+            Le pipeline a maintenant un filet de sécurité (<Code>sync_missed_closures</Code>) qui détecte
+            une position fermée et va la rechercher directement si la requête normale n'a rien trouvé.
           </li>
         </ul>
       </Section>
