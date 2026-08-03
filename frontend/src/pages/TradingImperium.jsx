@@ -99,6 +99,9 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [chartCandles, setChartCandles] = useState([]);
   const [loadingChart, setLoadingChart] = useState(false);
   const [chartError, setChartError] = useState(null);
+  const [chartSelectedLogins, setChartSelectedLogins] = useState(() => new Set()); // filtre compte (pastilles cliquables)
+  const [chartSelectedTradeKeys, setChartSelectedTradeKeys] = useState(() => new Set()); // trades cliqués dans la liste (multi-sélection)
+  const tradeKey = t => `${t.login}_${t.position_id}`;
 
   const loadAccounts = async () => {
     setLoadingAccounts(true);
@@ -261,8 +264,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   // Les trades dont l'ouverture/fermeture tombe hors de la période de bougies chargée sont exclus (sinon
   // ils flottent sans bougie derrière, ex: un trade du 5 juillet affiché sur une fenêtre de 10 jours) --
   // excludedCount permet d'avertir l'utilisateur plutôt que de les faire disparaître silencieusement.
-  const { traces: chartTraces, excludedCount: chartExcludedCount, tradeList: chartTradeList } = useMemo(() => {
-    if (!chartCandles.length) return { traces: [], excludedCount: 0, tradeList: [] };
+  const {
+    traces: chartTraces, excludedCount: chartExcludedCount,
+    tradeList: chartTradeList, accountPills: chartAccountPills
+  } = useMemo(() => {
+    if (!chartCandles.length) return { traces: [], excludedCount: 0, tradeList: [], accountPills: [] };
     const candleTrace = {
       type: 'candlestick',
       x: chartCandles.map(c => new Date(c.ts).toISOString()),
@@ -283,21 +289,35 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       return openedTs >= minTs && openedTs <= maxTs;
     });
     const excludedCount = allSymbolTrades.length - chartTrades.length;
-    const byLogin = {};
-    for (const t of chartTrades) (byLogin[t.login] ||= []).push(t);
 
-    // Une couleur distincte par compte (pas par gagnant/perdant -- ça se confondait avec le
-    // vert/rouge des chandeliers). Une ligne pointillée relie chaque entrée à sa sortie, dans la
-    // même couleur que le compte -- séparée par un null entre chaque trade pour ne PAS chaîner
-    // les trades entre eux (c'est ça qui créait l'effet spaghetti avant). Trois informations
-    // distinctes par marqueur : couleur de fond = compte, forme = sens (▲ achat / ▼ vente à
-    // l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte). Le P&L compact
-    // s'affiche aussi directement au point de sortie (label sur le graphique, pas juste au survol).
-    const compactPnl = v => `${v >= 0 ? '+' : '-'}$${Math.round(Math.abs(v))}`;
+    // Couleur stable par compte, assignée une fois pour tous les trades de la fenêtre (avant tout
+    // filtre de sélection) -- sert aux marqueurs, à la liste, et aux pastilles cliquables ci-dessous,
+    // pour que la couleur d'un compte reste la même peu importe ce qui est filtré/sélectionné.
+    const loginOrder = [...new Set(chartTrades.map(t => t.login))];
     const loginColors = {};
-    const tradeTraces = Object.entries(byLogin).map(([login, ts], i) => {
-      const loginColor = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length];
-      loginColors[login] = loginColor;
+    loginOrder.forEach((login, i) => { loginColors[login] = LOGIN_MARKER_COLORS[i % LOGIN_MARKER_COLORS.length]; });
+
+    // Ce qui apparaît sur le GRAPHIQUE : priorité aux trades sélectionnés individuellement dans la
+    // liste, sinon au filtre de comptes (pastilles), sinon tout. La LISTE plus bas n'est filtrée que
+    // par compte (jamais par trade sélectionné) pour pouvoir continuer à cliquer d'autres trades à
+    // ajouter à la sélection sans qu'ils disparaissent de la liste.
+    const chartVisibleTrades = chartSelectedTradeKeys.size
+      ? chartTrades.filter(t => chartSelectedTradeKeys.has(tradeKey(t)))
+      : chartSelectedLogins.size
+      ? chartTrades.filter(t => chartSelectedLogins.has(t.login))
+      : chartTrades;
+
+    const byLogin = {};
+    for (const t of chartVisibleTrades) (byLogin[t.login] ||= []).push(t);
+
+    // Trois informations distinctes par marqueur : couleur de fond = compte, forme = sens (▲ achat /
+    // ▼ vente à l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte). Le P&L
+    // compact s'affiche aussi directement au point de sortie (label sur le graphique, pas juste au
+    // survol). Une ligne pointillée relie chaque entrée à sa sortie, dans la couleur du compte --
+    // séparée par un null entre chaque trade pour ne pas chaîner les trades entre eux.
+    const compactPnl = v => `${v >= 0 ? '+' : '-'}$${Math.round(Math.abs(v))}`;
+    const tradeTraces = Object.entries(byLogin).map(([login, ts]) => {
+      const loginColor = loginColors[login];
       const x = [], y = [], symbol = [], borderColor = [], hovertext = [], dispText = [];
       for (const t of ts) {
         const win = t.net_pnl >= 0;
@@ -324,13 +344,60 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     });
 
     // Liste compacte pour le panneau sous le graphique (pastille de couleur au lieu du nom complet
-    // du compte, qui prend trop de place quand il y a beaucoup de trades).
+    // du compte, qui prend trop de place quand il y a beaucoup de trades) -- filtrée par compte
+    // seulement (voir note plus haut sur pourquoi elle ne se filtre pas par trade sélectionné).
     const tradeList = [...chartTrades]
+      .filter(t => !chartSelectedLogins.size || chartSelectedLogins.has(t.login))
       .sort((a, b) => new Date(toUtcIso(b.closed_at?.value || b.closed_at)) - new Date(toUtcIso(a.closed_at?.value || a.closed_at)))
       .map(t => ({ ...t, color: loginColors[t.login] || MUTED }));
 
-    return { traces: [candleTrace, ...tradeTraces], excludedCount, tradeList };
-  }, [chartCandles, trades, chartSymbol]);
+    const accountPills = loginOrder.map(login => ({ login: Number(login), color: loginColors[login] }));
+
+    return { traces: [candleTrace, ...tradeTraces], excludedCount, tradeList, accountPills };
+  }, [chartCandles, trades, chartSymbol, chartSelectedLogins, chartSelectedTradeKeys]);
+
+  // Repartir à zéro sur la sélection compte/trades quand on change de symbole -- sinon un login/trade
+  // sélectionné pour un symbole reste actif (et invisible) en changeant de symbole.
+  useEffect(() => {
+    setChartSelectedLogins(new Set());
+    setChartSelectedTradeKeys(new Set());
+  }, [chartSymbol]);
+
+  // Cliquer une pastille de compte = filtre dur (graphique + liste). Repart à zéro sur la sélection de
+  // trades précis pour éviter que le graphique reste bloqué sur un ancien trade sélectionné.
+  const toggleChartLogin = login => {
+    setChartSelectedTradeKeys(new Set());
+    setChartSelectedLogins(prev => {
+      const next = new Set(prev);
+      if (next.has(login)) next.delete(login); else next.add(login);
+      return next;
+    });
+  };
+
+  // Cliquer un trade dans la liste = ajoute/retire ce trade de la sélection (multi-sélection) --
+  // ne filtre JAMAIS la liste elle-même, seulement le graphique, pour pouvoir continuer à cliquer
+  // d'autres trades sans qu'ils disparaissent.
+  const toggleChartTrade = t => {
+    const key = tradeKey(t);
+    setChartSelectedTradeKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const clearChartSelection = () => {
+    setChartSelectedLogins(new Set());
+    setChartSelectedTradeKeys(new Set());
+  };
+
+  // Comptes à surligner dans la rangée de pastilles : sélectionnés explicitement, ou compte d'un
+  // trade actuellement sélectionné dans la liste (highlight implicite demandé).
+  const chartHighlightedLogins = useMemo(() => {
+    const set = new Set(chartSelectedLogins);
+    for (const t of chartTradeList) if (chartSelectedTradeKeys.has(tradeKey(t))) set.add(t.login);
+    return set;
+  }, [chartSelectedLogins, chartSelectedTradeKeys, chartTradeList]);
 
   // Total des resets/topups par login (account_events_view) — n'a de sens qu'en groupement par login,
   // pas par symbole. Sert à montrer que le P&L Net (trading pur) peut être compensé par un reset côté firme.
@@ -627,6 +694,34 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       ({chartPeriod}) et ne sont pas montrés — élargis la période pour les voir.
                     </div>
                   )}
+                  {chartAccountPills.length > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <span style={{ fontSize: 11, color: MUTED, marginRight: 2 }}>Filtrer par compte :</span>
+                      {chartAccountPills.map(p => {
+                        const active = chartSelectedLogins.has(p.login);
+                        const highlighted = chartHighlightedLogins.has(p.login);
+                        return (
+                          <button key={p.login} onClick={() => toggleChartLogin(p.login)} style={{
+                            display: 'flex', alignItems: 'center', gap: 5,
+                            padding: '4px 10px', borderRadius: 20, cursor: 'pointer', fontSize: 12,
+                            border: `1.5px solid ${highlighted ? p.color : '#1e2130'}`,
+                            background: active ? `${p.color}22` : 'transparent',
+                            color: highlighted ? '#fff' : MUTED,
+                            boxShadow: highlighted && !active ? `0 0 0 2px ${p.color}55` : 'none'
+                          }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+                            {labelForLogin(p.login)}
+                          </button>
+                        );
+                      })}
+                      {(chartSelectedLogins.size > 0 || chartSelectedTradeKeys.size > 0) && (
+                        <button onClick={clearChartSelection} style={{
+                          padding: '4px 10px', borderRadius: 20, cursor: 'pointer', fontSize: 12,
+                          border: '1.5px solid #1e2130', background: 'transparent', color: MUTED
+                        }}>✕ Effacer la sélection</button>
+                      )}
+                    </div>
+                  )}
                   <PlotDiv
                     traces={chartTraces}
                     layout={{
@@ -643,7 +738,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       yaxis: { title: 'Prix', gridcolor: '#1e2130' },
                       legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#ccc' } }
                     }}
-                    deps={[chartCandles.length, chartTraces.length, chartExcludedCount]}
+                    deps={[chartCandles.length, chartTraces.length, chartExcludedCount, chartSelectedLogins.size, chartSelectedTradeKeys.size]}
                   />
                   <div style={{ fontSize: 11, color: MUTED, marginTop: 8, textAlign: 'center' }}>
                     Couleur de fond = compte · ▲ = achat, ▼ = vente (entrée), ● = sortie ·{' '}
@@ -653,33 +748,52 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
                   {chartTradeList.length > 0 && (
                     <div style={{ marginTop: 14, borderTop: '0.5px solid #1e2130', paddingTop: 10 }}>
-                      <div style={{ fontSize: 11, color: MUTED, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Trades affichés ({chartTradeList.length})
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Trades affichés ({chartTradeList.length})
+                          {chartSelectedTradeKeys.size > 0 && ` · ${chartSelectedTradeKeys.size} sélectionné(s)`}
+                        </div>
+                        {chartSelectedTradeKeys.size > 0 && (
+                          <button onClick={clearChartSelection} style={{
+                            marginLeft: 'auto', padding: '2px 10px', borderRadius: 20, cursor: 'pointer', fontSize: 11,
+                            border: '1px solid #1e2130', background: 'transparent', color: MUTED
+                          }}>✕ Effacer</button>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 10, color: MUTED, marginBottom: 6 }}>
+                        Clique un ou plusieurs trades pour les isoler sur le graphique ci-dessus.
                       </div>
                       <div style={{ maxHeight: 220, overflowY: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                           <tbody>
-                            {chartTradeList.map((t, i) => (
-                              <tr key={i} style={{ borderBottom: '0.5px solid #1a1d27' }}>
-                                <td style={{ padding: '5px 8px', width: 16 }}>
-                                  <span title={labelForLogin(t.login)} style={{
-                                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: t.color
-                                  }} />
-                                </td>
-                                <td style={{ padding: '5px 8px', width: 16, color: t.direction === 'BUY' ? GREEN : RED }}>
-                                  {t.direction === 'BUY' ? '▲' : '▼'}
-                                </td>
-                                <td style={{ padding: '5px 8px', color: MUTED, whiteSpace: 'nowrap' }}>
-                                  {fmtDateTime(t.closed_at?.value || t.closed_at)}
-                                </td>
-                                <td style={{ padding: '5px 8px', color: '#ccc', whiteSpace: 'nowrap' }}>
-                                  {t.entry_price} → {t.exit_price}
-                                </td>
-                                <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 600, color: t.net_pnl >= 0 ? GREEN : RED }}>
-                                  {fmtMoney(t.net_pnl)}
-                                </td>
-                              </tr>
-                            ))}
+                            {chartTradeList.map((t, i) => {
+                              const selected = chartSelectedTradeKeys.has(tradeKey(t));
+                              return (
+                                <tr key={i} onClick={() => toggleChartTrade(t)} style={{
+                                  borderBottom: '0.5px solid #1a1d27', cursor: 'pointer',
+                                  background: selected ? `${t.color}1a` : 'transparent'
+                                }}>
+                                  <td style={{ padding: '5px 8px', width: 16 }}>
+                                    <span title={labelForLogin(t.login)} style={{
+                                      display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                                      background: t.color, boxShadow: selected ? `0 0 0 2px ${t.color}55` : 'none'
+                                    }} />
+                                  </td>
+                                  <td style={{ padding: '5px 8px', width: 16, color: t.direction === 'BUY' ? GREEN : RED }}>
+                                    {t.direction === 'BUY' ? '▲' : '▼'}
+                                  </td>
+                                  <td style={{ padding: '5px 8px', color: MUTED, whiteSpace: 'nowrap' }}>
+                                    {fmtDateTime(t.closed_at?.value || t.closed_at)}
+                                  </td>
+                                  <td style={{ padding: '5px 8px', color: '#ccc', whiteSpace: 'nowrap' }}>
+                                    {t.entry_price} → {t.exit_price}
+                                  </td>
+                                  <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 600, color: t.net_pnl >= 0 ? GREEN : RED }}>
+                                    {fmtMoney(t.net_pnl)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
