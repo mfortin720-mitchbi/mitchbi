@@ -84,6 +84,7 @@ export default function Assistant({ session }) {
   };
 
   const suggestions = [
+    'Fais-moi un forecast pour cette semaine. Combien de licences peuvent atteindre leur target ?',
     'Résume la performance de mes 6 comptes cette semaine, en tableau',
     'Quel compte a le meilleur win rate ce mois-ci ?',
     'Montre mes trades sur XAUUSD en tableau (entrée, sortie, P&L)',

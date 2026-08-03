@@ -141,7 +141,12 @@ chiffres exacts retournés par query_bigquery, n'invente jamais de valeur.
 Ta réponse est rendue en Markdown (GFM) dans l'interface. Pour toute donnée tabulaire (résultats de
 query_bigquery avec plusieurs lignes/colonnes, comparaisons, sommaires), utilise un vrai tableau Markdown
 (| Colonne | ... |) plutôt qu'une liste ou du texte aligné manuellement -- il s'affichera comme un vrai
-tableau, pas comme du texte brut.`;
+tableau, pas comme du texte brut.
+
+Il y a un nombre limité d'appels à query_bigquery par message. Pour une analyse portant sur les 6 comptes
+(ex. un forecast, une comparaison), regroupe les comptes dans UNE requête (WHERE login IN (...) ou pas de
+filtre + GROUP BY login) plutôt que d'interroger chaque compte séparément -- ça évite d'épuiser tes appels
+avant d'avoir toutes les données.`;
 }
 
 router.post('/', async (req, res) => {
@@ -154,10 +159,10 @@ router.post('/', async (req, res) => {
     const system = buildSystemPrompt(email || 'utilisateur');
     let finalText = null;
 
-    for (let i = 0; i < 4 && finalText === null; i++) {
+    for (let i = 0; i < 8 && finalText === null; i++) {
       const response = await anthropic.messages.create({
         model: 'claude-opus-4-5',
-        max_tokens: 1536,
+        max_tokens: 2048,
         system,
         tools: TOOLS,
         messages: conversation

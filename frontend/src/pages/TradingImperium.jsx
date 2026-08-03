@@ -17,6 +17,16 @@ const LOGIN_MARKER_COLORS = ['#378ADD', '#9B59B6', '#00BCD4', '#FF6EC7', '#7CB34
 const fmtMoney = v => v == null ? '—' : `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtPct = v => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 
+// % du gain requis pour ce challenge déjà réalisé : (equity - deposit) / (target - deposit). >=100% =
+// target atteint, 0-99% = en chemin, <0% = en perte (sous le deposit de départ).
+const challengeProgress = acc => {
+  if (acc.challenge_target == null || acc.deposit == null) return null;
+  const span = acc.challenge_target - acc.deposit;
+  if (!span) return null;
+  return ((acc.equity - acc.deposit) / span) * 100;
+};
+const progressColor = p => p == null ? MUTED : p >= 100 ? GREEN : p > 0 ? GOLD : RED;
+
 // BigQuery TIMESTAMP fields come back from the backend as a string with NO timezone marker
 // (e.g. "2026-08-02 14:30:00.000000" -- a UTC instant, but written without the "Z"). `new Date(...)`
 // on a marker-less date-time string is interpreted as LOCAL browser time per the JS spec, which
@@ -436,6 +446,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             const status = AccountStatus(acc);
             const selected = filterLogin === acc.login;
             const hasPosition = acc.open_positions_count > 0;
+            const progress = challengeProgress(acc);
             return (
               <Card
                 key={acc.login}
@@ -456,14 +467,24 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <div style={{ marginLeft: 'auto', fontSize: 11, color: status.color }}>{status.label}</div>
                 </div>
                 {acc.challenge_phase && (
-                  <div style={{
-                    display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                    marginBottom: 7,
-                    color: CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED,
-                    background: `${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}22`,
-                    border: `0.5px solid ${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}55`
-                  }}>
-                    {acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 7 }}>
+                    <div style={{
+                      display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                      color: CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED,
+                      background: `${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}22`,
+                      border: `0.5px solid ${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}55`
+                    }}>
+                      {acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
+                    </div>
+                    {progress != null && (
+                      <div title="Progression vers le target" style={{
+                        display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600,
+                        color: progressColor(progress)
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: progressColor(progress) }} />
+                        {progress.toFixed(1)}%
+                      </div>
+                    )}
                   </div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
