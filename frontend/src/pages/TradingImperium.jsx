@@ -41,19 +41,13 @@ const toUtcIso = v => {
 };
 const fmtDateTime = v => v ? new Date(toUtcIso(v)).toLocaleString('fr-CA', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 
-// Le graphique de prix affiche l'heure du SERVEUR MT5 (pas UTC, pas l'heure locale du navigateur) --
-// "tout est sur cette échelle de temps" côté utilisateur, qui lit le graphique à côté de son terminal
-// MT5. Offset confirmé empiriquement le 2026-08-03 (VPS/UTC 14:46 == terminal MT5 17:46) = UTC+3.
-// Prend un instant UTC correct (ms epoch ou string déjà passée par toUtcIso) et produit une chaîne
-// ISO "naïve" (sans Z) décalée de +3h -- Plotly affiche les chiffres littéraux d'une chaîne sans Z,
-// donc ce décalage manuel se retrouve affiché tel quel sur l'axe, peu importe le fuseau du visiteur.
-const MT5_SERVER_UTC_OFFSET_HOURS = 3;
-const toMt5Iso = v => {
-  const ms = typeof v === 'number' ? v : new Date(v).getTime();
-  const d = new Date(ms + MT5_SERVER_UTC_OFFSET_HOURS * 3600 * 1000);
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-};
+// Le graphique de prix affiche l'heure en UTC, tout court -- une tentative précédente d'afficher
+// "l'heure serveur MT5" (+3h, calibrée sur l'horloge du chart MT5) a créé un décalage de 3h avec
+// l'onglet Trade/History de MT5 (2026-08-03 : entrée à 10h25 dans MT5, 13h25 dans mitchBI) -- le chart
+// et l'onglet Trade de MT5 n'utilisent visiblement PAS la même convention d'heure entre eux. Plutôt que
+// de deviner laquelle des deux horloges MT5 suivre (et casser l'alignement marqueur/bougie sur CE
+// graphique, qui doivent absolument rester sur la même échelle entre eux), on revient à UTC pur partout
+// -- la seule valeur non ambiguë, directement dérivée des timestamps BigQuery via toUtcIso.
 
 // Charge Plotly une seule fois (même pattern que Trader.jsx)
 const usePlotly = () => {
@@ -354,7 +348,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     if (!chartCandles.length) return { traces: [], excludedCount: 0, tradeList: [], accountPills: [] };
     const candleTrace = {
       type: 'candlestick',
-      x: chartCandles.map(c => toMt5Iso(c.ts)),
+      x: chartCandles.map(c => new Date(c.ts).toISOString()),
       open: chartCandles.map(c => c.open),
       high: chartCandles.map(c => c.high),
       low: chartCandles.map(c => c.low),
@@ -405,7 +399,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       for (const t of ts) {
         const win = t.net_pnl >= 0;
         const resultColor = win ? GREEN : RED;
-        x.push(toMt5Iso(toUtcIso(t.opened_at?.value || t.opened_at)), toMt5Iso(toUtcIso(t.closed_at?.value || t.closed_at)), null);
+        x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at), null);
         y.push(t.entry_price, t.exit_price, null);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
         borderColor.push(resultColor, resultColor, 'rgba(0,0,0,0)');
@@ -446,10 +440,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     let openTrace = null;
     if (openPositions.length) {
       const openColor = loginColors[chartLogin] ?? LOGIN_MARKER_COLORS[loginOrder.length % LOGIN_MARKER_COLORS.length];
-      const lastCandleIso = toMt5Iso(chartCandles[chartCandles.length - 1].ts);
+      const lastCandleIso = new Date(chartCandles[chartCandles.length - 1].ts).toISOString();
       const x = [], y = [], symbol = [], dispText = [], hovertext = [];
       for (const p of openPositions) {
-        x.push(toMt5Iso(toUtcIso(p.time_open?.value || p.time_open)), lastCandleIso, null);
+        x.push(toUtcIso(p.time_open?.value || p.time_open), lastCandleIso, null);
         y.push(p.price_open, p.price_current, null);
         symbol.push(p.type === 'BUY' ? 'triangle-up' : 'triangle-down', 'diamond', 'circle');
         dispText.push('', `${p.profit >= 0 ? '+' : '-'}$${Math.round(Math.abs(p.profit))} (en cours)`, '');
@@ -859,7 +853,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       font: { color: '#ccc' },
                       xaxis: {
                         type: 'date',
-                        title: 'Heure serveur MT5 (UTC+3)',
+                        title: 'Heure (UTC)',
                         rangeslider: { visible: true, bgcolor: '#0f1117', bordercolor: '#1e2130' },
                         gridcolor: '#1e2130'
                       },
