@@ -739,6 +739,7 @@ function OrderDetailRows({ orderId }) {
 
 function OrdersTab() {
   const [orders, setOrders] = useState([]);
+  const [comparisons, setComparisons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openOrderId, setOpenOrderId] = useState(null);
 
@@ -746,9 +747,14 @@ function OrdersTab() {
     (async () => {
       setLoading(true);
       try {
-        const res = await apiFetch('/api/epicerie/orders?limit=100');
-        const json = await res.json();
-        if (json.success) setOrders(json.orders);
+        const [ordersRes, comparisonsRes] = await Promise.all([
+          apiFetch('/api/epicerie/orders?limit=100'),
+          apiFetch('/api/epicerie/order-comparisons?limit=10'),
+        ]);
+        const ordersJson = await ordersRes.json();
+        if (ordersJson.success) setOrders(ordersJson.orders);
+        const comparisonsJson = await comparisonsRes.json();
+        if (comparisonsJson.success) setComparisons(comparisonsJson.comparisons);
       } finally {
         setLoading(false);
       }
@@ -758,7 +764,43 @@ function OrdersTab() {
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
   return (
-    <div style={card}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {comparisons.length > 0 && (
+        <div style={card}>
+          <div style={label}>Derniers comparatifs (panier planifié vs commande réelle)</div>
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thCompact}>Comparé le</th>
+                  <th style={thCompact}>Commande</th>
+                  <th style={thCompact}>Semaine</th>
+                  <th style={thCompact}>Retrouvés</th>
+                  <th style={thCompact}>Manquants</th>
+                  <th style={thCompact}>Extras</th>
+                  <th style={thCompact}>Déclenché par</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisons.map((c) => (
+                  <tr key={c.id}>
+                    <td style={tdCompact}>{new Date(c.compared_at).toLocaleString('fr-CA')}</td>
+                    <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>#{c.order_number}</td>
+                    <td style={{ ...tdCompact, color: MUTED }}>{new Date(c.week_of).toLocaleDateString('fr-CA')}</td>
+                    <td style={tdCompact}>{c.matched_count}/{c.planned_count}</td>
+                    <td style={{ ...tdCompact, color: c.missing_items?.length ? GOLD : MUTED }}>
+                      {c.missing_items?.length ? c.missing_items.map((m) => m.product_name).join(', ') : '—'}
+                    </td>
+                    <td style={{ ...tdCompact, color: c.extra_items?.length ? BLUE : MUTED }}>{c.extra_items?.length || 0}</td>
+                    <td style={{ ...tdCompact, color: MUTED }}>{c.triggered_by || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <div style={card}>
       <div style={label}>{orders.length} commandes — clique une ligne pour voir les produits</div>
       <div style={{ overflowX: 'auto', marginTop: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -812,6 +854,7 @@ function OrdersTab() {
           </tbody>
         </table>
       </div>
+      </div>
     </div>
   );
 }
@@ -852,6 +895,8 @@ function NextOrderTab() {
   const [newItem, setNewItem] = useState({ article_number: '', product_name: '', quantity: 1 });
   const [resetReason, setResetReason] = useState('ALL');
   const [resetting, setResetting] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const [compareMessage, setCompareMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -932,6 +977,37 @@ function NextOrderTab() {
     }
   };
 
+  // A utiliser une fois la commande reellement passee sur maxi.ca -- compare
+  // le panier planifie a la derniere commande synchronisee, puis vide le
+  // panier. Meme flux que la commande /reset envoyee par Telegram.
+  const compareAndReset = async () => {
+    if (!weekOf) return;
+    if (!window.confirm('Comparer le panier à la dernière commande Maxi et vider le panier ?')) return;
+    setComparing(true);
+    setCompareMessage('');
+    try {
+      const res = await apiFetch('/api/epicerie/reset-and-compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ triggered_by: 'web' }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setCompareMessage(`Erreur: ${json.error}`);
+        return;
+      }
+      const parts = [`Commande #${json.order_number} — ${json.matched_count}/${json.planned_count} items planifiés retrouvés.`];
+      if (json.missing.length) parts.push(`Manquants: ${json.missing.map((m) => m.product_name).join(', ')}`);
+      if (json.extra.length) parts.push(`${json.extra.length} item(s) acheté(s) hors plan.`);
+      setCompareMessage(parts.join(' '));
+      await load();
+    } catch (err) {
+      setCompareMessage(`Erreur: ${err.message}`);
+    } finally {
+      setComparing(false);
+    }
+  };
+
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
   if (!weekOf) {
@@ -961,8 +1037,15 @@ function NextOrderTab() {
           <button style={{ ...btn(RED), padding: '4px 10px', fontSize: 11 }} onClick={resetCart} disabled={resetting || !items.length}>
             {resetting ? 'Suppression...' : '↺ Reset'}
           </button>
+          <button style={{ ...btn(GREEN), padding: '4px 10px', fontSize: 11 }} onClick={compareAndReset} disabled={comparing || !items.length}
+            title="Une fois la commande passée sur maxi.ca : compare le panier à la dernière commande synchronisée, puis vide le panier">
+            {comparing ? 'Comparaison...' : '📦 Commande passée'}
+          </button>
         </div>
       </div>
+      {compareMessage && (
+        <p style={{ fontSize: 12, color: compareMessage.startsWith('Erreur') ? RED : MUTED, margin: '8px 0 0' }}>{compareMessage}</p>
+      )}
       <div style={{ overflowX: 'auto', marginTop: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
