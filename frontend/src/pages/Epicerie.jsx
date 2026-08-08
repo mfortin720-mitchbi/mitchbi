@@ -918,6 +918,8 @@ function FlyerTab() {
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [addedArticles, setAddedArticles] = useState(new Set());
+  const [sortBy, setSortBy] = useState(null); // null | 'purchases' | 'discount'
+  const [sortDir, setSortDir] = useState('desc');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -984,6 +986,22 @@ function FlyerTab() {
     }
   };
 
+  const toggleSort = (field) => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(field);
+      setSortDir('desc');
+    }
+  };
+
+  // % de rabais = (regulier - special) / regulier -- null si pas de prix regulier connu
+  const getDiscountPct = (it) => {
+    const price = parseFloat(it.price_text);
+    if (!it.original_price || isNaN(price) || it.original_price <= 0) return null;
+    return Math.round(((it.original_price - price) / it.original_price) * 1000) / 10;
+  };
+
   const q = search.trim().toLowerCase();
   const visibleItems = items.filter((it) => {
     if (purchasedOnly && !it.previously_purchased) return false;
@@ -992,6 +1010,14 @@ function FlyerTab() {
       .filter(Boolean)
       .some((f) => String(f).toLowerCase().includes(q));
   });
+
+  const sortedItems = sortBy
+    ? [...visibleItems].sort((a, b) => {
+        const va = sortBy === 'purchases' ? (a.recent_purchases || 0) : (getDiscountPct(a) ?? -Infinity);
+        const vb = sortBy === 'purchases' ? (b.recent_purchases || 0) : (getDiscountPct(b) ?? -Infinity);
+        return sortDir === 'desc' ? vb - va : va - vb;
+      })
+    : visibleItems;
 
   return (
     <div style={card}>
@@ -1038,7 +1064,12 @@ function FlyerTab() {
                 <th style={thCompact}>Marque</th>
                 <th style={thCompact}>Prix</th>
                 <th style={thCompact}>Régulier</th>
-                <th style={thCompact}>Achats ({priceCompareDuration}mo)</th>
+                <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('discount')} title="Trier par % de rabais">
+                  % Rabais {sortBy === 'discount' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
+                </th>
+                <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('purchases')} title="Trier par fréquence d'achats">
+                  Achats ({priceCompareDuration}mo) {sortBy === 'purchases' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
+                </th>
                 <th style={thCompact}>Catégorie</th>
                 <th style={thCompact}>Valide jusqu'au</th>
                 <th style={thCompact}>Statut</th>
@@ -1047,7 +1078,7 @@ function FlyerTab() {
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((it) => (
+              {sortedItems.map((it) => (
                 <tr key={it.id}>
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
@@ -1062,6 +1093,7 @@ function FlyerTab() {
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
                   </td>
+                  <td style={{ ...tdCompact, color: GOLD }}>{getDiscountPct(it) != null ? `-${getDiscountPct(it)}%` : '—'}</td>
                   <td style={{ ...tdCompact, color: it.recent_purchases ? undefined : MUTED }}>{it.recent_purchases || 0}x</td>
                   <td style={{ ...tdCompact, color: MUTED }}>{(it.categories || []).join(', ') || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>
