@@ -19,7 +19,7 @@ const btn = (bg) => ({
 });
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '0.5px solid #1e2130' };
 const thCompact = { ...th, padding: '5px 8px', textAlign: 'left' };
-const tdCompact = { padding: '5px 8px', fontSize: 12, color: '#ddd', borderBottom: '0.5px solid #1e2130', textAlign: 'left' };
+const tdCompact = { padding: '5px 8px', fontSize: 11, color: '#ddd', borderBottom: '0.5px solid #1e2130', textAlign: 'left' };
 
 const RULE_BADGE = {
   blacklisted: { label: 'Blacklisté', bg: '#2b0d0d', color: '#D85A30' },
@@ -500,9 +500,9 @@ function DashboardTab() {
                     {r.image_url && <img src={r.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
                   <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
-                  <td style={{ ...tdCompact, fontSize: 12 }}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
-                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{r.article_number}</td>
-                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{r.brand || '—'}</td>
+                  <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{r.article_number}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
                   <td style={tdCompact}>{r.orders}</td>
                   <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
                   <td style={tdCompact}>
@@ -603,7 +603,7 @@ function OrderDetailRows({ orderId }) {
               <img src={l.grocery_products.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />
             )}
           </td>
-          <td style={{ ...tdCompact, paddingLeft: 24, fontSize: 12 }}>
+          <td style={{ ...tdCompact, paddingLeft: 24 }}>
             {l.grocery_products?.product_name || l.article_number}
             {l.grocery_products?.brand && <span style={{ color: MUTED }}> — {l.grocery_products.brand}</span>}
           </td>
@@ -817,7 +817,7 @@ function NextOrderTab() {
                 <td style={tdCompact}>
                   {it.image_url && <img src={it.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                 </td>
-                <td style={{ ...tdCompact, fontSize: 12 }}>{it.product_name}</td>
+                <td style={tdCompact}>{it.product_name}</td>
                 <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
                 <td style={tdCompact}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1003,12 +1003,12 @@ function FlyerTab() {
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
-                  <td style={{ ...tdCompact, fontSize: 12 }}>
+                  <td style={tdCompact}>
                     {it.previously_purchased && <span title="Déjà acheté" style={{ color: GREEN }}>● </span>}
                     {it.name}
                   </td>
-                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number || '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{it.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{it.article_number || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{it.brand || '—'}</td>
                   <td style={{ ...tdCompact, color: GREEN, fontWeight: 600 }}>{it.price_text || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
@@ -1052,6 +1052,7 @@ function SearchTab() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [addedIds, setAddedIds] = useState(new Set());
+  const [sortDir, setSortDir] = useState(null); // null | 'asc' | 'desc'
 
   // debounce -- pas d'appel a chaque frappe
   useEffect(() => {
@@ -1113,6 +1114,14 @@ function SearchTab() {
     }
   };
 
+  const toggleSort = () => {
+    setSortDir((d) => (d === 'desc' ? 'asc' : d === 'asc' ? null : 'desc'));
+  };
+
+  const sortedItems = sortDir
+    ? [...items].sort((a, b) => (sortDir === 'desc' ? b.recent_purchases - a.recent_purchases : a.recent_purchases - b.recent_purchases))
+    : items;
+
   return (
     <div style={card}>
       <div style={label}>Recherche dans l'historique d'achat et le circulaire actuel</div>
@@ -1133,7 +1142,9 @@ function SearchTab() {
                 <th style={thCompact}>Produit</th>
                 <th style={thCompact}>N° article</th>
                 <th style={thCompact}>Marque</th>
-                <th style={thCompact}>Achats ({priceCompareDuration}mo)</th>
+                <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={toggleSort} title="Trier par achats">
+                  Achats ({priceCompareDuration}mo) {sortDir === 'desc' ? '▾' : sortDir === 'asc' ? '▴' : ''}
+                </th>
                 <th style={thCompact}>Prix moyen ({priceCompareDuration}mo)</th>
                 <th style={thCompact}>Circulaire</th>
                 <th style={thCompact}>Statut</th>
@@ -1142,7 +1153,7 @@ function SearchTab() {
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
+              {sortedItems.map((it) => (
                 <tr key={it.article_number}>
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
