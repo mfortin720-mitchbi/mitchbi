@@ -20,6 +20,12 @@ const btn = (bg) => ({
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '0.5px solid #1e2130' };
 const td = { padding: '8px 10px', fontSize: 13, color: '#ddd', borderBottom: '0.5px solid #1e2130' };
 
+// Bookmarklet -- doit être glissé dans la barre de favoris et cliqué
+// DEPUIS maxi.ca (même origine requise pour lire le cookie AccessToken).
+// Une page mitchbi.com ne peut pas l'exécuter dans un onglet maxi.ca ouvert
+// depuis ici -- restriction cross-origin du navigateur, pas contournable.
+const BOOKMARKLET = `javascript:(function(){const name="AccessToken=";const decodedCookie=decodeURIComponent(document.cookie);const ca=decodedCookie.split(';');let token="";for(let i=0;i<ca.length;i++){let c=ca[i].trim();if(c.indexOf(name)===0){token=c.substring(name.length,c.length);break;}}if(token){navigator.clipboard.writeText(token).then(()=>{alert("✅ AccessToken copié dans le presse-papier !");}).catch(()=>{prompt("Voici votre AccessToken :",token);});}else{alert("❌ Cookie 'AccessToken' introuvable dans document.cookie.");}})();`;
+
 const TABS = [
   { id: 'config', label: 'Config' },
   { id: 'dashboard', label: 'Dashboard' },
@@ -67,7 +73,9 @@ function ConfigTab() {
   const [tokenInput, setTokenInput] = useState('');
   const [tokenExpiresInput, setTokenExpiresInput] = useState('');
   const [saving, setSaving] = useState(false);
-  const [newRule, setNewRule] = useState({ article_number: '', blacklisted: true, notes: '' });
+  const [genMessage, setGenMessage] = useState('');
+  const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
+  const [newWhitelistRule, setNewWhitelistRule] = useState({ article_number: '', notes: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +96,7 @@ function ConfigTab() {
 
   const saveThreshold = async () => {
     setSaving(true);
+    setGenMessage('');
     try {
       const value = (parseFloat(thresholdInput) / 100).toString();
       await apiFetch('/api/epicerie/config', {
@@ -95,6 +104,12 @@ function ConfigTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'list_frequency_threshold', value }),
       });
+      // le seuil affecte directement quels produits qualifient -- on
+      // recalcule la prochaine commande tout de suite plutôt que de la
+      // laisser désynchronisée jusqu'au prochain cron
+      const res = await apiFetch('/api/epicerie/generate-list', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) setGenMessage(`Liste recalculée : ${json.count} produits pour le ${json.week_of}.`);
       await load();
     } finally {
       setSaving(false);
@@ -138,30 +153,42 @@ function ConfigTab() {
     }
   };
 
-  const toggleBlacklist = async (rule) => {
+  const deleteRule = async (id) => {
     setSaving(true);
     try {
-      await apiFetch('/api/epicerie/product-rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ article_number: rule.article_number, blacklisted: !rule.blacklisted, preferred_qty: rule.preferred_qty, notes: rule.notes }),
-      });
+      await apiFetch(`/api/epicerie/product-rules/${id}`, { method: 'DELETE' });
       await load();
     } finally {
       setSaving(false);
     }
   };
 
-  const addRule = async () => {
-    if (!newRule.article_number.trim()) return;
+  const addBlacklistRule = async () => {
+    if (!newBlacklistRule.article_number.trim()) return;
     setSaving(true);
     try {
       await apiFetch('/api/epicerie/product-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRule),
+        body: JSON.stringify({ ...newBlacklistRule, blacklisted: true, whitelisted: false }),
       });
-      setNewRule({ article_number: '', blacklisted: true, notes: '' });
+      setNewBlacklistRule({ article_number: '', notes: '' });
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addWhitelistRule = async () => {
+    if (!newWhitelistRule.article_number.trim()) return;
+    setSaving(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newWhitelistRule, blacklisted: false, whitelisted: true }),
+      });
+      setNewWhitelistRule({ article_number: '', notes: '' });
       await load();
     } finally {
       setSaving(false);
@@ -187,6 +214,7 @@ function ConfigTab() {
           <span style={{ color: MUTED, fontSize: 13 }}>%</span>
           <button style={btn(BLUE)} onClick={saveThreshold} disabled={saving}>Sauvegarder</button>
         </div>
+        {genMessage && <p style={{ fontSize: 11, color: GREEN, margin: '8px 0 0' }}>{genMessage}</p>}
       </div>
 
       {/* Presence Eliane/Julie */}
@@ -218,8 +246,20 @@ function ConfigTab() {
         ) : (
           <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>Aucun token enregistré.</p>
         )}
-        <p style={{ fontSize: 11, color: MUTED, margin: '0 0 8px' }}>
-          F12 → Application → Cookies → maxi.ca → copier la valeur de <code>AccessToken</code>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '0 0 12px' }}>
+          <button style={btn(BLUE)} onClick={() => window.open('https://www.maxi.ca/fr', '_blank')}>
+            1. Ouvrir Maxi.ca
+          </button>
+          <a href={BOOKMARKLET} onClick={(e) => e.preventDefault()}
+            style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'grab' }}
+            title="Glisser ce bouton dans ta barre de favoris">
+            2. 📋 Copier AccessToken (glisser dans les favoris)
+          </a>
+        </div>
+        <p style={{ fontSize: 11, color: MUTED, margin: '0 0 12px' }}>
+          Glisse le bouton "2." dans ta barre de favoris <strong>une seule fois</strong>. Ensuite : connecte-toi sur Maxi.ca,
+          clique ce favori (le token est copié automatiquement), reviens ici et colle-le. Un navigateur ne permet pas à
+          mitchbi.com d'exécuter un script directement sur maxi.ca — d'où le favori.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <textarea style={{ ...input, minHeight: 60, fontFamily: 'monospace', fontSize: 11 }}
@@ -233,27 +273,51 @@ function ConfigTab() {
         </div>
       </div>
 
-      {/* Blacklist / regles produit */}
+      {/* Blacklist */}
       <div style={card}>
-        <div style={label}>Règles produit (blacklist)</div>
-        {(data?.rules || []).length === 0 && <p style={{ fontSize: 12, color: MUTED }}>Aucune règle configurée.</p>}
-        {(data?.rules || []).map((r) => (
+        <div style={label}>Blacklist — jamais dans la liste</div>
+        {(data?.rules || []).filter((r) => r.blacklisted).length === 0 && (
+          <p style={{ fontSize: 12, color: MUTED }}>Aucun produit blacklisté.</p>
+        )}
+        {(data?.rules || []).filter((r) => r.blacklisted).map((r) => (
           <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130' }}>
             <div>
               <div style={{ fontSize: 13, color: '#ddd' }}>{r.article_number}</div>
               {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
             </div>
-            <button style={btn(r.blacklisted ? RED : '#333')} onClick={() => toggleBlacklist(r)} disabled={saving}>
-              {r.blacklisted ? 'Blacklisté' : 'Autorisé'}
-            </button>
+            <button style={btn('#333')} onClick={() => deleteRule(r.id)} disabled={saving}>Retirer</button>
           </div>
         ))}
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <input style={{ ...input, flex: 1 }} placeholder="Numéro d'article (ex: 20026703001)"
-            value={newRule.article_number} onChange={(e) => setNewRule({ ...newRule, article_number: e.target.value })} />
+            value={newBlacklistRule.article_number} onChange={(e) => setNewBlacklistRule({ ...newBlacklistRule, article_number: e.target.value })} />
           <input style={{ ...input, flex: 1 }} placeholder="Note (optionnel)"
-            value={newRule.notes} onChange={(e) => setNewRule({ ...newRule, notes: e.target.value })} />
-          <button style={btn(BLUE)} onClick={addRule} disabled={saving || !newRule.article_number.trim()}>+ Blacklister</button>
+            value={newBlacklistRule.notes} onChange={(e) => setNewBlacklistRule({ ...newBlacklistRule, notes: e.target.value })} />
+          <button style={btn(RED)} onClick={addBlacklistRule} disabled={saving || !newBlacklistRule.article_number.trim()}>+ Blacklister</button>
+        </div>
+      </div>
+
+      {/* Whitelist */}
+      <div style={card}>
+        <div style={label}>Whitelist — toujours dans la liste, même sous le seuil</div>
+        {(data?.rules || []).filter((r) => r.whitelisted).length === 0 && (
+          <p style={{ fontSize: 12, color: MUTED }}>Aucun produit whitelisté.</p>
+        )}
+        {(data?.rules || []).filter((r) => r.whitelisted).map((r) => (
+          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130' }}>
+            <div>
+              <div style={{ fontSize: 13, color: '#ddd' }}>{r.article_number}</div>
+              {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
+            </div>
+            <button style={btn('#333')} onClick={() => deleteRule(r.id)} disabled={saving}>Retirer</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <input style={{ ...input, flex: 1 }} placeholder="Numéro d'article (ex: 20026703001)"
+            value={newWhitelistRule.article_number} onChange={(e) => setNewWhitelistRule({ ...newWhitelistRule, article_number: e.target.value })} />
+          <input style={{ ...input, flex: 1 }} placeholder="Note (optionnel)"
+            value={newWhitelistRule.notes} onChange={(e) => setNewWhitelistRule({ ...newWhitelistRule, notes: e.target.value })} />
+          <button style={btn(GREEN)} onClick={addWhitelistRule} disabled={saving || !newWhitelistRule.article_number.trim()}>+ Whitelister</button>
         </div>
       </div>
     </div>
@@ -385,6 +449,18 @@ function OrdersTab() {
 // PROCHAINE COMMANDE (editable)
 // ---------------------------------------------------------------------
 
+const REASON_LABELS = {
+  frequency: 'Fréquence',
+  whitelist: 'Whitelist',
+  telegram: 'Telegram',
+  flyer_proposal: 'Proposé (circulaire)',
+  michel_request: 'Demande Michel',
+  other: 'Autre',
+};
+
+const thCompact = { ...th, padding: '5px 8px', textAlign: 'left' };
+const tdCompact = { ...td, padding: '5px 8px', textAlign: 'left' };
+
 function NextOrderTab() {
   const [weekOf, setWeekOf] = useState(null);
   const [items, setItems] = useState([]);
@@ -423,7 +499,7 @@ function NextOrderTab() {
     await apiFetch('/api/epicerie/next-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ week_of: weekOf, ...newItem }),
+      body: JSON.stringify({ week_of: weekOf, ...newItem, added_reason: 'michel_request' }),
     });
     setNewItem({ article_number: '', product_name: '', quantity: 1 });
     await load();
@@ -442,27 +518,31 @@ function NextOrderTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={th}>Produit</th>
-              <th style={th}>Quantité</th>
-              <th style={th}>Statut</th>
-              <th style={th}>Lien</th>
-              <th style={th}></th>
+              <th style={thCompact}>Produit</th>
+              <th style={thCompact}>N° article</th>
+              <th style={thCompact}>Quantité</th>
+              <th style={thCompact}>Ajouté par</th>
+              <th style={thCompact}>Statut</th>
+              <th style={thCompact}>Lien</th>
+              <th style={thCompact}></th>
             </tr>
           </thead>
           <tbody>
             {items.map((it) => (
               <tr key={it.id}>
-                <td style={td}>{it.product_name}</td>
-                <td style={td}>
-                  <input type="number" min="1" style={{ ...input, width: 60 }} value={it.quantity}
+                <td style={tdCompact}>{it.product_name}</td>
+                <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
+                <td style={tdCompact}>
+                  <input type="number" min="1" style={{ ...input, width: 55, padding: '4px 8px' }} value={it.quantity}
                     onChange={(e) => updateQty(it.id, parseInt(e.target.value, 10) || 1)} />
                 </td>
-                <td style={{ ...td, color: it.status === 'added' ? GREEN : it.status === 'skipped' ? RED : MUTED }}>{it.status}</td>
-                <td style={td}>
+                <td style={{ ...tdCompact, color: MUTED }}>{REASON_LABELS[it.added_reason] || it.added_reason || '—'}</td>
+                <td style={{ ...tdCompact, color: it.status === 'added' ? GREEN : it.status === 'skipped' ? RED : MUTED }}>{it.status}</td>
+                <td style={tdCompact}>
                   {it.product_url && <a href={it.product_url} target="_blank" rel="noreferrer" style={{ color: BLUE, fontSize: 12 }}>Voir</a>}
                 </td>
-                <td style={td}>
-                  <button style={btn('#333')} onClick={() => removeItem(it.id)}>Retirer</button>
+                <td style={tdCompact}>
+                  <button style={{ ...btn('#333'), padding: '4px 10px' }} onClick={() => removeItem(it.id)}>Retirer</button>
                 </td>
               </tr>
             ))}
