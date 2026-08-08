@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const CryptoJS = require('crypto-js');
 const router = express.Router();
@@ -29,6 +30,179 @@ async function fetchAll(table, select) {
   }
   return rows;
 }
+
+// ---------------------------------------------------------------------
+// SYNC MAXI (historique de commandes -- incrementale, basee sur order_number)
+// ---------------------------------------------------------------------
+
+const MAXI_API_BASE = 'https://api.pcexpress.ca/pcx-bff/api/v1/ecommerce/v2/maxi/customers';
+const MAXI_API_HEADERS_BASE = {
+  Accept: 'application/json, text/plain, */*',
+  'Accept-Language': 'fr',
+  'Business-User-Agent': 'PCXWEB',
+  'Content-Type': 'application/json',
+  Origin: 'https://www.maxi.ca',
+  Referer: 'https://www.maxi.ca/',
+  'Site-Banner': 'maxi',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'is-helios-account': 'true',
+  'x-apikey': 'C1xujSegT5j3ap3yexJjqhOfELwGKYvz',
+  'x-application-type': 'Web',
+  'x-loblaw-tenant-id': 'ONLINE_GROCERIES',
+};
+
+async function getMaxiToken(sb) {
+  const { data, error } = await sb
+    .from('grocery_secrets')
+    .select('value_encrypted, expires_at')
+    .eq('key', 'maxi_access_token')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { token: null, expired: null };
+  const encKey = process.env.ENCRYPTION_KEY;
+  if (!encKey) throw new Error('ENCRYPTION_KEY manquante');
+  const token = CryptoJS.AES.decrypt(data.value_encrypted, encKey).toString(CryptoJS.enc.Utf8);
+  const expired = data.expires_at ? new Date(data.expires_at) < new Date() : null;
+  return { token, expired };
+}
+
+// Compare l'historique Maxi a ce qu'on a deja (order_number = cle de dedup),
+// n'importe que les commandes manquantes. Ne touche jamais au panier Maxi
+// lui-meme -- lecture seule sur l'API PC Express.
+async function syncMaxiOrders(sb) {
+  const { token, expired } = await getMaxiToken(sb);
+  if (!token) return { success: false, error: 'Aucun token Maxi enregistré.' };
+  if (expired) return { success: false, error: 'Token Maxi expiré -- reconnecte-toi sur Maxi.ca et recolle-le.' };
+
+  const headers = { ...MAXI_API_HEADERS_BASE, Authorization: `bearer ${token}` };
+
+  const historyRes = await fetch(`${MAXI_API_BASE}/historical-orders`, { headers });
+  if (!historyRes.ok) {
+    if (historyRes.status === 401 || historyRes.status === 403) {
+      return { success: false, error: 'Token Maxi invalide ou expiré -- reconnecte-toi et recolle-le.' };
+    }
+    return { success: false, error: `Erreur API Maxi (${historyRes.status})` };
+  }
+  const historyData = await historyRes.json();
+  const orderList = Array.isArray(historyData) ? historyData : (historyData.orderHistory || historyData.orders || []);
+
+  const { data: existingOrders, error: existErr } = await sb.from('grocery_orders').select('order_number');
+  if (existErr) throw existErr;
+  const existingSet = new Set(existingOrders.map((o) => o.order_number));
+
+  const newSummaries = orderList.filter((o) => {
+    const num = o.id || o.code || o.orderNumber;
+    return num && !existingSet.has(String(num));
+  });
+
+  const { count: totalBefore } = await sb.from('grocery_orders').select('id', { count: 'exact', head: true });
+
+  if (newSummaries.length === 0) {
+    return { success: true, new_orders: 0, total_orders: totalBefore, message: 'Données à jour, aucune nouvelle commande.' };
+  }
+
+  const products = new Map();
+  const ordersRows = [];
+  const purchaseRows = [];
+
+  for (const summary of newSummaries) {
+    const orderNumber = String(summary.id || summary.code || summary.orderNumber);
+    const detailRes = await fetch(`${MAXI_API_BASE}/historical-orders/${orderNumber}`, { headers });
+    const detail = detailRes.ok ? await detailRes.json() : summary;
+
+    const od = detail.orderDetails || {};
+    const booking = od.booking || {};
+    const pickup = booking.pickupLocation || {};
+    const orderDate = booking.pickupStartDate;
+    if (!orderDate) continue; // sans date on ne peut pas la situer dans l'historique
+
+    const orderId = crypto.randomUUID();
+    ordersRows.push({
+      id: orderId,
+      order_number: orderNumber,
+      order_type: od.orderType === 'ONLINE' ? 'online' : 'offline',
+      store_id: pickup.storeId || null,
+      store_name: pickup.name || null,
+      order_date: orderDate,
+      subtotal: od.subTotal ?? null,
+      total_price: od.totalPrice ?? null,
+      total_price_with_tax: od.totalPriceWithTax ?? null,
+      total_items: od.totalItems ?? null,
+      points_earned: detail.pointsEarned ?? null,
+      points_redeemed: detail.pointsRedeemed ?? null,
+      raw_payload: {
+        comment: od.comment ?? null,
+        paymentType: od.paymentType ?? null,
+        status: od.status ?? null,
+        appliedVouchers: od.appliedVouchers ?? null,
+      },
+    });
+
+    for (const entry of od.entries || []) {
+      const p = entry.product || {};
+      const articleNumber = p.articleNumber ? String(p.articleNumber) : null;
+      if (!articleNumber) continue; // items sans code produit (comptoir/boulangerie), pas rattachables
+      const weight = entry.weight ?? null;
+
+      if (!products.has(articleNumber)) {
+        products.set(articleNumber, {
+          article_number: articleNumber,
+          product_name: p.productName || articleNumber,
+          brand: p.brand || null,
+          is_weighted: weight != null,
+          product_url: p.link ? `https://www.maxi.ca/fr${p.link}` : null,
+          image_url: p.primaryImage || null,
+        });
+      }
+
+      purchaseRows.push({
+        id: crypto.randomUUID(),
+        order_id: orderId,
+        article_number: articleNumber,
+        quantity: entry.quantity ?? null,
+        weight,
+        unit_price: entry.unitPrice ?? null,
+        total_price: entry.totalPrice ?? null,
+        purchased_at: orderDate,
+      });
+    }
+
+    await new Promise((r) => setTimeout(r, 150)); // ne pas marteler l'API Maxi
+  }
+
+  if (products.size) {
+    const { error: prodErr } = await sb
+      .from('grocery_products')
+      .upsert([...products.values()], { onConflict: 'article_number' });
+    if (prodErr) throw prodErr;
+  }
+  if (ordersRows.length) {
+    const { error: ordErr } = await sb.from('grocery_orders').insert(ordersRows);
+    if (ordErr) throw ordErr;
+  }
+  for (let i = 0; i < purchaseRows.length; i += 500) {
+    const { error: purchErr } = await sb.from('grocery_purchase_history').insert(purchaseRows.slice(i, i + 500));
+    if (purchErr) throw purchErr;
+  }
+
+  return {
+    success: true,
+    new_orders: ordersRows.length,
+    total_orders: (totalBefore || 0) + ordersRows.length,
+    message: `${ordersRows.length} nouvelle(s) commande(s) importée(s).`,
+  };
+}
+
+// POST /api/epicerie/sync-orders  (declenchement manuel)
+router.post('/sync-orders', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const result = await syncMaxiOrders(sb);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // ---------------------------------------------------------------------
 // DASHBOARD
@@ -241,7 +415,10 @@ router.post('/token', async (req, res) => {
       { onConflict: 'key' }
     );
     if (error) throw error;
-    res.json({ success: true });
+
+    // token frais = bon moment pour rattraper les commandes manquantes
+    const syncResult = await syncMaxiOrders(sb);
+    res.json({ success: true, sync: syncResult });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
