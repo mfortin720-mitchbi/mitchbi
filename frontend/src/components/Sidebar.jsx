@@ -13,7 +13,7 @@ const MENU_ITEMS = [
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },
   {
-    id: 'epicerie', icon: '🛒', label: 'Épicerie',
+    id: 'epicerie-config', icon: '🛒', label: 'Épicerie',
     subItems: [
       { id: 'epicerie-config', label: 'Config' },
       { id: 'epicerie-dashboard', label: 'Dashboard' },
