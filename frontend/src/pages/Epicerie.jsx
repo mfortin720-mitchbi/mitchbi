@@ -850,6 +850,8 @@ function NextOrderTab() {
   const [priceCompareDuration, setPriceCompareDuration] = useState(6);
   const [loading, setLoading] = useState(true);
   const [newItem, setNewItem] = useState({ article_number: '', product_name: '', quantity: 1 });
+  const [resetReason, setResetReason] = useState('ALL');
+  const [resetting, setResetting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -916,15 +918,51 @@ function NextOrderTab() {
     await load();
   };
 
+  const resetCart = async () => {
+    if (!weekOf) return;
+    const what = resetReason === 'ALL' ? 'TOUT le panier' : `les items "${REASON_LABELS[resetReason]}"`;
+    if (!window.confirm(`Supprimer ${what} de la semaine du ${new Date(weekOf).toLocaleDateString('fr-CA')} ?`)) return;
+    setResetting(true);
+    try {
+      const qs = new URLSearchParams({ week_of: weekOf, reason: resetReason });
+      await apiFetch(`/api/epicerie/next-order?${qs}`, { method: 'DELETE' });
+      await load();
+    } finally {
+      setResetting(false);
+    }
+  };
+
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
   if (!weekOf) {
     return <div style={card}><p style={{ fontSize: 13, color: MUTED }}>Aucune liste générée pour l'instant.</p></div>;
   }
 
+  // Prix payé si connu, sinon moyenne recente -- meilleure estimation disponible,
+  // pas le prix courant en magasin (pas d'integration temps reel hors circulaire).
+  const cartTotals = items.reduce((acc, it) => {
+    const qty = Number(it.quantity) || 0;
+    acc.qty += qty;
+    const unitPrice = it.last_price_paid ?? it.avg_price_paid;
+    if (unitPrice != null) acc.price += unitPrice * qty;
+    else acc.missingPrice += 1;
+    return acc;
+  }, { qty: 0, price: 0, missingPrice: 0 });
+
   return (
     <div style={card}>
-      <div style={label}>Semaine du {new Date(weekOf).toLocaleDateString('fr-CA')} — {items.length} items</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={label}>Semaine du {new Date(weekOf).toLocaleDateString('fr-CA')} — {items.length} items</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <select style={{ ...input, padding: '4px 8px', fontSize: 11, width: 170 }} value={resetReason} onChange={(e) => setResetReason(e.target.value)}>
+            <option value="ALL">Tous les items</option>
+            {REASON_OPTIONS.map((r) => <option key={r} value={r}>{REASON_LABELS[r]}</option>)}
+          </select>
+          <button style={{ ...btn(RED), padding: '4px 10px', fontSize: 11 }} onClick={resetCart} disabled={resetting || !items.length}>
+            {resetting ? 'Suppression...' : '↺ Reset'}
+          </button>
+        </div>
+      </div>
       <div style={{ overflowX: 'auto', marginTop: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -943,6 +981,22 @@ function NextOrderTab() {
             </tr>
           </thead>
           <tbody>
+            <tr style={{ background: '#0f1117' }}>
+              <td style={tdCompact}></td>
+              <td style={{ ...tdCompact, fontWeight: 700 }}>Total ({items.length} items)</td>
+              <td style={tdCompact}></td>
+              <td style={{ ...tdCompact, fontWeight: 700 }}>{Math.round(cartTotals.qty * 100) / 100}</td>
+              <td style={{ ...tdCompact, fontWeight: 700, color: GREEN }}>
+                {cartTotals.price.toFixed(2)}$
+                {cartTotals.missingPrice > 0 && <span style={{ color: MUTED, fontWeight: 400 }}> (*{cartTotals.missingPrice} sans prix connu)</span>}
+              </td>
+              <td style={tdCompact}></td>
+              <td style={tdCompact}></td>
+              <td style={tdCompact}></td>
+              <td style={tdCompact}></td>
+              <td style={tdCompact}></td>
+              <td style={tdCompact}></td>
+            </tr>
             {items.map((it) => (
               <tr key={it.id}>
                 <td style={tdCompact}>
