@@ -501,7 +501,11 @@ function DashboardTab() {
                   <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
                   <td style={tdCompact}>{r.orders}</td>
                   <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
-                  <td style={tdCompact}>{r.avg_qty ?? '—'}</td>
+                  <td style={tdCompact}>
+                    {r.is_weighted
+                      ? (r.avg_weight != null ? `~${r.avg_weight} kg` : '—')
+                      : (r.avg_qty ?? '—')}
+                  </td>
                   <td style={tdCompact}>{r.avg_price != null ? `${Number(r.avg_price).toFixed(2)}$` : '—'}</td>
                   <td style={tdCompact}><RuleBadge blacklisted={r.blacklisted} whitelisted={r.whitelisted} /></td>
                   <td style={tdCompact}>
@@ -758,8 +762,16 @@ function NextOrderTab() {
                 <td style={tdCompact}>{it.product_name}</td>
                 <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
                 <td style={tdCompact}>
-                  <input type="number" min="1" style={{ ...input, width: 55, padding: '4px 8px' }} value={it.quantity}
-                    onChange={(e) => updateQty(it.id, parseInt(e.target.value, 10) || 1)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {it.is_weighted ? (
+                      <input type="number" min="0.1" step="0.1" style={{ ...input, width: 55, padding: '4px 8px' }} value={it.quantity}
+                        onChange={(e) => updateQty(it.id, parseFloat(e.target.value) || 0.1)} />
+                    ) : (
+                      <input type="number" min="1" style={{ ...input, width: 55, padding: '4px 8px' }} value={it.quantity}
+                        onChange={(e) => updateQty(it.id, parseInt(e.target.value, 10) || 1)} />
+                    )}
+                    {it.is_weighted && <span style={{ color: MUTED, fontSize: 11 }}>kg (approx.)</span>}
+                  </div>
                 </td>
                 <td style={tdCompact}>{it.last_price_paid != null ? `${Number(it.last_price_paid).toFixed(2)}$` : '—'}</td>
                 <td style={{ ...tdCompact, color: MUTED }}>{it.avg_price_paid != null ? `${Number(it.avg_price_paid).toFixed(2)}$` : '—'}</td>
