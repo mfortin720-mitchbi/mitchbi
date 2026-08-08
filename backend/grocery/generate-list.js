@@ -52,26 +52,40 @@ async function generateList() {
   for (const line of lines) {
     if (blacklist.has(line.article_number)) continue;
     if (!byProduct.has(line.article_number)) {
-      byProduct.set(line.article_number, { orderIds: new Set(), quantities: [] });
+      byProduct.set(line.article_number, { orderIds: new Set(), quantities: [], weights: [] });
     }
     const entry = byProduct.get(line.article_number);
     entry.orderIds.add(line.order_id);
     if (line.quantity && line.quantity > 0) entry.quantities.push(line.quantity);
+    if (line.weight != null) entry.weights.push(line.weight);
   }
 
-  const chosen = new Map(); // articleNumber -> { quantity, reason }
+  const chosen = new Map(); // articleNumber -> { quantity, weightQuantity, reason }
   for (const [articleNumber, entry] of byProduct) {
     const freq = entry.orderIds.size / totalOrders;
     if (freq >= threshold) {
       const avgQty = entry.quantities.length
         ? Math.round(entry.quantities.reduce((a, b) => a + b, 0) / entry.quantities.length)
         : 1;
-      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty), reason: 'frequency' });
+      // au poids (bananes, fromage...): la quantite entiere n'a pas de sens,
+      // on propose le poids moyen historique en kg a la place
+      const avgWeight = entry.weights.length
+        ? Math.round((entry.weights.reduce((a, b) => a + b, 0) / entry.weights.length) * 100) / 100
+        : 1;
+      chosen.set(articleNumber, {
+        quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty),
+        weightQuantity: avgWeight,
+        reason: 'frequency',
+      });
     }
   }
   for (const articleNumber of whitelist) {
     if (!chosen.has(articleNumber)) {
-      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, reason: 'whitelist' });
+      const entry = byProduct.get(articleNumber);
+      const avgWeight = entry?.weights.length
+        ? Math.round((entry.weights.reduce((a, b) => a + b, 0) / entry.weights.length) * 100) / 100
+        : 1;
+      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, weightQuantity: avgWeight, reason: 'whitelist' });
     }
   }
 
@@ -91,7 +105,7 @@ async function generateList() {
       article_number: articleNumber,
       product_name: p?.product_name || articleNumber,
       product_url: p?.product_url || null,
-      quantity: p?.is_weighted ? 1 : c.quantity,
+      quantity: p?.is_weighted ? c.weightQuantity : c.quantity,
       status: 'pending',
       added_reason: c.reason,
     };

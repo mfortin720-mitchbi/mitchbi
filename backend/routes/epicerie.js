@@ -59,15 +59,16 @@ router.get('/dashboard/top-products', async (req, res) => {
     const { count: totalOrders, error: countErr } = await orderCountQuery;
     if (countErr) throw countErr;
 
-    let lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, unit_price, purchased_at');
+    let lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, weight, unit_price, purchased_at');
     if (since) lines = lines.filter((l) => new Date(l.purchased_at) >= since);
 
     const byProduct = new Map();
     for (const l of lines) {
-      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], prices: [] });
+      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], weights: [], prices: [] });
       const e = byProduct.get(l.article_number);
       e.orderIds.add(l.order_id);
       if (l.quantity > 0) e.qty.push(l.quantity);
+      if (l.weight != null) e.weights.push(l.weight);
       if (l.unit_price != null) e.prices.push(l.unit_price);
     }
 
@@ -77,6 +78,8 @@ router.get('/dashboard/top-products', async (req, res) => {
         orders: e.orderIds.size,
         frequency_pct: totalOrders ? Math.round((e.orderIds.size / totalOrders) * 1000) / 10 : 0,
         avg_qty: e.qty.length ? Math.round(e.qty.reduce((a, b) => a + b, 0) / e.qty.length) : null,
+        // au poids (bananes, fromage, viande...): quantity vaut 0, seul le poids a du sens
+        avg_weight: e.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : null,
         avg_price: e.prices.length ? Math.round((e.prices.reduce((a, b) => a + b, 0) / e.prices.length) * 100) / 100 : null,
       }))
       .sort((a, b) => b.orders - a.orders)
@@ -349,10 +352,10 @@ router.get('/next-order', async (req, res) => {
 
     const { data: products, error: prodErr } = await sb
       .from('grocery_products')
-      .select('article_number, image_url')
+      .select('article_number, image_url, is_weighted')
       .in('article_number', articleNumbers);
     if (prodErr) throw prodErr;
-    const imageByArticle = new Map(products.map((p) => [p.article_number, p.image_url]));
+    const productByArticle = new Map(products.map((p) => [p.article_number, p]));
 
     const { data: rules, error: rulesErr } = await sb
       .from('grocery_product_rules')
@@ -395,7 +398,8 @@ router.get('/next-order', async (req, res) => {
         : null;
       return {
         ...it,
-        image_url: imageByArticle.get(it.article_number) || null,
+        image_url: productByArticle.get(it.article_number)?.image_url || null,
+        is_weighted: !!productByArticle.get(it.article_number)?.is_weighted,
         last_price_paid: stats?.lastPrice ?? null,
         avg_price_paid: avgPrice != null ? Math.round(avgPrice * 100) / 100 : null,
         blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
@@ -453,7 +457,7 @@ router.post('/generate-list', async (req, res) => {
       .select('id', { count: 'exact', head: true });
     if (countErr) throw countErr;
 
-    const lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity');
+    const lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, weight');
 
     const { data: rules, error: rulesErr } = await sb
       .from('grocery_product_rules')
@@ -466,10 +470,11 @@ router.post('/generate-list', async (req, res) => {
     const byProduct = new Map();
     for (const l of lines) {
       if (blacklist.has(l.article_number)) continue;
-      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [] });
+      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], weights: [] });
       const e = byProduct.get(l.article_number);
       e.orderIds.add(l.order_id);
       if (l.quantity > 0) e.qty.push(l.quantity);
+      if (l.weight != null) e.weights.push(l.weight);
     }
 
     const chosen = new Map(); // article_number -> { quantity, reason }
@@ -477,12 +482,21 @@ router.post('/generate-list', async (req, res) => {
       const freq = e.orderIds.size / totalOrders;
       if (freq >= threshold) {
         const avgQty = e.qty.length ? Math.round(e.qty.reduce((a, b) => a + b, 0) / e.qty.length) : 1;
-        chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty), reason: 'frequency' });
+        // au poids (bananes, fromage...): la quantite entiere n'a pas de sens,
+        // on propose le poids moyen historique en kg a la place
+        const avgWeight = e.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
+        chosen.set(articleNumber, {
+          quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty),
+          weightQuantity: avgWeight,
+          reason: 'frequency',
+        });
       }
     }
     for (const articleNumber of whitelist) {
       if (!chosen.has(articleNumber)) {
-        chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, reason: 'whitelist' });
+        const e = byProduct.get(articleNumber);
+        const avgWeight = e?.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
+        chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, weightQuantity: avgWeight, reason: 'whitelist' });
       }
     }
 
@@ -505,7 +519,7 @@ router.post('/generate-list', async (req, res) => {
         article_number: articleNumber,
         product_name: p?.product_name || articleNumber,
         product_url: p?.product_url || null,
-        quantity: p?.is_weighted ? 1 : c.quantity,
+        quantity: p?.is_weighted ? c.weightQuantity : c.quantity,
         status: 'pending',
         added_reason: c.reason,
       };
