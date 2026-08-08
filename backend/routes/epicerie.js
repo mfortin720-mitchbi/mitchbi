@@ -1086,6 +1086,19 @@ async function compareCartToLastOrder(sb) {
   if (cartErr) throw cartErr;
 
   const syncResult = await syncMaxiOrders(sb);
+  if (!syncResult.success) {
+    return { success: false, error: `Sync Maxi échouée: ${syncResult.error}`, sync: syncResult };
+  }
+  if (!syncResult.new_orders) {
+    // Pas de nouvelle commande trouvee -- probablement pas encore visible dans
+    // l'historique Maxi (delai de traitement cote Maxi apres un checkout).
+    // Ne PAS comparer au dernier ordre connu (serait perime) ni vider le panier.
+    return {
+      success: false,
+      error: "Aucune nouvelle commande trouvée sur Maxi depuis le dernier sync -- elle n'est peut-être pas encore visible dans l'historique (délai de traitement côté Maxi après un checkout). Réessaie dans quelques minutes, le panier n'a pas été touché.",
+      sync: syncResult,
+    };
+  }
 
   const { data: lastOrderRows, error: lastOrderErr } = await sb
     .from('grocery_orders')
