@@ -18,6 +18,43 @@ const btn = (bg) => ({
   fontSize: 12, fontWeight: 600, cursor: 'pointer',
 });
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '0.5px solid #1e2130' };
+const thCompact = { ...th, padding: '5px 8px', textAlign: 'left' };
+const tdCompact = { padding: '5px 8px', fontSize: 13, color: '#ddd', borderBottom: '0.5px solid #1e2130', textAlign: 'left' };
+
+const RULE_BADGE = {
+  blacklisted: { label: 'Blacklisté', bg: '#2b0d0d', color: '#D85A30' },
+  whitelisted: { label: 'Whitelisté', bg: '#0d2b1a', color: '#1D9E75' },
+};
+function RuleBadge({ blacklisted, whitelisted }) {
+  if (blacklisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.blacklisted.bg, color: RULE_BADGE.blacklisted.color }}>Blacklisté</span>;
+  if (whitelisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.whitelisted.bg, color: RULE_BADGE.whitelisted.color }}>Whitelisté</span>;
+  return null;
+}
+
+// Boutons blacklist/whitelist reutilises dans Dashboard et Prochaine commande --
+// onRule reçoit ('blacklisted'|'whitelisted') et fait le POST /product-rules
+function RuleActions({ blacklisted, whitelisted, onRule, disabled }) {
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      <button
+        title="Blacklister"
+        onClick={() => onRule(blacklisted ? null : 'blacklisted')}
+        disabled={disabled}
+        style={{ ...btn(blacklisted ? RED : '#333'), padding: '3px 8px', fontSize: 11 }}
+      >
+        🚫
+      </button>
+      <button
+        title="Whitelister"
+        onClick={() => onRule(whitelisted ? null : 'whitelisted')}
+        disabled={disabled}
+        style={{ ...btn(whitelisted ? GREEN : '#333'), padding: '3px 8px', fontSize: 11 }}
+      >
+        ⭐
+      </button>
+    </div>
+  );
+}
 const td = { padding: '8px 10px', fontSize: 13, color: '#ddd', borderBottom: '0.5px solid #1e2130' };
 
 // Bookmarklet -- doit être glissé dans la barre de favoris et cliqué
@@ -70,6 +107,7 @@ function ConfigTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [thresholdInput, setThresholdInput] = useState('');
+  const [priceCompareInput, setPriceCompareInput] = useState('');
   const [tokenInput, setTokenInput] = useState('');
   const [tokenExpiresInput, setTokenExpiresInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -94,6 +132,8 @@ function ConfigTab() {
         setData(json);
         const threshold = json.config.find((c) => c.key === 'list_frequency_threshold');
         setThresholdInput(threshold ? String(Math.round(parseFloat(threshold.value) * 100)) : '15');
+        const priceCompare = json.config.find((c) => c.key === 'price_compare_duration_months');
+        setPriceCompareInput(priceCompare ? priceCompare.value : '6');
       }
     } finally {
       setLoading(false);
@@ -118,6 +158,20 @@ function ConfigTab() {
       const res = await apiFetch('/api/epicerie/generate-list', { method: 'POST' });
       const json = await res.json();
       if (json.success) setGenMessage(`Liste recalculée : ${json.count} produits pour le ${json.week_of}.`);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const savePriceCompare = async () => {
+    setSaving(true);
+    try {
+      await apiFetch('/api/epicerie/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'price_compare_duration_months', value: priceCompareInput }),
+      });
       await load();
     } finally {
       setSaving(false);
@@ -223,6 +277,20 @@ function ConfigTab() {
           <button style={btn(BLUE)} onClick={saveThreshold} disabled={saving}>Sauvegarder</button>
         </div>
         {genMessage && <p style={{ fontSize: 11, color: GREEN, margin: '8px 0 0' }}>{genMessage}</p>}
+      </div>
+
+      {/* Duree de comparaison des prix */}
+      <div style={card}>
+        <div style={label}>Durée de comparaison des prix</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Nombre de mois utilisés pour calculer le "prix moyen payé" affiché dans Prochaine commande.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input style={{ ...input, width: 70 }} type="number" min="1" max="36" value={priceCompareInput}
+            onChange={(e) => setPriceCompareInput(e.target.value)} />
+          <span style={{ color: MUTED, fontSize: 13 }}>mois</span>
+          <button style={btn(BLUE)} onClick={savePriceCompare} disabled={saving}>Sauvegarder</button>
+        </div>
       </div>
 
       {/* Presence Eliane/Julie */}
@@ -340,19 +408,39 @@ function DashboardTab() {
   const [rows, setRows] = useState([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await apiFetch('/api/epicerie/dashboard/top-products?limit=50');
-        const json = await res.json();
-        if (json.success) { setRows(json.products); setTotalOrders(json.total_orders); }
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/epicerie/dashboard/top-products?limit=50');
+      const json = await res.json();
+      if (json.success) { setRows(json.products); setTotalOrders(json.total_orders); }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // flag: 'blacklisted' | 'whitelisted' | null (null = retirer les deux)
+  const applyRule = async (article_number, flag) => {
+    setApplying(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number,
+          blacklisted: flag === 'blacklisted',
+          whitelisted: flag === 'whitelisted',
+        }),
+      });
+      await load();
+    } finally {
+      setApplying(false);
+    }
+  };
 
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
@@ -363,23 +451,32 @@ function DashboardTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={th}>#</th>
-              <th style={th}>Produit</th>
-              <th style={th}>Marque</th>
-              <th style={th}>Commandes</th>
-              <th style={th}>Fréquence</th>
-              <th style={th}>Qté moyenne</th>
+              <th style={thCompact}>#</th>
+              <th style={thCompact}>Produit</th>
+              <th style={thCompact}>N° article</th>
+              <th style={thCompact}>Marque</th>
+              <th style={thCompact}>Commandes</th>
+              <th style={thCompact}>Fréquence</th>
+              <th style={thCompact}>Qté moyenne</th>
+              <th style={thCompact}>Statut</th>
+              <th style={thCompact}></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.article_number}>
-                <td style={{ ...td, color: MUTED }}>{i + 1}</td>
-                <td style={td}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
-                <td style={{ ...td, color: MUTED }}>{r.brand || '—'}</td>
-                <td style={td}>{r.orders}</td>
-                <td style={{ ...td, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
-                <td style={td}>{r.avg_qty ?? '—'}</td>
+                <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
+                <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
+                <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{r.article_number}</td>
+                <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
+                <td style={tdCompact}>{r.orders}</td>
+                <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
+                <td style={tdCompact}>{r.avg_qty ?? '—'}</td>
+                <td style={tdCompact}><RuleBadge blacklisted={r.blacklisted} whitelisted={r.whitelisted} /></td>
+                <td style={tdCompact}>
+                  <RuleActions blacklisted={r.blacklisted} whitelisted={r.whitelisted} disabled={applying}
+                    onRule={(flag) => applyRule(r.article_number, flag)} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -466,12 +563,10 @@ const REASON_LABELS = {
   other: 'Autre',
 };
 
-const thCompact = { ...th, padding: '5px 8px', textAlign: 'left' };
-const tdCompact = { ...td, padding: '5px 8px', textAlign: 'left' };
-
 function NextOrderTab() {
   const [weekOf, setWeekOf] = useState(null);
   const [items, setItems] = useState([]);
+  const [priceCompareDuration, setPriceCompareDuration] = useState(6);
   const [loading, setLoading] = useState(true);
   const [newItem, setNewItem] = useState({ article_number: '', product_name: '', quantity: 1 });
 
@@ -480,7 +575,11 @@ function NextOrderTab() {
     try {
       const res = await apiFetch('/api/epicerie/next-order');
       const json = await res.json();
-      if (json.success) { setWeekOf(json.week_of); setItems(json.items); }
+      if (json.success) {
+        setWeekOf(json.week_of);
+        setItems(json.items);
+        if (json.price_compare_duration_months) setPriceCompareDuration(json.price_compare_duration_months);
+      }
     } finally {
       setLoading(false);
     }
@@ -500,6 +599,20 @@ function NextOrderTab() {
   const removeItem = async (id) => {
     setItems((prev) => prev.filter((it) => it.id !== id));
     await apiFetch(`/api/epicerie/next-order/${id}`, { method: 'DELETE' });
+  };
+
+  // flag: 'blacklisted' | 'whitelisted' | null (null = retirer les deux)
+  const applyRule = async (article_number, flag) => {
+    await apiFetch('/api/epicerie/product-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        article_number,
+        blacklisted: flag === 'blacklisted',
+        whitelisted: flag === 'whitelisted',
+      }),
+    });
+    await load();
   };
 
   const addItem = async () => {
@@ -526,28 +639,41 @@ function NextOrderTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
+              <th style={thCompact}></th>
               <th style={thCompact}>Produit</th>
               <th style={thCompact}>N° article</th>
               <th style={thCompact}>Quantité</th>
+              <th style={thCompact}>Prix payé</th>
+              <th style={thCompact}>Moy. {priceCompareDuration}mo</th>
               <th style={thCompact}>Ajouté par</th>
               <th style={thCompact}>Statut</th>
               <th style={thCompact}>Lien</th>
+              <th style={thCompact}></th>
               <th style={thCompact}></th>
             </tr>
           </thead>
           <tbody>
             {items.map((it) => (
               <tr key={it.id}>
+                <td style={tdCompact}>
+                  {it.image_url && <img src={it.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                </td>
                 <td style={tdCompact}>{it.product_name}</td>
                 <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
                 <td style={tdCompact}>
                   <input type="number" min="1" style={{ ...input, width: 55, padding: '4px 8px' }} value={it.quantity}
                     onChange={(e) => updateQty(it.id, parseInt(e.target.value, 10) || 1)} />
                 </td>
+                <td style={tdCompact}>{it.last_price_paid != null ? `${Number(it.last_price_paid).toFixed(2)}$` : '—'}</td>
+                <td style={{ ...tdCompact, color: MUTED }}>{it.avg_price_paid != null ? `${Number(it.avg_price_paid).toFixed(2)}$` : '—'}</td>
                 <td style={{ ...tdCompact, color: MUTED }}>{REASON_LABELS[it.added_reason] || it.added_reason || '—'}</td>
                 <td style={{ ...tdCompact, color: it.status === 'added' ? GREEN : it.status === 'skipped' ? RED : MUTED }}>{it.status}</td>
                 <td style={tdCompact}>
                   {it.product_url && <a href={it.product_url} target="_blank" rel="noreferrer" style={{ color: BLUE, fontSize: 12 }}>Voir</a>}
+                </td>
+                <td style={tdCompact}>
+                  <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted}
+                    onRule={(flag) => applyRule(it.article_number, flag)} />
                 </td>
                 <td style={tdCompact}>
                   <button style={{ ...btn('#333'), padding: '4px 10px' }} onClick={() => removeItem(it.id)}>Retirer</button>

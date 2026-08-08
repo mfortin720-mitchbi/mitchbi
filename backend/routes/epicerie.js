@@ -67,15 +67,27 @@ router.get('/dashboard/top-products', async (req, res) => {
 
     const { data: products, error: prodErr } = await sb
       .from('grocery_products')
-      .select('article_number, product_name, brand, is_weighted')
+      .select('article_number, product_name, brand, is_weighted, image_url')
       .in('article_number', ranked.map((r) => r.article_number));
     if (prodErr) throw prodErr;
     const byArticle = new Map(products.map((p) => [p.article_number, p]));
 
+    const { data: rules, error: rulesErr } = await sb
+      .from('grocery_product_rules')
+      .select('article_number, blacklisted, whitelisted')
+      .in('article_number', ranked.map((r) => r.article_number));
+    if (rulesErr) throw rulesErr;
+    const byRule = new Map(rules.map((r) => [r.article_number, r]));
+
     res.json({
       success: true,
       total_orders: totalOrders,
-      products: ranked.map((r) => ({ ...r, ...byArticle.get(r.article_number) })),
+      products: ranked.map((r) => ({
+        ...r,
+        ...byArticle.get(r.article_number),
+        blacklisted: !!byRule.get(r.article_number)?.blacklisted,
+        whitelisted: !!byRule.get(r.article_number)?.whitelisted,
+      })),
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -284,7 +296,65 @@ router.get('/next-order', async (req, res) => {
       .order('product_name');
     if (error) throw error;
 
-    res.json({ success: true, week_of: weekOf, items: data });
+    const articleNumbers = data.map((it) => it.article_number);
+
+    const { data: products, error: prodErr } = await sb
+      .from('grocery_products')
+      .select('article_number, image_url')
+      .in('article_number', articleNumbers);
+    if (prodErr) throw prodErr;
+    const imageByArticle = new Map(products.map((p) => [p.article_number, p.image_url]));
+
+    const { data: rules, error: rulesErr } = await sb
+      .from('grocery_product_rules')
+      .select('article_number, blacklisted, whitelisted')
+      .in('article_number', articleNumbers);
+    if (rulesErr) throw rulesErr;
+    const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
+
+    const { data: durationRow } = await sb
+      .from('grocery_config')
+      .select('value')
+      .eq('key', 'price_compare_duration_months')
+      .maybeSingle();
+    const durationMonths = parseInt(durationRow?.value || '6', 10);
+    const since = new Date();
+    since.setMonth(since.getMonth() - durationMonths);
+
+    const { data: priceHistory, error: priceErr } = await sb
+      .from('grocery_purchase_history')
+      .select('article_number, unit_price, purchased_at')
+      .in('article_number', articleNumbers)
+      .order('purchased_at', { ascending: false });
+    if (priceErr) throw priceErr;
+
+    const priceStats = new Map();
+    for (const row of priceHistory) {
+      if (row.unit_price == null) continue;
+      if (!priceStats.has(row.article_number)) {
+        priceStats.set(row.article_number, { lastPrice: row.unit_price, recentPrices: [] });
+      }
+      if (new Date(row.purchased_at) >= since) {
+        priceStats.get(row.article_number).recentPrices.push(row.unit_price);
+      }
+    }
+
+    const items = data.map((it) => {
+      const stats = priceStats.get(it.article_number);
+      const avgPrice = stats?.recentPrices.length
+        ? stats.recentPrices.reduce((a, b) => a + b, 0) / stats.recentPrices.length
+        : null;
+      return {
+        ...it,
+        image_url: imageByArticle.get(it.article_number) || null,
+        last_price_paid: stats?.lastPrice ?? null,
+        avg_price_paid: avgPrice != null ? Math.round(avgPrice * 100) / 100 : null,
+        blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
+        whitelisted: !!ruleByArticle.get(it.article_number)?.whitelisted,
+      };
+    });
+
+    res.json({ success: true, week_of: weekOf, price_compare_duration_months: durationMonths, items });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
