@@ -122,6 +122,8 @@ function ConfigTab() {
   const [genMessage, setGenMessage] = useState('');
   const [syncMessage, setSyncMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [flyerMessage, setFlyerMessage] = useState('');
+  const [refreshingFlyer, setRefreshingFlyer] = useState(false);
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
   const bookmarkletRef = useRef(null);
 
@@ -248,6 +250,21 @@ function ConfigTab() {
     }
   };
 
+  const refreshFlyer = async () => {
+    setRefreshingFlyer(true);
+    setFlyerMessage('Récupération du circulaire en cours (~15-20s)...');
+    try {
+      const res = await apiFetch('/api/epicerie/refresh-flyer', { method: 'POST' });
+      const json = await res.json();
+      setFlyerMessage(json.success ? json.message : `Erreur: ${json.error || res.status}`);
+      await load();
+    } catch (err) {
+      setFlyerMessage(`Erreur: ${err.message}`);
+    } finally {
+      setRefreshingFlyer(false);
+    }
+  };
+
   const deleteRule = async (id) => {
     setSaving(true);
     try {
@@ -294,6 +311,8 @@ function ConfigTab() {
 
   const household = data?.household || {};
   const token = data?.token || { present: false };
+  const flyerLastSynced = data?.config.find((c) => c.key === 'flyer_last_synced_at')?.value;
+  const flyerStoreId = data?.config.find((c) => c.key === 'maxi_store_id')?.value || '8981';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
@@ -388,6 +407,21 @@ function ConfigTab() {
             <p style={{ fontSize: 12, color: syncMessage.startsWith('Erreur') ? RED : GREEN, margin: '4px 0 0' }}>{syncMessage}</p>
           )}
         </div>
+      </div>
+
+      {/* Circulaire (API native Maxi) */}
+      <div style={card}>
+        <div style={label}>Circulaire — API native Maxi</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Récupère les spéciaux en cours pour le magasin {flyerStoreId} directement depuis l'API Maxi/PC Express
+          (ne nécessite pas de token). Dernière mise à jour : {flyerLastSynced ? new Date(flyerLastSynced).toLocaleString('fr-CA') : 'jamais'}.
+        </p>
+        <button style={btn(BLUE)} onClick={refreshFlyer} disabled={refreshingFlyer}>
+          {refreshingFlyer ? 'Récupération...' : '↻ Rafraîchir le circulaire maintenant'}
+        </button>
+        {flyerMessage && (
+          <p style={{ fontSize: 12, color: flyerMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{flyerMessage}</p>
+        )}
       </div>
 
       {/* Blacklist */}
