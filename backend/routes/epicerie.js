@@ -763,12 +763,28 @@ router.get('/next-order', async (req, res) => {
 // utilise la semaine deja affichee dans Prochaine commande si omis)
 router.post('/next-order', async (req, res) => {
   try {
-    const { article_number, product_name, product_url, quantity, added_reason } = req.body;
+    const { article_number, product_name, product_url, image_url, brand, quantity, added_reason } = req.body;
     let { week_of } = req.body;
     if (!article_number) {
       return res.status(400).json({ success: false, error: 'article_number requis' });
     }
     const sb = getSupabase();
+
+    // grocery_cart_queue.article_number a une FK vers grocery_products --
+    // un item du circulaire (ou trouvé ailleurs) jamais acheté avant n'y
+    // existe pas encore. On cree une fiche minimale au besoin (DO NOTHING
+    // si elle existe deja, pour ne pas ecraser de meilleures donnees).
+    const { error: stubErr } = await sb.from('grocery_products').upsert(
+      {
+        article_number,
+        product_name: product_name || article_number,
+        brand: brand || null,
+        image_url: image_url || null,
+        product_url: product_url || null,
+      },
+      { onConflict: 'article_number', ignoreDuplicates: true }
+    );
+    if (stubErr) throw stubErr;
 
     if (!week_of) {
       const { data: weekRow } = await sb

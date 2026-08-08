@@ -947,6 +947,8 @@ function FlyerTab() {
           article_number: it.article_number,
           product_name: it.name,
           product_url: it.item_web_url || null,
+          image_url: it.image_url || null,
+          brand: it.brand || null,
           quantity: 1,
           added_reason: 'flyer_proposal',
         }),
