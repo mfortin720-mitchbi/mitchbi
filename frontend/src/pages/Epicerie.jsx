@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../services/api';
 
 const BLUE = '#378ADD';
@@ -75,6 +75,14 @@ function ConfigTab() {
   const [saving, setSaving] = useState(false);
   const [genMessage, setGenMessage] = useState('');
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
+  const bookmarkletRef = useRef(null);
+
+  // React sanitise/bloque tout href="javascript:..." passe en prop JSX (protection
+  // anti-XSS) -- le lien "bookmarklet" deviendrait un no-op qui throw. Seul un
+  // setAttribute impératif sur le noeud DOM réel contourne cette protection.
+  useEffect(() => {
+    if (bookmarkletRef.current) bookmarkletRef.current.setAttribute('href', BOOKMARKLET);
+  }, []);
   const [newWhitelistRule, setNewWhitelistRule] = useState({ article_number: '', notes: '' });
 
   const load = useCallback(async () => {
@@ -250,7 +258,7 @@ function ConfigTab() {
           <button style={btn(BLUE)} onClick={() => window.open('https://www.maxi.ca/fr', '_blank')}>
             1. Ouvrir Maxi.ca
           </button>
-          <a href={BOOKMARKLET} onClick={(e) => e.preventDefault()}
+          <a ref={bookmarkletRef} href="#" onClick={(e) => e.preventDefault()}
             style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'grab' }}
             title="Glisser ce bouton dans ta barre de favoris">
             2. 📋 Copier AccessToken (glisser dans les favoris)
