@@ -583,6 +583,8 @@ async function refreshFlyerDeals(sb) {
         image_url: image?.mediumUrl || image?.largeUrl || image?.thumbnailUrl || null,
         aisle: item.aisle || null,
         product_url: item.link ? `https://www.maxi.ca${item.link}` : null,
+        stock_status: item.stockStatus || null,
+        badge_label: item.badges?.dealBadge?.name || item.badges?.dealBadge?.type || null,
       };
     });
 
@@ -612,26 +614,19 @@ router.post('/refresh-flyer', async (req, res) => {
 router.get('/flyer', async (req, res) => {
   try {
     const sb = getSupabase();
-    const { data: items, error } = await sb
-      .from('grocery_flyer_items')
-      .select('*')
-      .order('name');
-    if (error) throw error;
+    // fetchAll (pas .select('*') direct) -- le circulaire natif Maxi tourne
+    // autour de ~1800 items, au-dela du plafond de 1000 lignes de PostgREST.
+    // Meme raisonnement pour product_rules/products/purchase_history ci-dessous:
+    // on recupere les tables au complet plutot qu'un .in(articleNumbers) dont
+    // l'URL deviendrait enorme (~1800 numeros d'article).
+    const items = await fetchAll('grocery_flyer_items', '*');
+    items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-    const articleNumbers = items.map((it) => it.article_number).filter(Boolean);
-    const { data: rules, error: rulesErr } = await sb
-      .from('grocery_product_rules')
-      .select('article_number, blacklisted, whitelisted')
-      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
-    if (rulesErr) throw rulesErr;
+    const rules = await fetchAll('grocery_product_rules', 'article_number, blacklisted, whitelisted');
     const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
 
     // deja achete = l'article existe dans notre historique (grocery_products)
-    const { data: knownProducts, error: knownErr } = await sb
-      .from('grocery_products')
-      .select('article_number')
-      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
-    if (knownErr) throw knownErr;
+    const knownProducts = await fetchAll('grocery_products', 'article_number');
     const knownSet = new Set(knownProducts.map((p) => p.article_number));
 
     const { data: durationRow } = await sb
@@ -643,12 +638,8 @@ router.get('/flyer', async (req, res) => {
     const since = new Date();
     since.setMonth(since.getMonth() - durationMonths);
 
-    const { data: recentPurchases, error: recentErr } = await sb
-      .from('grocery_purchase_history')
-      .select('article_number')
-      .in('article_number', articleNumbers.length ? articleNumbers : [''])
-      .gte('purchased_at', since.toISOString());
-    if (recentErr) throw recentErr;
+    const recentPurchases = (await fetchAll('grocery_purchase_history', 'article_number, purchased_at'))
+      .filter((row) => row.purchased_at >= since.toISOString());
     const purchaseCountByArticle = new Map();
     for (const row of recentPurchases) {
       purchaseCountByArticle.set(row.article_number, (purchaseCountByArticle.get(row.article_number) || 0) + 1);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { apiFetch } from '../services/api';
 
 const BLUE = '#378ADD';
@@ -946,16 +946,54 @@ function NextOrderTab() {
 // CIRCULAIRE (style dashboard: table plate + filtre, pas de detail imbrique)
 // ---------------------------------------------------------------------
 
+// Colonnes optionnelles du tableau Circulaire -- masquables via le menu
+// "Colonnes" pour reduire la largeur totale (avec ~1800 items et 16 colonnes,
+// le bouton Panier finit hors-ecran et force un scroll horizontal).
+const FLYER_COLUMNS = [
+  { key: 'article_number', label: 'N° article' },
+  { key: 'brand', label: 'Marque' },
+  { key: 'original_price', label: 'Régulier' },
+  { key: 'member_price', label: 'Prix membre' },
+  { key: 'unit_price', label: 'Prix unitaire' },
+  { key: 'type', label: 'Type' },
+  { key: 'stock', label: 'Stock' },
+  { key: 'discount', label: '% Rabais' },
+  { key: 'purchases', label: 'Achats' },
+  { key: 'valid_to', label: "Valide jusqu'au" },
+  { key: 'status', label: 'Statut' },
+];
+const FLYER_PAGE_SIZE = 100;
+const STOCK_LABELS = { OK: { text: 'En stock', color: 'inherit' }, LOW: { text: 'Stock bas', color: '#e8b339' }, OUT: { text: 'Épuisé', color: '#e8546a' } };
+
 function FlyerTab() {
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
   const [purchasedOnly, setPurchasedOnly] = useState(false);
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [memberOnly, setMemberOnly] = useState(false);
+  const [badgeFilter, setBadgeFilter] = useState('');
   const [priceCompareDuration, setPriceCompareDuration] = useState(6);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [addedArticles, setAddedArticles] = useState(new Set());
   const [sortBy, setSortBy] = useState(null); // null | 'purchases' | 'discount'
   const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(1);
+  const [showColMenu, setShowColMenu] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('ep_flyer_hidden_cols') || '[]')); }
+    catch { return new Set(); }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('ep_flyer_hidden_cols', JSON.stringify([...hiddenCols]));
+  }, [hiddenCols]);
+  const colVisible = (key) => !hiddenCols.has(key);
+  const toggleCol = (key) => setHiddenCols((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -972,6 +1010,7 @@ function FlyerTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [search, purchasedOnly, inStockOnly, memberOnly, badgeFilter, sortBy, sortDir]);
 
   const addToCart = async (it) => {
     setApplying(true);
@@ -1036,9 +1075,18 @@ function FlyerTab() {
     return Math.round(((it.original_price - price) / it.original_price) * 1000) / 10;
   };
 
+  const badgeLabels = useMemo(() => {
+    const set = new Set();
+    for (const it of items) if (it.badge_label) set.add(it.badge_label);
+    return [...set].sort();
+  }, [items]);
+
   const q = search.trim().toLowerCase();
   const visibleItems = items.filter((it) => {
     if (purchasedOnly && !it.previously_purchased) return false;
+    if (inStockOnly && it.stock_status === 'OUT') return false;
+    if (memberOnly && it.member_price == null) return false;
+    if (badgeFilter && it.badge_label !== badgeFilter) return false;
     if (!q) return true;
     return [it.name, it.brand, it.article_number]
       .filter(Boolean)
@@ -1052,6 +1100,10 @@ function FlyerTab() {
         return sortDir === 'desc' ? vb - va : va - vb;
       })
     : visibleItems;
+
+  const pageCount = Math.max(1, Math.ceil(sortedItems.length / FLYER_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedItems = sortedItems.slice((currentPage - 1) * FLYER_PAGE_SIZE, currentPage * FLYER_PAGE_SIZE);
 
   return (
     <div style={card}>
@@ -1067,6 +1119,55 @@ function FlyerTab() {
             }}>
             Déjà acheté
           </button>
+          <button onClick={() => setInStockOnly((v) => !v)}
+            style={{
+              background: inStockOnly ? GREEN : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+              color: inStockOnly ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+            }}>
+            En stock
+          </button>
+          <button onClick={() => setMemberOnly((v) => !v)}
+            style={{
+              background: memberOnly ? GREEN : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+              color: memberOnly ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+            }}>
+            Prix membre
+          </button>
+          <button onClick={() => setBadgeFilter('')}
+            style={{
+              background: badgeFilter === '' ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+              color: badgeFilter === '' ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+            }}>
+            Tous types
+          </button>
+          {badgeLabels.map((b) => (
+            <button key={b} onClick={() => setBadgeFilter(b)}
+              style={{
+                background: badgeFilter === b ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+                color: badgeFilter === b ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer', textTransform: 'lowercase',
+              }}>
+              {b}
+            </button>
+          ))}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowColMenu((v) => !v)}
+              style={{ background: '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6, color: MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>
+              Colonnes ▾
+            </button>
+            {showColMenu && (
+              <div style={{
+                position: 'absolute', top: '110%', right: 0, background: '#1a1d27', border: '0.5px solid #2a2e3f',
+                borderRadius: 8, padding: 10, zIndex: 50, minWidth: 170, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              }}>
+                {FLYER_COLUMNS.map((c) => (
+                  <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ddd', padding: '3px 0', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={colVisible(c.key)} onChange={() => toggleCol(c.key)} />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {loading ? (
@@ -1078,26 +1179,32 @@ function FlyerTab() {
               <tr>
                 <th style={thCompact}></th>
                 <th style={thCompact}>Produit</th>
-                <th style={thCompact}>N° article</th>
-                <th style={thCompact}>Marque</th>
+                {colVisible('article_number') && <th style={thCompact}>N° article</th>}
+                {colVisible('brand') && <th style={thCompact}>Marque</th>}
                 <th style={thCompact}>Prix</th>
-                <th style={thCompact}>Régulier</th>
-                <th style={thCompact}>Prix membre</th>
-                <th style={thCompact}>Prix unitaire</th>
-                <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('discount')} title="Trier par % de rabais">
-                  % Rabais {sortBy === 'discount' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
-                </th>
-                <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('purchases')} title="Trier par fréquence d'achats">
-                  Achats ({priceCompareDuration}mo) {sortBy === 'purchases' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
-                </th>
-                <th style={thCompact}>Valide jusqu'au</th>
-                <th style={thCompact}>Statut</th>
+                {colVisible('original_price') && <th style={thCompact}>Régulier</th>}
+                {colVisible('member_price') && <th style={thCompact}>Prix membre</th>}
+                {colVisible('unit_price') && <th style={thCompact}>Prix unitaire</th>}
+                {colVisible('type') && <th style={thCompact}>Type</th>}
+                {colVisible('stock') && <th style={thCompact}>Stock</th>}
+                {colVisible('discount') && (
+                  <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('discount')} title="Trier par % de rabais">
+                    % Rabais {sortBy === 'discount' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
+                  </th>
+                )}
+                {colVisible('purchases') && (
+                  <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('purchases')} title="Trier par fréquence d'achats">
+                    Achats ({priceCompareDuration}mo) {sortBy === 'purchases' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
+                  </th>
+                )}
+                {colVisible('valid_to') && <th style={thCompact}>Valide jusqu'au</th>}
+                {colVisible('status') && <th style={thCompact}>Statut</th>}
                 <th style={thCompact}></th>
                 <th style={thCompact}></th>
               </tr>
             </thead>
             <tbody>
-              {sortedItems.map((it) => (
+              {pagedItems.map((it) => (
                 <tr key={it.id}>
                   <td style={tdCompact}>
                     {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
@@ -1106,18 +1213,26 @@ function FlyerTab() {
                     {it.previously_purchased && <span title="Déjà acheté" style={{ color: GREEN }}>● </span>}
                     {it.name}
                   </td>
-                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{it.article_number || '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED, textTransform: 'lowercase' }}>{it.brand || '—'}</td>
+                  {colVisible('article_number') && <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{it.article_number || '—'}</td>}
+                  {colVisible('brand') && <td style={{ ...tdCompact, color: MUTED, textTransform: 'lowercase' }}>{it.brand || '—'}</td>}
                   <td style={{ ...tdCompact, color: GREEN, fontWeight: 600 }}>{it.price_text || '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
-                    {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
-                  </td>
-                  <td style={{ ...tdCompact, color: GOLD }}>{it.member_price != null ? `${Number(it.member_price).toFixed(2)}$` : '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED, fontSize: 10 }}>{it.unit_price_text || '—'}</td>
-                  <td style={{ ...tdCompact, color: GOLD }}>{getDiscountPct(it) != null ? `-${getDiscountPct(it)}%` : '—'}</td>
-                  <td style={{ ...tdCompact, color: it.recent_purchases ? undefined : MUTED }}>{it.recent_purchases || 0}x</td>
-                  <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>
-                  <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>
+                  {colVisible('original_price') && (
+                    <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
+                      {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
+                    </td>
+                  )}
+                  {colVisible('member_price') && <td style={{ ...tdCompact, color: GOLD }}>{it.member_price != null ? `${Number(it.member_price).toFixed(2)}$` : '—'}</td>}
+                  {colVisible('unit_price') && <td style={{ ...tdCompact, color: MUTED, fontSize: 10 }}>{it.unit_price_text || '—'}</td>}
+                  {colVisible('type') && <td style={{ ...tdCompact, color: MUTED, textTransform: 'lowercase' }}>{it.badge_label || '—'}</td>}
+                  {colVisible('stock') && (
+                    <td style={{ ...tdCompact, color: STOCK_LABELS[it.stock_status]?.color || MUTED }}>
+                      {STOCK_LABELS[it.stock_status]?.text || '—'}
+                    </td>
+                  )}
+                  {colVisible('discount') && <td style={{ ...tdCompact, color: GOLD }}>{getDiscountPct(it) != null ? `-${getDiscountPct(it)}%` : '—'}</td>}
+                  {colVisible('purchases') && <td style={{ ...tdCompact, color: it.recent_purchases ? undefined : MUTED }}>{it.recent_purchases || 0}x</td>}
+                  {colVisible('valid_to') && <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>}
+                  {colVisible('status') && <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>}
                   <td style={tdCompact}>
                     {it.article_number && (
                       <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted} disabled={applying}
@@ -1136,6 +1251,17 @@ function FlyerTab() {
               ))}
             </tbody>
           </table>
+          {pageCount > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button style={{ ...btn('#333'), padding: '4px 10px', fontSize: 11 }} onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}>
+                ← Précédent
+              </button>
+              <span style={{ fontSize: 12, color: MUTED }}>Page {currentPage}/{pageCount} ({sortedItems.length} items)</span>
+              <button style={{ ...btn('#333'), padding: '4px 10px', fontSize: 11 }} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount}>
+                Suivant →
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

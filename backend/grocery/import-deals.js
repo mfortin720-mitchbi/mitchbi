@@ -99,6 +99,8 @@ async function importDeals() {
         image_url: image?.mediumUrl || image?.largeUrl || image?.thumbnailUrl || null,
         aisle: item.aisle || null,
         product_url: item.link ? `https://www.maxi.ca${item.link}` : null,
+        stock_status: item.stockStatus || null,
+        badge_label: item.badges?.dealBadge?.name || item.badges?.dealBadge?.type || null,
       };
     });
 
