@@ -68,6 +68,7 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'orders', label: 'Commandes' },
   { id: 'next-order', label: 'Prochaine commande' },
+  { id: 'flyer', label: 'Circulaire' },
 ];
 
 export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
@@ -95,6 +96,7 @@ export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
       {activeTab === 'dashboard' && <DashboardTab />}
       {activeTab === 'orders' && <OrdersTab />}
       {activeTab === 'next-order' && <NextOrderTab />}
+      {activeTab === 'flyer' && <FlyerTab />}
     </div>
   );
 }
@@ -529,25 +531,65 @@ function DashboardTab() {
 function OrderDetailRows({ orderId }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [addedIds, setAddedIds] = useState(new Set());
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await apiFetch(`/api/epicerie/orders/${orderId}`);
-        const json = await res.json();
-        if (json.success) setDetail(json);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/epicerie/orders/${orderId}`);
+      const json = await res.json();
+      if (json.success) setDetail(json);
+    } finally {
+      setLoading(false);
+    }
   }, [orderId]);
 
+  useEffect(() => { load(); }, [load]);
+
+  const applyRule = async (article_number, flag) => {
+    setBusy(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number,
+          blacklisted: flag === 'blacklisted',
+          whitelisted: flag === 'whitelisted',
+        }),
+      });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addToCart = async (l) => {
+    setBusy(true);
+    try {
+      await apiFetch('/api/epicerie/next-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number: l.article_number,
+          product_name: l.grocery_products?.product_name || l.article_number,
+          product_url: l.grocery_products?.product_url || null,
+          quantity: l.weight != null ? l.weight : (l.quantity || 1),
+          added_reason: 'previous',
+        }),
+      });
+      setAddedIds((prev) => new Set(prev).add(l.id));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
-    return <tr><td colSpan={6} style={{ ...tdCompact, color: MUTED }}>Chargement des produits...</td></tr>;
+    return <tr><td colSpan={9} style={{ ...tdCompact, color: MUTED }}>Chargement des produits...</td></tr>;
   }
   if (!detail?.lines?.length) {
-    return <tr><td colSpan={6} style={{ ...tdCompact, color: MUTED }}>Aucun produit trouvé.</td></tr>;
+    return <tr><td colSpan={9} style={{ ...tdCompact, color: MUTED }}>Aucun produit trouvé.</td></tr>;
   }
 
   return (
@@ -569,6 +611,17 @@ function OrderDetailRows({ orderId }) {
             {l.avg_price_paid != null ? `${Number(l.avg_price_paid).toFixed(2)}$ (${detail.price_compare_duration_months}mo)` : '—'}
           </td>
           <td style={tdCompact}>{l.total_price != null ? `${Number(l.total_price).toFixed(2)}$` : '—'}</td>
+          <td style={tdCompact}><RuleBadge blacklisted={l.blacklisted} whitelisted={l.whitelisted} /></td>
+          <td style={tdCompact}>
+            <RuleActions blacklisted={l.blacklisted} whitelisted={l.whitelisted} disabled={busy}
+              onRule={(flag) => applyRule(l.article_number, flag)} />
+          </td>
+          <td style={tdCompact}>
+            <button style={{ ...btn(addedIds.has(l.id) ? GREEN : '#333'), padding: '4px 10px', fontSize: 11 }}
+              onClick={() => addToCart(l)} disabled={busy || addedIds.has(l.id)}>
+              {addedIds.has(l.id) ? '✓ Ajouté' : '+ Panier'}
+            </button>
+          </td>
         </tr>
       ))}
     </>
@@ -638,6 +691,9 @@ function OrdersTab() {
                       <th style={thCompact}>Prix payé</th>
                       <th style={thCompact}>Prix moyen</th>
                       <th style={thCompact}>Total ligne</th>
+                      <th style={thCompact}>Statut</th>
+                      <th style={thCompact}></th>
+                      <th style={thCompact}></th>
                     </tr>
                     <OrderDetailRows orderId={o.id} />
                   </>
@@ -802,6 +858,123 @@ function NextOrderTab() {
           onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value, 10) || 1 })} />
         <button style={btn(BLUE)} onClick={addItem} disabled={!newItem.article_number.trim()}>+ Ajouter</button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// CIRCULAIRE (style dashboard: table plate + filtre, pas de detail imbrique)
+// ---------------------------------------------------------------------
+
+function FlyerTab() {
+  const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+      const res = await apiFetch(`/api/epicerie/flyer${qs}`);
+      const json = await res.json();
+      if (json.success) { setItems(json.items); setCategories(json.categories); }
+    } finally {
+      setLoading(false);
+    }
+  }, [category]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const applyRule = async (article_number, flag) => {
+    setApplying(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number,
+          blacklisted: flag === 'blacklisted',
+          whitelisted: flag === 'whitelisted',
+        }),
+      });
+      await load();
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={label}>{items.length} items — circulaire {items[0]?.valid_from} → {items[0]?.valid_to}</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <button onClick={() => setCategory('')}
+            style={{
+              background: category === '' ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+              color: category === '' ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+            }}>
+            Toutes
+          </button>
+          {categories.map((c) => (
+            <button key={c} onClick={() => setCategory(c)}
+              style={{
+                background: category === c ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+                color: category === c ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+              }}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ color: MUTED, fontSize: 13, marginTop: 12 }}>Chargement...</div>
+      ) : (
+        <div style={{ overflowX: 'auto', marginTop: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thCompact}></th>
+                <th style={thCompact}>Produit</th>
+                <th style={thCompact}>N° article</th>
+                <th style={thCompact}>Marque</th>
+                <th style={thCompact}>Prix</th>
+                <th style={thCompact}>Régulier</th>
+                <th style={thCompact}>Catégorie</th>
+                <th style={thCompact}>Valide jusqu'au</th>
+                <th style={thCompact}>Statut</th>
+                <th style={thCompact}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td style={tdCompact}>
+                    {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                  </td>
+                  <td style={tdCompact}>{it.name}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{it.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: GREEN, fontWeight: 600 }}>{it.price_text || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
+                    {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
+                  </td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{(it.categories || []).join(', ') || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>
+                  <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>
+                  <td style={tdCompact}>
+                    {it.article_number && (
+                      <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted} disabled={applying}
+                        onRule={(flag) => applyRule(it.article_number, flag)} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
