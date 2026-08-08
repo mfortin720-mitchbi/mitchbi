@@ -1174,6 +1174,11 @@ router.post('/reset-and-compare', async (req, res) => {
 router.post('/telegram-webhook', async (req, res) => {
   res.json({ ok: true }); // ack immediat -- Telegram retry si pas de reponse rapide
   try {
+    // Cette route est exemptee de l'auth Supabase (voir middleware/auth.js) --
+    // Telegram s'authentifie via ce header secret plutot qu'une session utilisateur.
+    const secret = req.headers['x-telegram-bot-api-secret-token'];
+    if (!process.env.TELEGRAM_WEBHOOK_SECRET || secret !== process.env.TELEGRAM_WEBHOOK_SECRET) return;
+
     const message = req.body?.message;
     const chatId = String(message?.chat?.id || '');
     const text = (message?.text || '').trim();

@@ -12,7 +12,12 @@ const getSupabase = () => {
 
 // Every /api/* route requires a logged-in Supabase session. The frontend
 // attaches the session's access_token as a Bearer token (see services/api.js).
+// Exception: the Telegram webhook can't carry a Supabase session (it's called
+// by Telegram's servers) -- it authenticates itself instead via the
+// X-Telegram-Bot-Api-Secret-Token header, checked in the route handler.
 async function requireAuth(req, res, next) {
+  if (req.path === '/epicerie/telegram-webhook') return next();
+
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.status(401).json({ success: false, error: 'Missing Authorization header' });
