@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { apiFetch } from '../services/api';
 
 const BLUE = '#378ADD';
@@ -404,22 +404,33 @@ function ConfigTab() {
 // DASHBOARD
 // ---------------------------------------------------------------------
 
+const DATE_RANGES = [
+  { id: 'L30D', label: '30j' },
+  { id: 'L90D', label: '90j' },
+  { id: 'L120D', label: '120j' },
+  { id: 'L6M', label: '6 mois' },
+  { id: 'L1Y', label: '1 an' },
+  { id: 'L2Y', label: '2 ans' },
+  { id: 'ALL', label: 'Tout' },
+];
+
 function DashboardTab() {
   const [rows, setRows] = useState([]);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [range, setRange] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/epicerie/dashboard/top-products?limit=50');
+      const res = await apiFetch(`/api/epicerie/dashboard/top-products?limit=50&range=${range}`);
       const json = await res.json();
       if (json.success) { setRows(json.products); setTotalOrders(json.total_orders); }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -442,46 +453,67 @@ function DashboardTab() {
     }
   };
 
-  if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
-
   return (
     <div style={card}>
-      <div style={label}>Top 50 produits — basé sur {totalOrders} commandes</div>
-      <div style={{ overflowX: 'auto', marginTop: 8 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={thCompact}>#</th>
-              <th style={thCompact}>Produit</th>
-              <th style={thCompact}>N° article</th>
-              <th style={thCompact}>Marque</th>
-              <th style={thCompact}>Commandes</th>
-              <th style={thCompact}>Fréquence</th>
-              <th style={thCompact}>Qté moyenne</th>
-              <th style={thCompact}>Statut</th>
-              <th style={thCompact}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.article_number}>
-                <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
-                <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
-                <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{r.article_number}</td>
-                <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
-                <td style={tdCompact}>{r.orders}</td>
-                <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
-                <td style={tdCompact}>{r.avg_qty ?? '—'}</td>
-                <td style={tdCompact}><RuleBadge blacklisted={r.blacklisted} whitelisted={r.whitelisted} /></td>
-                <td style={tdCompact}>
-                  <RuleActions blacklisted={r.blacklisted} whitelisted={r.whitelisted} disabled={applying}
-                    onRule={(flag) => applyRule(r.article_number, flag)} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={label}>Top 50 produits — basé sur {totalOrders} commandes</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {DATE_RANGES.map((r) => (
+            <button key={r.id} onClick={() => setRange(r.id)}
+              style={{
+                background: range === r.id ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+                color: range === r.id ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+              }}>
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {loading ? (
+        <div style={{ color: MUTED, fontSize: 13, marginTop: 12 }}>Chargement...</div>
+      ) : (
+        <div style={{ overflowX: 'auto', marginTop: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thCompact}></th>
+                <th style={thCompact}>#</th>
+                <th style={thCompact}>Produit</th>
+                <th style={thCompact}>N° article</th>
+                <th style={thCompact}>Marque</th>
+                <th style={thCompact}>Commandes</th>
+                <th style={thCompact}>Fréquence</th>
+                <th style={thCompact}>Qté moyenne</th>
+                <th style={thCompact}>Prix moyen</th>
+                <th style={thCompact}>Statut</th>
+                <th style={thCompact}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.article_number}>
+                  <td style={tdCompact}>
+                    {r.image_url && <img src={r.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                  </td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
+                  <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{r.article_number}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
+                  <td style={tdCompact}>{r.orders}</td>
+                  <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
+                  <td style={tdCompact}>{r.avg_qty ?? '—'}</td>
+                  <td style={tdCompact}>{r.avg_price != null ? `${Number(r.avg_price).toFixed(2)}$` : '—'}</td>
+                  <td style={tdCompact}><RuleBadge blacklisted={r.blacklisted} whitelisted={r.whitelisted} /></td>
+                  <td style={tdCompact}>
+                    <RuleActions blacklisted={r.blacklisted} whitelisted={r.whitelisted} disabled={applying}
+                      onRule={(flag) => applyRule(r.article_number, flag)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -490,9 +522,59 @@ function DashboardTab() {
 // LISTE DES COMMANDES
 // ---------------------------------------------------------------------
 
+function OrderDetailRows({ orderId }) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await apiFetch(`/api/epicerie/orders/${orderId}`);
+        const json = await res.json();
+        if (json.success) setDetail(json);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [orderId]);
+
+  if (loading) {
+    return <tr><td colSpan={6} style={{ ...tdCompact, color: MUTED }}>Chargement des produits...</td></tr>;
+  }
+  if (!detail?.lines?.length) {
+    return <tr><td colSpan={6} style={{ ...tdCompact, color: MUTED }}>Aucun produit trouvé.</td></tr>;
+  }
+
+  return (
+    <>
+      {detail.lines.map((l) => (
+        <tr key={l.id} style={{ background: '#14161f' }}>
+          <td style={tdCompact}>
+            {l.grocery_products?.image_url && (
+              <img src={l.grocery_products.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />
+            )}
+          </td>
+          <td style={{ ...tdCompact, paddingLeft: 24 }}>
+            {l.grocery_products?.product_name || l.article_number}
+            {l.grocery_products?.brand && <span style={{ color: MUTED }}> — {l.grocery_products.brand}</span>}
+          </td>
+          <td style={tdCompact}>{l.weight != null ? `${l.weight} kg` : l.quantity}</td>
+          <td style={tdCompact}>{l.unit_price != null ? `${Number(l.unit_price).toFixed(2)}$` : '—'}</td>
+          <td style={{ ...tdCompact, color: MUTED }}>
+            {l.avg_price_paid != null ? `${Number(l.avg_price_paid).toFixed(2)}$ (${detail.price_compare_duration_months}mo)` : '—'}
+          </td>
+          <td style={tdCompact}>{l.total_price != null ? `${Number(l.total_price).toFixed(2)}$` : '—'}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
 function OrdersTab() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openOrderId, setOpenOrderId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -511,7 +593,7 @@ function OrdersTab() {
 
   return (
     <div style={card}>
-      <div style={label}>{orders.length} commandes</div>
+      <div style={label}>{orders.length} commandes — clique une ligne pour voir les produits</div>
       <div style={{ overflowX: 'auto', marginTop: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -526,22 +608,37 @@ function OrdersTab() {
           </thead>
           <tbody>
             {orders.map((o) => (
-              <tr key={o.id}>
-                <td style={td}>{new Date(o.order_date).toLocaleDateString('fr-CA')}</td>
-                <td style={{ ...td, color: MUTED }}>{o.store_name || '—'}</td>
-                <td style={td}>
-                  <span style={{
-                    fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                    background: o.order_type === 'online' ? '#1a1a2b' : '#1a1d27',
-                    color: o.order_type === 'online' ? BLUE : MUTED,
-                  }}>
-                    {o.order_type}
-                  </span>
-                </td>
-                <td style={td}>{o.total_items ?? '—'}</td>
-                <td style={td}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
-                <td style={{ ...td, color: MUTED }}>{o.points_earned ?? '—'}</td>
-              </tr>
+              <Fragment key={o.id}>
+                <tr onClick={() => setOpenOrderId(openOrderId === o.id ? null : o.id)} style={{ cursor: 'pointer' }}>
+                  <td style={td}>{openOrderId === o.id ? '▾ ' : '▸ '}{new Date(o.order_date).toLocaleDateString('fr-CA')}</td>
+                  <td style={{ ...td, color: MUTED }}>{o.store_name || '—'}</td>
+                  <td style={td}>
+                    <span style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                      background: o.order_type === 'online' ? '#1a1a2b' : '#1a1d27',
+                      color: o.order_type === 'online' ? BLUE : MUTED,
+                    }}>
+                      {o.order_type}
+                    </span>
+                  </td>
+                  <td style={td}>{o.total_items ?? '—'}</td>
+                  <td style={td}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
+                  <td style={{ ...td, color: MUTED }}>{o.points_earned ?? '—'}</td>
+                </tr>
+                {openOrderId === o.id && (
+                  <>
+                    <tr style={{ background: '#14161f' }}>
+                      <th style={thCompact}></th>
+                      <th style={thCompact}>Produit</th>
+                      <th style={thCompact}>Qté</th>
+                      <th style={thCompact}>Prix payé</th>
+                      <th style={thCompact}>Prix moyen</th>
+                      <th style={thCompact}>Total ligne</th>
+                    </tr>
+                    <OrderDetailRows orderId={o.id} />
+                  </>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
