@@ -44,6 +44,7 @@ async function importFlyer() {
     valid_from: item.valid_from,
     valid_to: item.valid_to,
     in_store_only: !!item.in_store_only,
+    image_url: item.image_url || null,
   }));
 
   // Refresh complet a chaque run -- plus simple qu'un upsert et coherent

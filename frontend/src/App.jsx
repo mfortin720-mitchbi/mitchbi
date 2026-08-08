@@ -24,12 +24,14 @@ const EP_TAB_BY_ID = {
   'epicerie-dashboard': 'dashboard',
   'epicerie-orders': 'orders',
   'epicerie-next-order': 'next-order',
+  'epicerie-flyer': 'flyer',
 };
 const EP_ID_BY_TAB = {
   config: 'epicerie-config',
   dashboard: 'epicerie-dashboard',
   orders: 'epicerie-orders',
   'next-order': 'epicerie-next-order',
+  flyer: 'epicerie-flyer',
 };
 
 export default function App() {
@@ -99,6 +101,7 @@ export default function App() {
       case 'epicerie-dashboard':
       case 'epicerie-orders':
       case 'epicerie-next-order':
+      case 'epicerie-flyer':
         return (
           <Epicerie
             activeTab={EP_TAB_BY_ID[active]}

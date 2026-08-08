@@ -19,6 +19,7 @@ const MENU_ITEMS = [
       { id: 'epicerie-dashboard', label: 'Dashboard' },
       { id: 'epicerie-orders', label: 'Commandes' },
       { id: 'epicerie-next-order', label: 'Prochaine commande' },
+      { id: 'epicerie-flyer', label: 'Circulaire' },
     ]
   },
 ];

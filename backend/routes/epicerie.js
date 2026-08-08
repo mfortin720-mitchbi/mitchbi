@@ -281,9 +281,16 @@ router.get('/orders/:id', async (req, res) => {
 
     const { data: lines, error: linesErr } = await sb
       .from('grocery_purchase_history')
-      .select('id, article_number, quantity, weight, unit_price, total_price, grocery_products(product_name, brand, image_url)')
+      .select('id, article_number, quantity, weight, unit_price, total_price, grocery_products(product_name, brand, image_url, product_url, is_weighted)')
       .eq('order_id', req.params.id);
     if (linesErr) throw linesErr;
+
+    const { data: rules, error: rulesErr } = await sb
+      .from('grocery_product_rules')
+      .select('article_number, blacklisted, whitelisted')
+      .in('article_number', lines.map((l) => l.article_number));
+    if (rulesErr) throw rulesErr;
+    const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
 
     const { data: durationRow } = await sb
       .from('grocery_config')
@@ -314,10 +321,56 @@ router.get('/orders/:id', async (req, res) => {
       return {
         ...l,
         avg_price_paid: prices.length ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 : null,
+        blacklisted: !!ruleByArticle.get(l.article_number)?.blacklisted,
+        whitelisted: !!ruleByArticle.get(l.article_number)?.whitelisted,
       };
     });
 
     res.json({ success: true, order, lines: enrichedLines, price_compare_duration_months: durationMonths });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------
+// CIRCULAIRE
+// ---------------------------------------------------------------------
+
+// GET /api/epicerie/flyer?category=Légumes
+router.get('/flyer', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { data: items, error } = await sb
+      .from('grocery_flyer_items')
+      .select('*')
+      .order('name');
+    if (error) throw error;
+
+    const categorySet = new Set();
+    for (const it of items) for (const c of it.categories || []) categorySet.add(c);
+    const categories = [...categorySet].sort();
+
+    const filtered = req.query.category
+      ? items.filter((it) => (it.categories || []).includes(req.query.category))
+      : items;
+
+    const articleNumbers = filtered.map((it) => it.article_number).filter(Boolean);
+    const { data: rules, error: rulesErr } = await sb
+      .from('grocery_product_rules')
+      .select('article_number, blacklisted, whitelisted')
+      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+    if (rulesErr) throw rulesErr;
+    const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
+
+    res.json({
+      success: true,
+      categories,
+      items: filtered.map((it) => ({
+        ...it,
+        blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
+        whitelisted: !!ruleByArticle.get(it.article_number)?.whitelisted,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -413,14 +466,33 @@ router.get('/next-order', async (req, res) => {
   }
 });
 
-// POST /api/epicerie/next-order  (ajouter un item manuellement)
+// POST /api/epicerie/next-order  (ajouter un item manuellement -- week_of optionnel,
+// utilise la semaine deja affichee dans Prochaine commande si omis)
 router.post('/next-order', async (req, res) => {
   try {
-    const { week_of, article_number, product_name, product_url, quantity, added_reason } = req.body;
-    if (!week_of || !article_number) {
-      return res.status(400).json({ success: false, error: 'week_of et article_number requis' });
+    const { article_number, product_name, product_url, quantity, added_reason } = req.body;
+    let { week_of } = req.body;
+    if (!article_number) {
+      return res.status(400).json({ success: false, error: 'article_number requis' });
     }
     const sb = getSupabase();
+
+    if (!week_of) {
+      const { data: weekRow } = await sb
+        .from('grocery_cart_queue')
+        .select('week_of')
+        .order('week_of', { ascending: false })
+        .limit(1);
+      if (weekRow?.[0]?.week_of) {
+        week_of = weekRow[0].week_of;
+      } else {
+        const d = new Date();
+        const diff = (7 - d.getDay()) % 7 || 7;
+        d.setDate(d.getDate() + diff);
+        week_of = d.toISOString().slice(0, 10);
+      }
+    }
+
     const { error } = await sb.from('grocery_cart_queue').insert({
       week_of,
       article_number,
