@@ -75,6 +75,10 @@ const TABS = [
 export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
   return (
     <div>
+      <style>{`
+        .ep-thumb { transition: transform 0.15s ease; cursor: zoom-in; position: relative; }
+        .ep-thumb:hover { transform: scale(1.8); z-index: 30; }
+      `}</style>
       {/* Onglets -- redondants avec la sidebar mais utiles si on arrive ici sans passer par elle */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '0.5px solid #1e2130' }}>
         {TABS.map((t) => (
@@ -530,7 +534,7 @@ function DashboardTab() {
               {rows.map((r, i) => (
                 <tr key={r.article_number}>
                   <td style={tdCompact}>
-                    {r.image_url && <img src={r.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                    {r.image_url && <img className="ep-thumb" src={r.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
                   <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
                   <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
@@ -640,7 +644,7 @@ function OrderDetailRows({ orderId }) {
         <tr key={l.id} style={{ background: '#14161f' }}>
           <td style={tdCompact}>
             {l.grocery_products?.image_url && (
-              <img src={l.grocery_products.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />
+              <img className="ep-thumb" src={l.grocery_products.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />
             )}
           </td>
           <td style={{ ...tdCompact, paddingLeft: 24 }}>
@@ -855,7 +859,7 @@ function NextOrderTab() {
             {items.map((it) => (
               <tr key={it.id}>
                 <td style={tdCompact}>
-                  {it.image_url && <img src={it.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                  {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 64, height: 64, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                 </td>
                 <td style={tdCompact}>{it.product_name}</td>
                 <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
@@ -910,8 +914,6 @@ function NextOrderTab() {
 
 function FlyerTab() {
   const [items, setItems] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
   const [purchasedOnly, setPurchasedOnly] = useState(false);
   const [priceCompareDuration, setPriceCompareDuration] = useState(6);
@@ -924,18 +926,16 @@ function FlyerTab() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = category ? `?category=${encodeURIComponent(category)}` : '';
-      const res = await apiFetch(`/api/epicerie/flyer${qs}`);
+      const res = await apiFetch('/api/epicerie/flyer');
       const json = await res.json();
       if (json.success) {
         setItems(json.items);
-        setCategories(json.categories);
         if (json.price_compare_duration_months) setPriceCompareDuration(json.price_compare_duration_months);
       }
     } finally {
       setLoading(false);
     }
-  }, [category]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -948,7 +948,7 @@ function FlyerTab() {
         body: JSON.stringify({
           article_number: it.article_number,
           product_name: it.name,
-          product_url: it.item_web_url || null,
+          product_url: it.product_url || null,
           image_url: it.image_url || null,
           brand: it.brand || null,
           quantity: 1,
@@ -1006,7 +1006,7 @@ function FlyerTab() {
   const visibleItems = items.filter((it) => {
     if (purchasedOnly && !it.previously_purchased) return false;
     if (!q) return true;
-    return [it.name, it.brand, it.article_number, ...(it.categories || [])]
+    return [it.name, it.brand, it.article_number]
       .filter(Boolean)
       .some((f) => String(f).toLowerCase().includes(q));
   });
@@ -1022,9 +1022,9 @@ function FlyerTab() {
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <div style={label}>{visibleItems.length}/{items.length} items — circulaire {items[0]?.valid_from} → {items[0]?.valid_to}</div>
+        <div style={label}>{visibleItems.length}/{items.length} spéciaux — magasin Maxi (API native)</div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input style={{ ...input, width: 180, padding: '4px 10px', fontSize: 12 }} placeholder="Rechercher (produit, marque, N° article, catégorie)"
+          <input style={{ ...input, width: 220, padding: '4px 10px', fontSize: 12 }} placeholder="Rechercher (produit, marque, N° article)"
             value={search} onChange={(e) => setSearch(e.target.value)} />
           <button onClick={() => setPurchasedOnly((v) => !v)}
             style={{
@@ -1033,22 +1033,6 @@ function FlyerTab() {
             }}>
             Déjà acheté
           </button>
-          <button onClick={() => setCategory('')}
-            style={{
-              background: category === '' ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
-              color: category === '' ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-            }}>
-            Toutes
-          </button>
-          {categories.map((c) => (
-            <button key={c} onClick={() => setCategory(c)}
-              style={{
-                background: category === c ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
-                color: category === c ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-              }}>
-              {c}
-            </button>
-          ))}
         </div>
       </div>
       {loading ? (
@@ -1064,13 +1048,14 @@ function FlyerTab() {
                 <th style={thCompact}>Marque</th>
                 <th style={thCompact}>Prix</th>
                 <th style={thCompact}>Régulier</th>
+                <th style={thCompact}>Prix membre</th>
+                <th style={thCompact}>Prix unitaire</th>
                 <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('discount')} title="Trier par % de rabais">
                   % Rabais {sortBy === 'discount' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
                 </th>
                 <th style={{ ...thCompact, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggleSort('purchases')} title="Trier par fréquence d'achats">
                   Achats ({priceCompareDuration}mo) {sortBy === 'purchases' ? (sortDir === 'desc' ? '▾' : '▴') : ''}
                 </th>
-                <th style={thCompact}>Catégorie</th>
                 <th style={thCompact}>Valide jusqu'au</th>
                 <th style={thCompact}>Statut</th>
                 <th style={thCompact}></th>
@@ -1081,7 +1066,7 @@ function FlyerTab() {
               {sortedItems.map((it) => (
                 <tr key={it.id}>
                   <td style={tdCompact}>
-                    {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                    {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
                   <td style={{ ...tdCompact, textTransform: 'lowercase' }}>
                     {it.previously_purchased && <span title="Déjà acheté" style={{ color: GREEN }}>● </span>}
@@ -1093,9 +1078,10 @@ function FlyerTab() {
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
                   </td>
+                  <td style={{ ...tdCompact, color: GOLD }}>{it.member_price != null ? `${Number(it.member_price).toFixed(2)}$` : '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontSize: 10 }}>{it.unit_price_text || '—'}</td>
                   <td style={{ ...tdCompact, color: GOLD }}>{getDiscountPct(it) != null ? `-${getDiscountPct(it)}%` : '—'}</td>
                   <td style={{ ...tdCompact, color: it.recent_purchases ? undefined : MUTED }}>{it.recent_purchases || 0}x</td>
-                  <td style={{ ...tdCompact, color: MUTED }}>{(it.categories || []).join(', ') || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>
                   <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>
                   <td style={tdCompact}>
@@ -1244,7 +1230,7 @@ function SearchTab() {
               {sortedItems.map((it) => (
                 <tr key={it.article_number}>
                   <td style={tdCompact}>
-                    {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                    {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
                   <td style={tdCompact}>
                     {it.product_name}{it.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}

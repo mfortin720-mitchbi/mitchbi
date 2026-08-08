@@ -513,7 +513,7 @@ router.get('/orders/:id', async (req, res) => {
 // CIRCULAIRE
 // ---------------------------------------------------------------------
 
-// GET /api/epicerie/flyer?category=Légumes
+// GET /api/epicerie/flyer
 router.get('/flyer', async (req, res) => {
   try {
     const sb = getSupabase();
@@ -523,15 +523,7 @@ router.get('/flyer', async (req, res) => {
       .order('name');
     if (error) throw error;
 
-    const categorySet = new Set();
-    for (const it of items) for (const c of it.categories || []) categorySet.add(c);
-    const categories = [...categorySet].sort();
-
-    const filtered = req.query.category
-      ? items.filter((it) => (it.categories || []).includes(req.query.category))
-      : items;
-
-    const articleNumbers = filtered.map((it) => it.article_number).filter(Boolean);
+    const articleNumbers = items.map((it) => it.article_number).filter(Boolean);
     const { data: rules, error: rulesErr } = await sb
       .from('grocery_product_rules')
       .select('article_number, blacklisted, whitelisted')
@@ -569,9 +561,8 @@ router.get('/flyer', async (req, res) => {
 
     res.json({
       success: true,
-      categories,
       price_compare_duration_months: durationMonths,
-      items: filtered.map((it) => ({
+      items: items.map((it) => ({
         ...it,
         blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
         whitelisted: !!ruleByArticle.get(it.article_number)?.whitelisted,

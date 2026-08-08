@@ -5,7 +5,7 @@
   "description": "Module epicerie -- service Railway separe du backend principal (voir README.md racine du dossier)",
   "main": "index.js",
   "scripts": {
-    "import-flyer": "node import-flyer.js"
+    "import-deals": "node import-deals.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
