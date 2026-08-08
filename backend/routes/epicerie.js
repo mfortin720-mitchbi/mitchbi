@@ -362,6 +362,14 @@ router.get('/flyer', async (req, res) => {
     if (rulesErr) throw rulesErr;
     const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
 
+    // deja achete = l'article existe dans notre historique (grocery_products)
+    const { data: knownProducts, error: knownErr } = await sb
+      .from('grocery_products')
+      .select('article_number')
+      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+    if (knownErr) throw knownErr;
+    const knownSet = new Set(knownProducts.map((p) => p.article_number));
+
     res.json({
       success: true,
       categories,
@@ -369,7 +377,85 @@ router.get('/flyer', async (req, res) => {
         ...it,
         blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
         whitelisted: !!ruleByArticle.get(it.article_number)?.whitelisted,
+        previously_purchased: knownSet.has(it.article_number),
       })),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------
+// RECHERCHE (historique complet + circulaire actuel)
+// ---------------------------------------------------------------------
+
+// GET /api/epicerie/search?q=fromage
+router.get('/search', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json({ success: true, items: [] });
+    const sb = getSupabase();
+
+    const { data: products, error: prodErr } = await sb
+      .from('grocery_products')
+      .select('article_number, product_name, brand, image_url, product_url, is_weighted')
+      .or(`product_name.ilike.%${q}%,brand.ilike.%${q}%`)
+      .limit(50);
+    if (prodErr) throw prodErr;
+
+    const articleNumbers = products.map((p) => p.article_number);
+
+    const { data: durationRow } = await sb
+      .from('grocery_config')
+      .select('value')
+      .eq('key', 'price_compare_duration_months')
+      .maybeSingle();
+    const durationMonths = parseInt(durationRow?.value || '6', 10);
+    const since = new Date();
+    since.setMonth(since.getMonth() - durationMonths);
+
+    const { data: priceHistory, error: priceErr } = await sb
+      .from('grocery_purchase_history')
+      .select('article_number, unit_price, purchased_at')
+      .in('article_number', articleNumbers.length ? articleNumbers : [''])
+      .gte('purchased_at', since.toISOString());
+    if (priceErr) throw priceErr;
+    const pricesByArticle = new Map();
+    for (const row of priceHistory) {
+      if (row.unit_price == null) continue;
+      if (!pricesByArticle.has(row.article_number)) pricesByArticle.set(row.article_number, []);
+      pricesByArticle.get(row.article_number).push(row.unit_price);
+    }
+
+    const { data: flyerMatches, error: flyerErr } = await sb
+      .from('grocery_flyer_items')
+      .select('article_number, price_text, valid_to')
+      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+    if (flyerErr) throw flyerErr;
+    const flyerByArticle = new Map(flyerMatches.map((f) => [f.article_number, f]));
+
+    const { data: rules, error: rulesErr } = await sb
+      .from('grocery_product_rules')
+      .select('article_number, blacklisted, whitelisted')
+      .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+    if (rulesErr) throw rulesErr;
+    const ruleByArticle = new Map(rules.map((r) => [r.article_number, r]));
+
+    res.json({
+      success: true,
+      price_compare_duration_months: durationMonths,
+      items: products.map((p) => {
+        const prices = pricesByArticle.get(p.article_number) || [];
+        const flyer = flyerByArticle.get(p.article_number);
+        return {
+          ...p,
+          avg_price_paid: prices.length ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 : null,
+          on_flyer: !!flyer,
+          flyer_price_text: flyer?.price_text || null,
+          blacklisted: !!ruleByArticle.get(p.article_number)?.blacklisted,
+          whitelisted: !!ruleByArticle.get(p.article_number)?.whitelisted,
+        };
+      }),
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
