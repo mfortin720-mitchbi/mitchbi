@@ -361,7 +361,7 @@ router.put('/household-config', async (req, res) => {
 // POST /api/epicerie/product-rules  (creer/mettre a jour une regle -- blacklist, whitelist, qte preferee)
 router.post('/product-rules', async (req, res) => {
   try {
-    const { article_number, blacklisted, whitelisted, preferred_qty, notes } = req.body;
+    const { article_number, blacklisted, whitelisted, preferred_qty, notes, category } = req.body;
     if (!article_number) return res.status(400).json({ success: false, error: 'article_number requis' });
     const sb = getSupabase();
     const { data: existing, error: findErr } = await sb
@@ -371,7 +371,10 @@ router.post('/product-rules', async (req, res) => {
       .limit(1);
     if (findErr) throw findErr;
 
-    const payload = { article_number, blacklisted, whitelisted, preferred_qty, notes, updated_at: new Date().toISOString() };
+    // `category` sert a classer un produit whitelisté (Éliane/Julie/Ménage) pour
+    // le futur moteur de suggestions -- colonne deja presente dans le schema,
+    // jamais exploitee avant.
+    const payload = { article_number, blacklisted, whitelisted, preferred_qty, notes, category, updated_at: new Date().toISOString() };
     const { error } = existing?.[0]
       ? await sb.from('grocery_product_rules').update(payload).eq('id', existing[0].id)
       : await sb.from('grocery_product_rules').insert(payload);
@@ -999,10 +1002,11 @@ router.post('/generate-list', async (req, res) => {
 // PUT /api/epicerie/next-order/:id  (modifier quantite/status d'un item)
 router.put('/next-order/:id', async (req, res) => {
   try {
-    const { quantity, status } = req.body;
+    const { quantity, status, added_reason } = req.body;
     const payload = {};
     if (quantity !== undefined) payload.quantity = quantity;
     if (status !== undefined) payload.status = status;
+    if (added_reason !== undefined) payload.added_reason = added_reason;
     const sb = getSupabase();
     const { error } = await sb.from('grocery_cart_queue').update(payload).eq('id', req.params.id);
     if (error) throw error;

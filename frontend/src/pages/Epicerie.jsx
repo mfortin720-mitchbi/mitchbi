@@ -133,7 +133,7 @@ function ConfigTab() {
   useEffect(() => {
     if (bookmarkletRef.current) bookmarkletRef.current.setAttribute('href', BOOKMARKLET);
   }, []);
-  const [newWhitelistRule, setNewWhitelistRule] = useState({ article_number: '', notes: '' });
+  const [newWhitelistRule, setNewWhitelistRule] = useState({ article_number: '', notes: '', category: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -300,7 +300,26 @@ function ConfigTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newWhitelistRule, blacklisted: false, whitelisted: true }),
       });
-      setNewWhitelistRule({ article_number: '', notes: '' });
+      setNewWhitelistRule({ article_number: '', notes: '', category: '' });
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateRuleCategory = async (rule, category) => {
+    setSaving(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number: rule.article_number,
+          blacklisted: rule.blacklisted,
+          whitelisted: rule.whitelisted,
+          category,
+        }),
+      });
       await load();
     } finally {
       setSaving(false);
@@ -455,11 +474,16 @@ function ConfigTab() {
           <p style={{ fontSize: 12, color: MUTED }}>Aucun produit whitelisté.</p>
         )}
         {(data?.rules || []).filter((r) => r.whitelisted).map((r) => (
-          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130' }}>
-            <div>
+          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130', gap: 8 }}>
+            <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, color: '#ddd' }}>{r.article_number}</div>
               {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
             </div>
+            <select style={{ ...input, padding: '3px 6px', fontSize: 11, width: 160 }} value={r.category || ''}
+              onChange={(e) => updateRuleCategory(r, e.target.value || null)} disabled={saving}>
+              <option value="">Non classifié</option>
+              {PERSON_OPTIONS.map((p) => <option key={p} value={p}>{PERSON_LABELS[p]}</option>)}
+            </select>
             <button style={btn('#333')} onClick={() => deleteRule(r.id)} disabled={saving}>Retirer</button>
           </div>
         ))}
@@ -468,6 +492,11 @@ function ConfigTab() {
             value={newWhitelistRule.article_number} onChange={(e) => setNewWhitelistRule({ ...newWhitelistRule, article_number: e.target.value })} />
           <input style={{ ...input, flex: 1 }} placeholder="Note (optionnel)"
             value={newWhitelistRule.notes} onChange={(e) => setNewWhitelistRule({ ...newWhitelistRule, notes: e.target.value })} />
+          <select style={{ ...input, width: 160 }} value={newWhitelistRule.category}
+            onChange={(e) => setNewWhitelistRule({ ...newWhitelistRule, category: e.target.value })}>
+            <option value="">Non classifié</option>
+            {PERSON_OPTIONS.map((p) => <option key={p} value={p}>{PERSON_LABELS[p]}</option>)}
+          </select>
           <button style={btn(GREEN)} onClick={addWhitelistRule} disabled={saving || !newWhitelistRule.article_number.trim()}>+ Whitelister</button>
         </div>
       </div>
@@ -797,8 +826,23 @@ const REASON_LABELS = {
   telegram: 'Telegram',
   flyer_proposal: 'Proposé (circulaire)',
   michel_request: 'Demande Michel',
+  eliane: 'Éliane',
+  julie: 'Julie',
+  previous: 'Commande précédente',
   other: 'Autre',
 };
+const REASON_OPTIONS = Object.keys(REASON_LABELS);
+
+// Classification "pour qui" d'un produit whitelisté -- alimente le futur
+// moteur de suggestions (croiser avec eliane_present_week/julie_present_week
+// dans grocery_household_config).
+const PERSON_LABELS = {
+  eliane: 'Éliane',
+  julie: 'Julie',
+  both: 'Éliane + Julie',
+  household: 'Ménage (général)',
+};
+const PERSON_OPTIONS = Object.keys(PERSON_LABELS);
 
 function NextOrderTab() {
   const [weekOf, setWeekOf] = useState(null);
@@ -823,6 +867,15 @@ function NextOrderTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const updateReason = async (id, added_reason) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, added_reason } : it)));
+    await apiFetch(`/api/epicerie/next-order/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ added_reason }),
+    });
+  };
 
   const updateQty = async (id, quantity) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, quantity } : it)));
@@ -911,7 +964,12 @@ function NextOrderTab() {
                 </td>
                 <td style={tdCompact}>{it.last_price_paid != null ? `${Number(it.last_price_paid).toFixed(2)}$` : '—'}</td>
                 <td style={{ ...tdCompact, color: MUTED }}>{it.avg_price_paid != null ? `${Number(it.avg_price_paid).toFixed(2)}$` : '—'}</td>
-                <td style={{ ...tdCompact, color: MUTED }}>{REASON_LABELS[it.added_reason] || it.added_reason || '—'}</td>
+                <td style={tdCompact}>
+                  <select style={{ ...input, padding: '3px 6px', fontSize: 11, color: MUTED }} value={it.added_reason || 'other'}
+                    onChange={(e) => updateReason(it.id, e.target.value)}>
+                    {REASON_OPTIONS.map((r) => <option key={r} value={r}>{REASON_LABELS[r]}</option>)}
+                  </select>
+                </td>
                 <td style={{ ...tdCompact, color: it.status === 'added' ? GREEN : it.status === 'skipped' ? RED : MUTED }}>{it.status}</td>
                 <td style={tdCompact}>
                   {it.product_url && <a href={it.product_url} target="_blank" rel="noreferrer" style={{ color: BLUE, fontSize: 12 }}>Voir</a>}
