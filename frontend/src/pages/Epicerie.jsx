@@ -19,7 +19,7 @@ const btn = (bg) => ({
 });
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '0.5px solid #1e2130' };
 const thCompact = { ...th, padding: '5px 8px', textAlign: 'left' };
-const tdCompact = { padding: '5px 8px', fontSize: 13, color: '#ddd', borderBottom: '0.5px solid #1e2130', textAlign: 'left' };
+const tdCompact = { padding: '5px 8px', fontSize: 12, color: '#ddd', borderBottom: '0.5px solid #1e2130', textAlign: 'left' };
 
 const RULE_BADGE = {
   blacklisted: { label: 'Blacklisté', bg: '#2b0d0d', color: '#D85A30' },
@@ -874,8 +874,10 @@ function FlyerTab() {
   const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
   const [purchasedOnly, setPurchasedOnly] = useState(false);
+  const [priceCompareDuration, setPriceCompareDuration] = useState(6);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const [addedArticles, setAddedArticles] = useState(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -883,13 +885,37 @@ function FlyerTab() {
       const qs = category ? `?category=${encodeURIComponent(category)}` : '';
       const res = await apiFetch(`/api/epicerie/flyer${qs}`);
       const json = await res.json();
-      if (json.success) { setItems(json.items); setCategories(json.categories); }
+      if (json.success) {
+        setItems(json.items);
+        setCategories(json.categories);
+        if (json.price_compare_duration_months) setPriceCompareDuration(json.price_compare_duration_months);
+      }
     } finally {
       setLoading(false);
     }
   }, [category]);
 
   useEffect(() => { load(); }, [load]);
+
+  const addToCart = async (it) => {
+    setApplying(true);
+    try {
+      await apiFetch('/api/epicerie/next-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number: it.article_number,
+          product_name: it.name,
+          product_url: it.item_web_url || null,
+          quantity: 1,
+          added_reason: 'flyer_proposal',
+        }),
+      });
+      setAddedArticles((prev) => new Set(prev).add(it.article_number));
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const applyRule = async (article_number, flag) => {
     setApplying(true);
@@ -963,9 +989,11 @@ function FlyerTab() {
                 <th style={thCompact}>Marque</th>
                 <th style={thCompact}>Prix</th>
                 <th style={thCompact}>Régulier</th>
+                <th style={thCompact}>Achats ({priceCompareDuration}mo)</th>
                 <th style={thCompact}>Catégorie</th>
                 <th style={thCompact}>Valide jusqu'au</th>
                 <th style={thCompact}>Statut</th>
+                <th style={thCompact}></th>
                 <th style={thCompact}></th>
               </tr>
             </thead>
@@ -985,6 +1013,7 @@ function FlyerTab() {
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
                   </td>
+                  <td style={{ ...tdCompact, color: it.recent_purchases ? undefined : MUTED }}>{it.recent_purchases || 0}x</td>
                   <td style={{ ...tdCompact, color: MUTED }}>{(it.categories || []).join(', ') || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED }}>{it.valid_to ? new Date(it.valid_to).toLocaleDateString('fr-CA') : '—'}</td>
                   <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>
@@ -992,6 +1021,14 @@ function FlyerTab() {
                     {it.article_number && (
                       <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted} disabled={applying}
                         onRule={(flag) => applyRule(it.article_number, flag)} />
+                    )}
+                  </td>
+                  <td style={tdCompact}>
+                    {it.article_number && (
+                      <button style={{ ...btn(addedArticles.has(it.article_number) ? GREEN : BLUE), padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => addToCart(it)} disabled={applying || addedArticles.has(it.article_number)}>
+                        {addedArticles.has(it.article_number) ? '✓ Ajouté' : '+ Panier'}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -1094,7 +1131,9 @@ function SearchTab() {
               <tr>
                 <th style={thCompact}></th>
                 <th style={thCompact}>Produit</th>
+                <th style={thCompact}>N° article</th>
                 <th style={thCompact}>Marque</th>
+                <th style={thCompact}>Achats ({priceCompareDuration}mo)</th>
                 <th style={thCompact}>Prix moyen ({priceCompareDuration}mo)</th>
                 <th style={thCompact}>Circulaire</th>
                 <th style={thCompact}>Statut</th>
@@ -1108,10 +1147,14 @@ function SearchTab() {
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
-                  <td style={{ ...tdCompact, fontSize: 12 }}>
+                  <td style={tdCompact}>
                     {it.product_name}{it.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}
                   </td>
-                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{it.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
+                  <td style={{ ...tdCompact, color: MUTED }}>{it.brand || '—'}</td>
+                  <td style={tdCompact}>
+                    {it.recent_purchases}x{it.recent_qty ? ` (${it.recent_qty}${it.is_weighted ? 'kg' : 'u'})` : ''}
+                  </td>
                   <td style={tdCompact}>{it.avg_price_paid != null ? `${Number(it.avg_price_paid).toFixed(2)}$` : '—'}</td>
                   <td style={{ ...tdCompact, color: it.on_flyer ? GREEN : MUTED }}>{it.on_flyer ? (it.flyer_price_text || 'Oui') : '—'}</td>
                   <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>

@@ -370,14 +370,36 @@ router.get('/flyer', async (req, res) => {
     if (knownErr) throw knownErr;
     const knownSet = new Set(knownProducts.map((p) => p.article_number));
 
+    const { data: durationRow } = await sb
+      .from('grocery_config')
+      .select('value')
+      .eq('key', 'price_compare_duration_months')
+      .maybeSingle();
+    const durationMonths = parseInt(durationRow?.value || '6', 10);
+    const since = new Date();
+    since.setMonth(since.getMonth() - durationMonths);
+
+    const { data: recentPurchases, error: recentErr } = await sb
+      .from('grocery_purchase_history')
+      .select('article_number')
+      .in('article_number', articleNumbers.length ? articleNumbers : [''])
+      .gte('purchased_at', since.toISOString());
+    if (recentErr) throw recentErr;
+    const purchaseCountByArticle = new Map();
+    for (const row of recentPurchases) {
+      purchaseCountByArticle.set(row.article_number, (purchaseCountByArticle.get(row.article_number) || 0) + 1);
+    }
+
     res.json({
       success: true,
       categories,
+      price_compare_duration_months: durationMonths,
       items: filtered.map((it) => ({
         ...it,
         blacklisted: !!ruleByArticle.get(it.article_number)?.blacklisted,
         whitelisted: !!ruleByArticle.get(it.article_number)?.whitelisted,
         previously_purchased: knownSet.has(it.article_number),
+        recent_purchases: purchaseCountByArticle.get(it.article_number) || 0,
       })),
     });
   } catch (err) {
@@ -416,15 +438,20 @@ router.get('/search', async (req, res) => {
 
     const { data: priceHistory, error: priceErr } = await sb
       .from('grocery_purchase_history')
-      .select('article_number, unit_price, purchased_at')
+      .select('article_number, unit_price, quantity, weight, purchased_at')
       .in('article_number', articleNumbers.length ? articleNumbers : [''])
       .gte('purchased_at', since.toISOString());
     if (priceErr) throw priceErr;
-    const pricesByArticle = new Map();
+    const statsByArticle = new Map();
     for (const row of priceHistory) {
-      if (row.unit_price == null) continue;
-      if (!pricesByArticle.has(row.article_number)) pricesByArticle.set(row.article_number, []);
-      pricesByArticle.get(row.article_number).push(row.unit_price);
+      if (!statsByArticle.has(row.article_number)) {
+        statsByArticle.set(row.article_number, { prices: [], purchases: 0, qty: 0, weight: 0 });
+      }
+      const s = statsByArticle.get(row.article_number);
+      if (row.unit_price != null) s.prices.push(row.unit_price);
+      s.purchases += 1;
+      if (row.quantity > 0) s.qty += row.quantity;
+      if (row.weight != null) s.weight += row.weight;
     }
 
     const { data: flyerMatches, error: flyerErr } = await sb
@@ -445,11 +472,14 @@ router.get('/search', async (req, res) => {
       success: true,
       price_compare_duration_months: durationMonths,
       items: products.map((p) => {
-        const prices = pricesByArticle.get(p.article_number) || [];
+        const s = statsByArticle.get(p.article_number);
+        const prices = s?.prices || [];
         const flyer = flyerByArticle.get(p.article_number);
         return {
           ...p,
           avg_price_paid: prices.length ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 : null,
+          recent_purchases: s?.purchases || 0,
+          recent_qty: p.is_weighted ? Math.round((s?.weight || 0) * 100) / 100 : (s?.qty || 0),
           on_flyer: !!flyer,
           flyer_price_text: flyer?.price_text || null,
           blacklisted: !!ruleByArticle.get(p.article_number)?.blacklisted,
