@@ -1046,4 +1046,183 @@ router.delete('/next-order', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// COMPARATIF COMMANDE REELLE vs PANIER PLANIFIE + TELEGRAM
+// ---------------------------------------------------------------------
+
+// chat_id Telegram -> prenom, seuls admis a declencher /reset ou /status
+const TELEGRAM_AUTHORIZED_CHATS = {
+  '8551058793': 'Michel',
+  '8616082335': 'Julie',
+};
+
+async function sendTelegramMessage(chatId, text) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) { console.error('TELEGRAM_BOT_TOKEN manquant -- message non envoye'); return; }
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text }),
+  });
+}
+
+// Snapshot du panier actif (avant reset) + sync de l'historique Maxi (pour
+// aller chercher la commande qui vient d'etre passee) + diff par article_number.
+// N'efface PAS le panier -- l'appelant decide s'il fait le reset apres coup.
+async function compareCartToLastOrder(sb) {
+  const { data: weekRow, error: weekErr } = await sb
+    .from('grocery_cart_queue')
+    .select('week_of')
+    .order('week_of', { ascending: false })
+    .limit(1);
+  if (weekErr) throw weekErr;
+  const weekOf = weekRow?.[0]?.week_of;
+  if (!weekOf) return { success: false, error: 'Aucun panier actif à comparer.' };
+
+  const { data: cartItems, error: cartErr } = await sb
+    .from('grocery_cart_queue')
+    .select('article_number, product_name, quantity')
+    .eq('week_of', weekOf);
+  if (cartErr) throw cartErr;
+
+  const syncResult = await syncMaxiOrders(sb);
+
+  const { data: lastOrderRows, error: lastOrderErr } = await sb
+    .from('grocery_orders')
+    .select('id, order_number, order_date')
+    .order('order_date', { ascending: false })
+    .limit(1);
+  if (lastOrderErr) throw lastOrderErr;
+  const lastOrder = lastOrderRows?.[0];
+  if (!lastOrder) return { success: false, error: 'Aucune commande trouvée dans l\'historique Maxi.', sync: syncResult };
+
+  const { data: orderLines, error: linesErr } = await sb
+    .from('grocery_purchase_history')
+    .select('article_number, quantity, total_price')
+    .eq('order_id', lastOrder.id);
+  if (linesErr) throw linesErr;
+
+  const orderByArticle = new Map(orderLines.map((l) => [l.article_number, l]));
+  const cartByArticle = new Map(cartItems.map((it) => [it.article_number, it]));
+
+  const missing = cartItems.filter((it) => !orderByArticle.has(it.article_number));
+  const extra = orderLines.filter((l) => !cartByArticle.has(l.article_number));
+  const matchedCount = cartItems.length - missing.length;
+
+  return {
+    success: true,
+    week_of: weekOf,
+    order_number: lastOrder.order_number,
+    order_date: lastOrder.order_date,
+    planned_count: cartItems.length,
+    matched_count: matchedCount,
+    missing,
+    extra,
+    sync: syncResult,
+  };
+}
+
+async function persistComparison(sb, comparison, triggeredBy) {
+  await sb.from('grocery_order_comparisons').insert({
+    week_of: comparison.week_of,
+    order_number: comparison.order_number,
+    order_date: comparison.order_date,
+    planned_count: comparison.planned_count,
+    matched_count: comparison.matched_count,
+    missing_items: comparison.missing,
+    extra_items: comparison.extra,
+    triggered_by: triggeredBy,
+  });
+}
+
+function formatComparisonMessage(comparison) {
+  const lines = [
+    `✅ Commande #${comparison.order_number} comparée au panier planifié (semaine du ${comparison.week_of}).`,
+    `${comparison.matched_count}/${comparison.planned_count} items planifiés retrouvés dans la commande.`,
+  ];
+  if (comparison.missing.length) {
+    lines.push(`⚠️ Planifiés mais absents de la commande: ${comparison.missing.map((m) => m.product_name).join(', ')}`);
+  }
+  if (comparison.extra.length) {
+    lines.push(`➕ Achetés mais pas planifiés: ${comparison.extra.length} item(s)`);
+  }
+  lines.push('Panier vidé.');
+  return lines.join('\n');
+}
+
+// POST /api/epicerie/reset-and-compare  (declenchement web -- meme flux que /reset via Telegram)
+router.post('/reset-and-compare', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { token, expired } = await getMaxiToken(sb);
+    if (!token || expired) {
+      return res.json({ success: false, error: 'Token Maxi expiré ou manquant -- reconnecte-toi sur Maxi.ca et recolle-le avant de comparer.' });
+    }
+    const comparison = await compareCartToLastOrder(sb);
+    if (!comparison.success) return res.json(comparison);
+
+    await persistComparison(sb, comparison, req.body?.triggered_by || 'web');
+    await sb.from('grocery_cart_queue').delete().eq('week_of', comparison.week_of);
+
+    res.json(comparison);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/epicerie/telegram-webhook  (commandes /reset et /status, chat_id whiteliste)
+router.post('/telegram-webhook', async (req, res) => {
+  res.json({ ok: true }); // ack immediat -- Telegram retry si pas de reponse rapide
+  try {
+    const message = req.body?.message;
+    const chatId = String(message?.chat?.id || '');
+    const text = (message?.text || '').trim();
+    if (!TELEGRAM_AUTHORIZED_CHATS[chatId]) return; // expediteur non autorise, ignore silencieusement
+
+    const sb = getSupabase();
+
+    if (text === '/status') {
+      const { token, expired } = await getMaxiToken(sb);
+      const status = !token ? 'Aucun token enregistré.' : expired ? '⚠️ Token expiré.' : '✅ Token valide.';
+      await sendTelegramMessage(chatId, `Statut token Maxi: ${status}`);
+      return;
+    }
+
+    if (text === '/reset') {
+      const { token, expired } = await getMaxiToken(sb);
+      if (!token || expired) {
+        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Va sur mitchbi.com > Épicerie > Config pour le renouveler avant de comparer.');
+        return;
+      }
+      const comparison = await compareCartToLastOrder(sb);
+      if (!comparison.success) {
+        await sendTelegramMessage(chatId, `❌ ${comparison.error}`);
+        return;
+      }
+      await persistComparison(sb, comparison, `telegram:${TELEGRAM_AUTHORIZED_CHATS[chatId]}`);
+      await sb.from('grocery_cart_queue').delete().eq('week_of', comparison.week_of);
+      await sendTelegramMessage(chatId, formatComparisonMessage(comparison));
+    }
+  } catch (err) {
+    console.error('Erreur webhook telegram:', err.message);
+  }
+});
+
+// GET /api/epicerie/order-comparisons?limit=10
+router.get('/order-comparisons', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const limit = parseInt(req.query.limit || '10', 10);
+    const { data, error } = await sb
+      .from('grocery_order_comparisons')
+      .select('*')
+      .order('compared_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    res.json({ success: true, comparisons: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
