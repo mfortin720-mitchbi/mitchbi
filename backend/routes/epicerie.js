@@ -1028,4 +1028,22 @@ router.delete('/next-order/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/epicerie/next-order?week_of=2026-08-10&reason=ALL|frequency|...
+// reset du panier de la semaine -- au complet (reason=ALL/absent) ou juste
+// un type d'ajout (ex: retirer tout ce qui vient du circulaire pour recommencer)
+router.delete('/next-order', async (req, res) => {
+  try {
+    const { week_of, reason } = req.query;
+    if (!week_of) return res.status(400).json({ success: false, error: 'week_of requis' });
+    const sb = getSupabase();
+    let query = sb.from('grocery_cart_queue').delete().eq('week_of', week_of);
+    if (reason && reason !== 'ALL') query = query.eq('added_reason', reason);
+    const { data, error } = await query.select('id');
+    if (error) throw error;
+    res.json({ success: true, deleted: data.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
