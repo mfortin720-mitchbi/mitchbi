@@ -34,33 +34,50 @@ async function fetchAll(table, select) {
 // DASHBOARD
 // ---------------------------------------------------------------------
 
-// GET /api/epicerie/dashboard/top-products?limit=50
+function rangeToSince(range) {
+  const d = new Date();
+  switch ((range || 'ALL').toUpperCase()) {
+    case 'L30D': d.setDate(d.getDate() - 30); return d;
+    case 'L90D': d.setDate(d.getDate() - 90); return d;
+    case 'L120D': d.setDate(d.getDate() - 120); return d;
+    case 'L6M': d.setMonth(d.getMonth() - 6); return d;
+    case 'L1Y': d.setFullYear(d.getFullYear() - 1); return d;
+    case 'L2Y': d.setFullYear(d.getFullYear() - 2); return d;
+    default: return null; // ALL
+  }
+}
+
+// GET /api/epicerie/dashboard/top-products?limit=50&range=L90D
 router.get('/dashboard/top-products', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const since = rangeToSince(req.query.range);
     const sb = getSupabase();
 
-    const { count: totalOrders, error: countErr } = await sb
-      .from('grocery_orders')
-      .select('id', { count: 'exact', head: true });
+    let orderCountQuery = sb.from('grocery_orders').select('id', { count: 'exact', head: true });
+    if (since) orderCountQuery = orderCountQuery.gte('order_date', since.toISOString());
+    const { count: totalOrders, error: countErr } = await orderCountQuery;
     if (countErr) throw countErr;
 
-    const lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity');
+    let lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, unit_price, purchased_at');
+    if (since) lines = lines.filter((l) => new Date(l.purchased_at) >= since);
 
     const byProduct = new Map();
     for (const l of lines) {
-      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [] });
+      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], prices: [] });
       const e = byProduct.get(l.article_number);
       e.orderIds.add(l.order_id);
       if (l.quantity > 0) e.qty.push(l.quantity);
+      if (l.unit_price != null) e.prices.push(l.unit_price);
     }
 
     const ranked = [...byProduct.entries()]
       .map(([article_number, e]) => ({
         article_number,
         orders: e.orderIds.size,
-        frequency_pct: Math.round((e.orderIds.size / totalOrders) * 1000) / 10,
+        frequency_pct: totalOrders ? Math.round((e.orderIds.size / totalOrders) * 1000) / 10 : 0,
         avg_qty: e.qty.length ? Math.round(e.qty.reduce((a, b) => a + b, 0) / e.qty.length) : null,
+        avg_price: e.prices.length ? Math.round((e.prices.reduce((a, b) => a + b, 0) / e.prices.length) * 100) / 100 : null,
       }))
       .sort((a, b) => b.orders - a.orders)
       .slice(0, limit);
@@ -261,11 +278,43 @@ router.get('/orders/:id', async (req, res) => {
 
     const { data: lines, error: linesErr } = await sb
       .from('grocery_purchase_history')
-      .select('id, article_number, quantity, weight, unit_price, total_price, grocery_products(product_name, brand)')
+      .select('id, article_number, quantity, weight, unit_price, total_price, grocery_products(product_name, brand, image_url)')
       .eq('order_id', req.params.id);
     if (linesErr) throw linesErr;
 
-    res.json({ success: true, order, lines });
+    const { data: durationRow } = await sb
+      .from('grocery_config')
+      .select('value')
+      .eq('key', 'price_compare_duration_months')
+      .maybeSingle();
+    const durationMonths = parseInt(durationRow?.value || '6', 10);
+    const since = new Date();
+    since.setMonth(since.getMonth() - durationMonths);
+
+    const articleNumbers = lines.map((l) => l.article_number);
+    const { data: priceHistory, error: priceErr } = await sb
+      .from('grocery_purchase_history')
+      .select('article_number, unit_price, purchased_at')
+      .in('article_number', articleNumbers)
+      .gte('purchased_at', since.toISOString());
+    if (priceErr) throw priceErr;
+
+    const pricesByArticle = new Map();
+    for (const row of priceHistory) {
+      if (row.unit_price == null) continue;
+      if (!pricesByArticle.has(row.article_number)) pricesByArticle.set(row.article_number, []);
+      pricesByArticle.get(row.article_number).push(row.unit_price);
+    }
+
+    const enrichedLines = lines.map((l) => {
+      const prices = pricesByArticle.get(l.article_number) || [];
+      return {
+        ...l,
+        avg_price_paid: prices.length ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 : null,
+      };
+    });
+
+    res.json({ success: true, order, lines: enrichedLines, price_compare_duration_months: durationMonths });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
