@@ -116,6 +116,8 @@ function ConfigTab() {
   const [tokenExpiresInput, setTokenExpiresInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [genMessage, setGenMessage] = useState('');
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncing, setSyncing] = useState(false);
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
   const bookmarkletRef = useRef(null);
 
@@ -205,17 +207,40 @@ function ConfigTab() {
   const saveToken = async () => {
     if (!tokenInput.trim()) return;
     setSaving(true);
+    setSyncMessage('Synchronisation des commandes en cours...');
     try {
-      await apiFetch('/api/epicerie/token', {
+      const res = await apiFetch('/api/epicerie/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tokenInput.trim(), expires_at: tokenExpiresInput || null }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setSyncMessage(`Erreur: ${json.error || res.status}`);
+        return;
+      }
+      setSyncMessage(json.sync?.success ? json.sync.message : `Erreur de synchronisation: ${json.sync?.error || 'inconnue'}`);
       setTokenInput('');
       setTokenExpiresInput('');
       await load();
+    } catch (err) {
+      setSyncMessage(`Erreur: ${err.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setSyncing(true);
+    setSyncMessage('Synchronisation des commandes en cours...');
+    try {
+      const res = await apiFetch('/api/epicerie/sync-orders', { method: 'POST' });
+      const json = await res.json();
+      setSyncMessage(json.success ? json.message : `Erreur: ${json.error || res.status}`);
+    } catch (err) {
+      setSyncMessage(`Erreur: ${err.message}`);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -350,6 +375,14 @@ function ConfigTab() {
               onChange={(e) => setTokenExpiresInput(e.target.value)} />
             <button style={btn(BLUE)} onClick={saveToken} disabled={saving || !tokenInput.trim()}>Sauvegarder le token</button>
           </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <button style={btn('#333')} onClick={syncNow} disabled={syncing || saving}>
+              {syncing ? 'Synchronisation...' : '↻ Synchroniser les commandes maintenant'}
+            </button>
+          </div>
+          {syncMessage && (
+            <p style={{ fontSize: 12, color: syncMessage.startsWith('Erreur') ? RED : GREEN, margin: '4px 0 0' }}>{syncMessage}</p>
+          )}
         </div>
       </div>
 
@@ -570,7 +603,7 @@ function OrderDetailRows({ orderId }) {
   const addToCart = async (l) => {
     setBusy(true);
     try {
-      await apiFetch('/api/epicerie/next-order', {
+      const res = await apiFetch('/api/epicerie/next-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -581,7 +614,14 @@ function OrderDetailRows({ orderId }) {
           added_reason: 'previous',
         }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        alert(`Erreur ajout au panier: ${json.error || res.status}`);
+        return;
+      }
       setAddedIds((prev) => new Set(prev).add(l.id));
+    } catch (err) {
+      alert(`Erreur ajout au panier: ${err.message}`);
     } finally {
       setBusy(false);
     }
@@ -900,7 +940,7 @@ function FlyerTab() {
   const addToCart = async (it) => {
     setApplying(true);
     try {
-      await apiFetch('/api/epicerie/next-order', {
+      const res = await apiFetch('/api/epicerie/next-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -911,7 +951,14 @@ function FlyerTab() {
           added_reason: 'flyer_proposal',
         }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        alert(`Erreur ajout au panier: ${json.error || res.status}`);
+        return;
+      }
       setAddedArticles((prev) => new Set(prev).add(it.article_number));
+    } catch (err) {
+      alert(`Erreur ajout au panier: ${err.message}`);
     } finally {
       setApplying(false);
     }
@@ -1003,12 +1050,12 @@ function FlyerTab() {
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
-                  <td style={tdCompact}>
+                  <td style={{ ...tdCompact, textTransform: 'lowercase' }}>
                     {it.previously_purchased && <span title="Déjà acheté" style={{ color: GREEN }}>● </span>}
                     {it.name}
                   </td>
                   <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{it.article_number || '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED }}>{it.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, textTransform: 'lowercase' }}>{it.brand || '—'}</td>
                   <td style={{ ...tdCompact, color: GREEN, fontWeight: 600 }}>{it.price_text || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
@@ -1097,7 +1144,7 @@ function SearchTab() {
   const addToCart = async (it) => {
     setBusy(true);
     try {
-      await apiFetch('/api/epicerie/next-order', {
+      const res = await apiFetch('/api/epicerie/next-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1108,7 +1155,14 @@ function SearchTab() {
           added_reason: 'michel_request',
         }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        alert(`Erreur ajout au panier: ${json.error || res.status}`);
+        return;
+      }
       setAddedIds((prev) => new Set(prev).add(it.article_number));
+    } catch (err) {
+      alert(`Erreur ajout au panier: ${err.message}`);
     } finally {
       setBusy(false);
     }
