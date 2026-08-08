@@ -9,6 +9,7 @@ import Connections from './pages/Connections';
 import QueryEngine from './pages/QueryEngine';
 import Trader from './pages/Trader';
 import TradingImperium from './pages/TradingImperium';
+import Epicerie from './pages/Epicerie';
 import Readme from './pages/Readme';
 
 const TI_TAB_BY_ID = {
@@ -17,6 +18,19 @@ const TI_TAB_BY_ID = {
   'trading-imperium-events': 'events',
 };
 const TI_ID_BY_TAB = { overview: 'trading-imperium', trades: 'trading-imperium-trades', events: 'trading-imperium-events' };
+
+const EP_TAB_BY_ID = {
+  'epicerie-config': 'config',
+  'epicerie-dashboard': 'dashboard',
+  'epicerie-orders': 'orders',
+  'epicerie-next-order': 'next-order',
+};
+const EP_ID_BY_TAB = {
+  config: 'epicerie-config',
+  dashboard: 'epicerie-dashboard',
+  orders: 'epicerie-orders',
+  'next-order': 'epicerie-next-order',
+};
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -78,6 +92,17 @@ export default function App() {
           <TradingImperium
             activeTab={TI_TAB_BY_ID[active]}
             onTabChange={tab => setActive(TI_ID_BY_TAB[tab])}
+          />
+        );
+
+      case 'epicerie-config':
+      case 'epicerie-dashboard':
+      case 'epicerie-orders':
+      case 'epicerie-next-order':
+        return (
+          <Epicerie
+            activeTab={EP_TAB_BY_ID[active]}
+            onTabChange={tab => setActive(EP_ID_BY_TAB[tab])}
           />
         );
 

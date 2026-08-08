@@ -12,6 +12,15 @@ const MENU_ITEMS = [
     ]
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },
+  {
+    id: 'epicerie', icon: '🛒', label: 'Épicerie',
+    subItems: [
+      { id: 'epicerie-config', label: 'Config' },
+      { id: 'epicerie-dashboard', label: 'Dashboard' },
+      { id: 'epicerie-orders', label: 'Commandes' },
+      { id: 'epicerie-next-order', label: 'Prochaine commande' },
+    ]
+  },
 ];
 
 const BOTTOM_ITEMS = [
