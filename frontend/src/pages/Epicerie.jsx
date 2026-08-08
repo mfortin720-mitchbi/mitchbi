@@ -69,6 +69,7 @@ const TABS = [
   { id: 'orders', label: 'Commandes' },
   { id: 'next-order', label: 'Prochaine commande' },
   { id: 'flyer', label: 'Circulaire' },
+  { id: 'search', label: 'Recherche' },
 ];
 
 export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
@@ -97,6 +98,7 @@ export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
       {activeTab === 'orders' && <OrdersTab />}
       {activeTab === 'next-order' && <NextOrderTab />}
       {activeTab === 'flyer' && <FlyerTab />}
+      {activeTab === 'search' && <SearchTab />}
     </div>
   );
 }
@@ -498,9 +500,9 @@ function DashboardTab() {
                     {r.image_url && <img src={r.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
                   <td style={{ ...tdCompact, color: MUTED }}>{i + 1}</td>
-                  <td style={tdCompact}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
+                  <td style={{ ...tdCompact, fontSize: 12 }}>{r.product_name}{r.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}</td>
                   <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{r.article_number}</td>
-                  <td style={{ ...tdCompact, color: MUTED }}>{r.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{r.brand || '—'}</td>
                   <td style={tdCompact}>{r.orders}</td>
                   <td style={{ ...tdCompact, color: r.frequency_pct >= 30 ? GREEN : r.frequency_pct >= 15 ? GOLD : MUTED }}>{r.frequency_pct}%</td>
                   <td style={tdCompact}>
@@ -601,7 +603,7 @@ function OrderDetailRows({ orderId }) {
               <img src={l.grocery_products.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />
             )}
           </td>
-          <td style={{ ...tdCompact, paddingLeft: 24 }}>
+          <td style={{ ...tdCompact, paddingLeft: 24, fontSize: 12 }}>
             {l.grocery_products?.product_name || l.article_number}
             {l.grocery_products?.brand && <span style={{ color: MUTED }}> — {l.grocery_products.brand}</span>}
           </td>
@@ -815,7 +817,7 @@ function NextOrderTab() {
                 <td style={tdCompact}>
                   {it.image_url && <img src={it.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                 </td>
-                <td style={tdCompact}>{it.product_name}</td>
+                <td style={{ ...tdCompact, fontSize: 12 }}>{it.product_name}</td>
                 <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number}</td>
                 <td style={tdCompact}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -870,6 +872,8 @@ function FlyerTab() {
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [category, setCategory] = useState('');
+  const [search, setSearch] = useState('');
+  const [purchasedOnly, setPurchasedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
 
@@ -905,11 +909,29 @@ function FlyerTab() {
     }
   };
 
+  const q = search.trim().toLowerCase();
+  const visibleItems = items.filter((it) => {
+    if (purchasedOnly && !it.previously_purchased) return false;
+    if (!q) return true;
+    return [it.name, it.brand, it.article_number, ...(it.categories || [])]
+      .filter(Boolean)
+      .some((f) => String(f).toLowerCase().includes(q));
+  });
+
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <div style={label}>{items.length} items — circulaire {items[0]?.valid_from} → {items[0]?.valid_to}</div>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div style={label}>{visibleItems.length}/{items.length} items — circulaire {items[0]?.valid_from} → {items[0]?.valid_to}</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input style={{ ...input, width: 180, padding: '4px 10px', fontSize: 12 }} placeholder="Rechercher (produit, marque, N° article, catégorie)"
+            value={search} onChange={(e) => setSearch(e.target.value)} />
+          <button onClick={() => setPurchasedOnly((v) => !v)}
+            style={{
+              background: purchasedOnly ? GREEN : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
+              color: purchasedOnly ? '#fff' : MUTED, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+            }}>
+            Déjà acheté
+          </button>
           <button onClick={() => setCategory('')}
             style={{
               background: category === '' ? BLUE : '#0f1117', border: '0.5px solid #2a2e3f', borderRadius: 6,
@@ -948,14 +970,17 @@ function FlyerTab() {
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
+              {visibleItems.map((it) => (
                 <tr key={it.id}>
                   <td style={tdCompact}>
                     {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
                   </td>
-                  <td style={tdCompact}>{it.name}</td>
+                  <td style={{ ...tdCompact, fontSize: 12 }}>
+                    {it.previously_purchased && <span title="Déjà acheté" style={{ color: GREEN }}>● </span>}
+                    {it.name}
+                  </td>
                   <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace', fontSize: 11 }}>{it.article_number || '—'}</td>
-                  <td style={{ ...tdCompact, color: MUTED }}>{it.brand || '—'}</td>
+                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{it.brand || '—'}</td>
                   <td style={{ ...tdCompact, color: GREEN, fontWeight: 600 }}>{it.price_text || '—'}</td>
                   <td style={{ ...tdCompact, color: MUTED, textDecoration: it.original_price ? 'line-through' : 'none' }}>
                     {it.original_price != null ? `${Number(it.original_price).toFixed(2)}$` : '—'}
@@ -968,6 +993,137 @@ function FlyerTab() {
                       <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted} disabled={applying}
                         onRule={(flag) => applyRule(it.article_number, flag)} />
                     )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// RECHERCHE DE PRODUITS (historique complet + circulaire)
+// ---------------------------------------------------------------------
+
+function SearchTab() {
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState([]);
+  const [priceCompareDuration, setPriceCompareDuration] = useState(6);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [addedIds, setAddedIds] = useState(new Set());
+
+  // debounce -- pas d'appel a chaque frappe
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setItems([]); return; }
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await apiFetch(`/api/epicerie/search?q=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        if (json.success) {
+          setItems(json.items);
+          if (json.price_compare_duration_months) setPriceCompareDuration(json.price_compare_duration_months);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const applyRule = async (article_number, flag) => {
+    setBusy(true);
+    try {
+      await apiFetch('/api/epicerie/product-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number,
+          blacklisted: flag === 'blacklisted',
+          whitelisted: flag === 'whitelisted',
+        }),
+      });
+      setItems((prev) => prev.map((it) => it.article_number === article_number
+        ? { ...it, blacklisted: flag === 'blacklisted', whitelisted: flag === 'whitelisted' }
+        : it));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addToCart = async (it) => {
+    setBusy(true);
+    try {
+      await apiFetch('/api/epicerie/next-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article_number: it.article_number,
+          product_name: it.product_name,
+          product_url: it.product_url,
+          quantity: 1,
+          added_reason: 'michel_request',
+        }),
+      });
+      setAddedIds((prev) => new Set(prev).add(it.article_number));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={card}>
+      <div style={label}>Recherche dans l'historique d'achat et le circulaire actuel</div>
+      <input style={{ ...input, width: '100%', marginTop: 8 }} placeholder="Chercher un produit ou une marque (ex: fromage, saumon...)"
+        value={query} onChange={(e) => setQuery(e.target.value)} />
+
+      {loading && <div style={{ color: MUTED, fontSize: 13, marginTop: 12 }}>Recherche...</div>}
+      {!loading && query.trim().length >= 2 && items.length === 0 && (
+        <div style={{ color: MUTED, fontSize: 13, marginTop: 12 }}>Aucun résultat.</div>
+      )}
+
+      {items.length > 0 && (
+        <div style={{ overflowX: 'auto', marginTop: 12 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thCompact}></th>
+                <th style={thCompact}>Produit</th>
+                <th style={thCompact}>Marque</th>
+                <th style={thCompact}>Prix moyen ({priceCompareDuration}mo)</th>
+                <th style={thCompact}>Circulaire</th>
+                <th style={thCompact}>Statut</th>
+                <th style={thCompact}></th>
+                <th style={thCompact}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.article_number}>
+                  <td style={tdCompact}>
+                    {it.image_url && <img src={it.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                  </td>
+                  <td style={{ ...tdCompact, fontSize: 12 }}>
+                    {it.product_name}{it.is_weighted && <span style={{ color: MUTED }}> (au poids)</span>}
+                  </td>
+                  <td style={{ ...tdCompact, color: MUTED, fontSize: 12 }}>{it.brand || '—'}</td>
+                  <td style={tdCompact}>{it.avg_price_paid != null ? `${Number(it.avg_price_paid).toFixed(2)}$` : '—'}</td>
+                  <td style={{ ...tdCompact, color: it.on_flyer ? GREEN : MUTED }}>{it.on_flyer ? (it.flyer_price_text || 'Oui') : '—'}</td>
+                  <td style={tdCompact}><RuleBadge blacklisted={it.blacklisted} whitelisted={it.whitelisted} /></td>
+                  <td style={tdCompact}>
+                    <RuleActions blacklisted={it.blacklisted} whitelisted={it.whitelisted} disabled={busy}
+                      onRule={(flag) => applyRule(it.article_number, flag)} />
+                  </td>
+                  <td style={tdCompact}>
+                    <button style={{ ...btn(addedIds.has(it.article_number) ? GREEN : BLUE), padding: '4px 10px', fontSize: 11 }}
+                      onClick={() => addToCart(it)} disabled={busy || addedIds.has(it.article_number)}>
+                      {addedIds.has(it.article_number) ? '✓ Ajouté' : '+ Panier'}
+                    </button>
                   </td>
                 </tr>
               ))}
