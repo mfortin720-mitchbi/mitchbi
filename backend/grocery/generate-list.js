@@ -38,10 +38,19 @@ async function generateList() {
     if (page.length < PAGE) break;
   }
 
+  const { data: rulesData, error: rulesErr } = await supabase
+    .from('grocery_product_rules')
+    .select('article_number, blacklisted, whitelisted, preferred_qty');
+  if (rulesErr) throw rulesErr;
+  const blacklist = new Set(rulesData.filter((r) => r.blacklisted).map((r) => r.article_number));
+  const whitelist = new Set(rulesData.filter((r) => r.whitelisted && !r.blacklisted).map((r) => r.article_number));
+  const preferredQty = new Map(rulesData.filter((r) => r.preferred_qty).map((r) => [r.article_number, r.preferred_qty]));
+
   // agrege en JS -- volume modeste (quelques milliers de lignes), pas
   // besoin d'une fonction Postgres pour ca
   const byProduct = new Map();
   for (const line of lines) {
+    if (blacklist.has(line.article_number)) continue;
     if (!byProduct.has(line.article_number)) {
       byProduct.set(line.article_number, { orderIds: new Set(), quantities: [] });
     }
@@ -50,36 +59,41 @@ async function generateList() {
     if (line.quantity && line.quantity > 0) entry.quantities.push(line.quantity);
   }
 
-  const qualifying = [];
+  const chosen = new Map(); // articleNumber -> { quantity, reason }
   for (const [articleNumber, entry] of byProduct) {
     const freq = entry.orderIds.size / totalOrders;
     if (freq >= threshold) {
       const avgQty = entry.quantities.length
         ? Math.round(entry.quantities.reduce((a, b) => a + b, 0) / entry.quantities.length)
         : 1;
-      qualifying.push({ articleNumber, freq, quantity: Math.max(1, avgQty) });
+      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty), reason: 'frequency' });
     }
   }
-  qualifying.sort((a, b) => b.freq - a.freq);
+  for (const articleNumber of whitelist) {
+    if (!chosen.has(articleNumber)) {
+      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, reason: 'whitelist' });
+    }
+  }
 
   const { data: products, error: prodErr } = await supabase
     .from('grocery_products')
     .select('article_number, product_name, product_url, is_weighted')
-    .in('article_number', qualifying.map((q) => q.articleNumber));
+    .in('article_number', [...chosen.keys()]);
   if (prodErr) throw prodErr;
   const productByArticle = new Map(products.map((p) => [p.article_number, p]));
 
   const weekOf = nextSunday();
 
-  const rows = qualifying.map((q) => {
-    const p = productByArticle.get(q.articleNumber);
+  const rows = [...chosen.entries()].map(([articleNumber, c]) => {
+    const p = productByArticle.get(articleNumber);
     return {
       week_of: weekOf,
-      article_number: q.articleNumber,
-      product_name: p.product_name,
-      product_url: p.product_url,
-      quantity: p.is_weighted ? 1 : q.quantity,
+      article_number: articleNumber,
+      product_name: p?.product_name || articleNumber,
+      product_url: p?.product_url || null,
+      quantity: p?.is_weighted ? 1 : c.quantity,
       status: 'pending',
+      added_reason: c.reason,
     };
   });
 
