@@ -510,8 +510,103 @@ router.get('/orders/:id', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
-// CIRCULAIRE
+// CIRCULAIRE (API native Maxi/PC Express -- pas de token requis, seule
+// la x-apikey publique suffit, teste explicitement)
 // ---------------------------------------------------------------------
+
+const DEALS_URL = 'https://api.pcexpress.ca/pcx-bff/api/v1/products/deals';
+const DEALS_SIZE = 48;
+
+function formatUnitPrice(comparisonPrices) {
+  if (!comparisonPrices?.length) return null;
+  return comparisonPrices.map((c) => `${c.value.toFixed(2)} $/${c.unit}`).join(' · ');
+}
+
+async function fetchDealsPage(storeId, page) {
+  const res = await fetch(DEALS_URL, {
+    method: 'POST',
+    headers: MAXI_API_HEADERS_BASE,
+    body: JSON.stringify({
+      pagination: { from: page, size: DEALS_SIZE },
+      banner: 'maxi',
+      cartId: '00000000-0000-0000-0000-000000000000',
+      lang: 'fr',
+      date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, ''),
+      storeId,
+      pickupType: 'DELIVERY',
+      offerType: 'ALL',
+    }),
+  });
+  if (!res.ok) throw new Error(`deals fetch a echoue (page ${page}): ${res.status}`);
+  return res.json();
+}
+
+// Refresh complet du circulaire depuis l'API native -- pagination.from est
+// un numero de PAGE (pas un offset d'items), et l'API renvoie elle-meme des
+// doublons exacts (meme `code`) qu'il faut dedupliquer avant insertion.
+async function refreshFlyerDeals(sb) {
+  const { data: storeRow } = await sb.from('grocery_config').select('value').eq('key', 'maxi_store_id').maybeSingle();
+  const storeId = storeRow?.value || '8981';
+
+  const first = await fetchDealsPage(storeId, 0);
+  const total = first.pagination?.totalResults || 0;
+  const pages = Math.ceil(total / DEALS_SIZE);
+
+  const byCode = new Map();
+  for (const item of first.results || []) if (item.code) byCode.set(item.code, item);
+  for (let page = 1; page < pages; page++) {
+    const d = await fetchDealsPage(storeId, page);
+    for (const item of d.results || []) if (item.code) byCode.set(item.code, item);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  const rows = [...byCode.values()]
+    .filter((item) => item.articleNumber)
+    .map((item) => {
+      const price = item.prices?.price;
+      const wasPrice = item.prices?.wasPrice;
+      const memberPrice = item.prices?.memberOnlyPrice;
+      const image = item.imageAssets?.[0];
+      return {
+        sku: item.code,
+        article_number: String(item.articleNumber),
+        name: item.name,
+        brand: item.brand || null,
+        price_text: price?.value != null ? price.value.toFixed(2) : null,
+        original_price: wasPrice?.value ?? null,
+        member_price: memberPrice?.value ?? null,
+        unit_price_text: formatUnitPrice(item.prices?.comparisonPrices),
+        categories: [],
+        valid_from: null,
+        valid_to: price?.expiryDate || null,
+        in_store_only: false,
+        image_url: image?.mediumUrl || image?.largeUrl || image?.thumbnailUrl || null,
+        aisle: item.aisle || null,
+        product_url: item.link ? `https://www.maxi.ca${item.link}` : null,
+      };
+    });
+
+  const { error: delErr } = await sb.from('grocery_flyer_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delErr) throw delErr;
+  const { error: insErr } = await sb.from('grocery_flyer_items').insert(rows);
+  if (insErr) throw insErr;
+
+  const syncedAt = new Date().toISOString();
+  await sb.from('grocery_config').upsert({ key: 'flyer_last_synced_at', value: syncedAt }, { onConflict: 'key' });
+
+  return { success: true, count: rows.length, store_id: storeId, synced_at: syncedAt, message: `${rows.length} spéciaux importés (magasin ${storeId}).` };
+}
+
+// POST /api/epicerie/refresh-flyer  (declenchement manuel)
+router.post('/refresh-flyer', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const result = await refreshFlyerDeals(sb);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // GET /api/epicerie/flyer
 router.get('/flyer', async (req, res) => {
