@@ -1494,6 +1494,8 @@ const REASON_LABELS = {
   julie: 'Julie',
   previous: 'Commande précédente',
   maxi_reco_items: 'Recommandation (agent)',
+  michel_telegram_search: 'Michel (Telegram /search)',
+  julie_telegram_search: 'Julie (Telegram /search)',
   other: 'Autre',
 };
 const REASON_OPTIONS = Object.keys(REASON_LABELS);
