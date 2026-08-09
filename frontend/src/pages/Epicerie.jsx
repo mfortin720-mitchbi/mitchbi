@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { apiFetch } from '../services/api';
 
 const BLUE = '#378ADD';
@@ -92,7 +94,27 @@ const TABS = [
   { id: 'next-order', label: 'Prochaine commande' },
   { id: 'flyer', label: 'Circulaire' },
   { id: 'search', label: 'Recherche' },
+  { id: 'agent-log', label: 'Journal des agents' },
 ];
+
+// Reprend le theme sombre de l'app pour le rendu Markdown des messages du
+// journal des agents (meme pattern que Assistant.jsx).
+const LOG_MARKDOWN_COMPONENTS = {
+  p: ({ children }) => <p style={{ margin: '4px 0' }}>{children}</p>,
+  ul: ({ children }) => <ul style={{ margin: '4px 0', paddingLeft: 20 }}>{children}</ul>,
+  ol: ({ children }) => <ol style={{ margin: '4px 0', paddingLeft: 20 }}>{children}</ol>,
+  li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
+  code: ({ inline, children }) => inline
+    ? <code style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 4, padding: '1px 5px', fontSize: 11.5, color: BLUE }}>{children}</code>
+    : <code>{children}</code>,
+  pre: ({ children }) => <pre style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 8, padding: 10, overflowX: 'auto', fontSize: 11.5, margin: '6px 0' }}>{children}</pre>,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" style={{ color: BLUE }}>{children}</a>,
+  hr: () => <hr style={{ border: 'none', borderTop: '0.5px solid #1e2130', margin: '8px 0' }} />,
+  strong: ({ children }) => <strong style={{ color: '#fff' }}>{children}</strong>,
+  h1: ({ children }) => <div style={{ color: BLUE, fontWeight: 700, fontSize: 14, margin: '8px 0 4px' }}>{children}</div>,
+  h2: ({ children }) => <div style={{ color: BLUE, fontWeight: 600, fontSize: 13, margin: '8px 0 4px' }}>{children}</div>,
+  h3: ({ children }) => <div style={{ color: BLUE, fontWeight: 600, fontSize: 13, margin: '6px 0 4px' }}>{children}</div>,
+};
 
 export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
   return (
@@ -125,6 +147,7 @@ export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
       {activeTab === 'next-order' && <NextOrderTab />}
       {activeTab === 'flyer' && <FlyerTab />}
       {activeTab === 'search' && <SearchTab />}
+      {activeTab === 'agent-log' && <AgentLogTab />}
     </div>
   );
 }
@@ -1047,12 +1070,6 @@ function OrdersTab() {
   const [openOrderId, setOpenOrderId] = useState(null);
   const [openPendingId, setOpenPendingId] = useState(null);
   const [openComparisonId, setOpenComparisonId] = useState(null);
-  const [agentLog, setAgentLog] = useState([]);
-
-  const markLogRead = async (id) => {
-    setAgentLog((prev) => prev.map((e) => (e.id === id ? { ...e, read_at: new Date().toISOString() } : e)));
-    await apiFetch(`/api/epicerie/agent-log/${id}`, { method: 'PUT' });
-  };
 
   const loadPendingOrders = useCallback(async () => {
     setRefreshingPending(true);
@@ -1069,11 +1086,10 @@ function OrdersTab() {
     (async () => {
       setLoading(true);
       try {
-        const [ordersRes, comparisonsRes, pendingRes, logRes] = await Promise.all([
+        const [ordersRes, comparisonsRes, pendingRes] = await Promise.all([
           apiFetch('/api/epicerie/orders?limit=100'),
           apiFetch('/api/epicerie/order-comparisons?limit=10'),
           apiFetch('/api/epicerie/pending-orders'),
-          apiFetch('/api/epicerie/agent-log?limit=20'),
         ]);
         const ordersJson = await ordersRes.json();
         if (ordersJson.success) setOrders(ordersJson.orders);
@@ -1081,8 +1097,6 @@ function OrdersTab() {
         if (comparisonsJson.success) setComparisons(comparisonsJson.comparisons);
         const pendingJson = await pendingRes.json();
         if (pendingJson.success) setPendingOrders(pendingJson.orders);
-        const logJson = await logRes.json();
-        if (logJson.success) setAgentLog(logJson.entries);
       } finally {
         setLoading(false);
       }
@@ -1091,41 +1105,8 @@ function OrdersTab() {
 
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
-  const unreadLog = agentLog.filter((e) => !e.read_at);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {agentLog.length > 0 && (
-        <div style={card}>
-          <div style={label}>
-            Journal des agents{unreadLog.length > 0 ? ` — ${unreadLog.length} non lu(s)` : ''}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {agentLog.map((e) => {
-              const color = { info: BLUE, warning: GOLD, error: RED, done: GREEN }[e.message_type] || MUTED;
-              return (
-                <div key={e.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8,
-                  padding: '6px 10px', borderRadius: 6, background: e.read_at ? 'transparent' : '#14161f',
-                  border: `0.5px solid ${e.read_at ? '#1e2130' : color}`,
-                }}>
-                  <div>
-                    <span style={{ fontSize: 10, color, textTransform: 'uppercase', marginRight: 8 }}>{e.message_type}</span>
-                    <span style={{ fontSize: 10, color: MUTED, fontFamily: 'monospace', marginRight: 8 }}>{e.agent_name}</span>
-                    <span style={{ fontSize: 12, color: '#ddd' }}>{e.message || '—'}</span>
-                    <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>{new Date(e.created_at).toLocaleString('fr-CA')}</div>
-                  </div>
-                  {!e.read_at && (
-                    <button style={{ ...btn('#333'), padding: '2px 8px', fontSize: 10, flexShrink: 0 }} onClick={() => markLogRead(e.id)}>
-                      Marquer lu
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
       {pendingOrders.length > 0 && (
         <div style={card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1308,6 +1289,115 @@ function OrdersTab() {
         </table>
       </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// JOURNAL DES AGENTS -- canal asynchrone avec un agent externe (ex: agent
+// navigateur qui remplit le vrai panier Maxi), voir grocery_agent_log
+// ---------------------------------------------------------------------
+
+const LOG_TYPE_COLOR = { info: BLUE, warning: GOLD, error: RED, done: GREEN };
+
+function AgentLogTab() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/epicerie/agent-log?limit=50');
+      const json = await res.json();
+      if (json.success) setEntries(json.entries);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const markRead = async (id) => {
+    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, read_at: new Date().toISOString() } : e)));
+    await apiFetch(`/api/epicerie/agent-log/${id}`, { method: 'PUT' });
+  };
+
+  const q = search.trim().toLowerCase();
+  // Recherche par No d'article -- le payload est jsonb libre (pas de schema
+  // garanti), donc on cherche la sous-chaine dans le message ET le payload
+  // serialise plutot que de supposer un champ article_number precis.
+  const visibleEntries = entries.filter((e) => {
+    if (!q) return true;
+    return (e.message || '').toLowerCase().includes(q) || JSON.stringify(e.payload || {}).toLowerCase().includes(q);
+  });
+  const unreadCount = entries.filter((e) => !e.read_at).length;
+
+  if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={label}>
+          {visibleEntries.length}/{entries.length} entrées{unreadCount > 0 ? ` — ${unreadCount} non lue(s)` : ''}
+        </div>
+        <input style={{ ...input, width: 240, padding: '4px 10px', fontSize: 12 }} placeholder="Rechercher (No d'article, texte...)"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+      {entries.length === 0 ? (
+        <p style={{ fontSize: 13, color: MUTED, marginTop: 12 }}>Aucun message pour l'instant.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {visibleEntries.map((e) => {
+            const color = LOG_TYPE_COLOR[e.message_type] || MUTED;
+            const isOpen = expandedId === e.id;
+            return (
+              <div key={e.id} style={{
+                padding: '8px 12px', borderRadius: 8, background: e.read_at ? 'transparent' : '#14161f',
+                border: `0.5px solid ${e.read_at ? '#1e2130' : color}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isOpen ? null : e.id)}>
+                  <div>
+                    <span style={{ fontSize: 10, color, textTransform: 'uppercase', marginRight: 8 }}>{e.message_type}</span>
+                    <span style={{ fontSize: 10, color: MUTED, fontFamily: 'monospace', marginRight: 8 }}>{e.agent_name}</span>
+                    <span style={{ fontSize: 10, color: MUTED }}>{new Date(e.created_at).toLocaleString('fr-CA')}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {!e.read_at && (
+                      <button style={{ ...btn('#333'), padding: '2px 8px', fontSize: 10 }}
+                        onClick={(ev) => { ev.stopPropagation(); markRead(e.id); }}>
+                        Marquer lu
+                      </button>
+                    )}
+                    <span style={{ fontSize: 10, color: MUTED }}>{isOpen ? '▾' : '▸'}</span>
+                  </div>
+                </div>
+                {!isOpen && e.message && (
+                  <div style={{ fontSize: 12, color: MUTED, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {e.message.replace(/[#*_`\n]/g, ' ').trim().slice(0, 160)}
+                  </div>
+                )}
+                {isOpen && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#ddd', borderTop: '0.5px solid #1e2130', paddingTop: 8 }}>
+                    {e.message ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={LOG_MARKDOWN_COMPONENTS}>
+                        {e.message}
+                      </ReactMarkdown>
+                    ) : <span style={{ color: MUTED }}>—</span>}
+                    {e.payload && Object.keys(e.payload).length > 0 && (
+                      <pre style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 6, padding: 10, marginTop: 8, fontSize: 11, overflowX: 'auto', color: MUTED }}>
+                        {JSON.stringify(e.payload, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

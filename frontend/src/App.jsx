@@ -26,6 +26,7 @@ const EP_TAB_BY_ID = {
   'epicerie-next-order': 'next-order',
   'epicerie-flyer': 'flyer',
   'epicerie-search': 'search',
+  'epicerie-agent-log': 'agent-log',
 };
 const EP_ID_BY_TAB = {
   config: 'epicerie-config',
@@ -34,6 +35,7 @@ const EP_ID_BY_TAB = {
   'next-order': 'epicerie-next-order',
   flyer: 'epicerie-flyer',
   search: 'epicerie-search',
+  'agent-log': 'epicerie-agent-log',
 };
 
 export default function App() {
@@ -105,6 +107,7 @@ export default function App() {
       case 'epicerie-next-order':
       case 'epicerie-flyer':
       case 'epicerie-search':
+      case 'epicerie-agent-log':
         return (
           <Epicerie
             activeTab={EP_TAB_BY_ID[active]}
