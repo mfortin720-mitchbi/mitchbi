@@ -934,6 +934,95 @@ router.get('/search', async (req, res) => {
   }
 });
 
+// Score "meilleur deal" pour /search Telegram: cherche dans le circulaire
+// courant (grocery_flyer_items) et classe par pertinence --
+// rabais 0.4 + frequence d'achat recente (normalisee au max du lot) 0.4 +
+// jamais achete (bonus decouverte) 0.2. "Jamais achete" regarde tout
+// l'historique (pas seulement la fenetre de comparaison de prix).
+const SEARCH_SCORE_WEIGHTS = { discount: 0.4, frequency: 0.4, neverBought: 0.2 };
+
+async function searchFlyerScored(sb, q, limit = 10) {
+  const { data: candidates, error: flyerErr } = await sb
+    .from('grocery_flyer_items')
+    .select('article_number, name, brand, price_text, original_price, valid_to, image_url, product_url')
+    .or(`name.ilike.%${q}%,brand.ilike.%${q}%`)
+    .limit(200);
+  if (flyerErr) throw flyerErr;
+  if (!candidates.length) return [];
+
+  const articleNumbers = [...new Set(candidates.map((c) => c.article_number))];
+
+  const { data: durationRow } = await sb
+    .from('grocery_config').select('value').eq('key', 'price_compare_duration_months').maybeSingle();
+  const durationMonths = parseInt(durationRow?.value || '6', 10);
+  const since = new Date();
+  since.setMonth(since.getMonth() - durationMonths);
+
+  const { data: allHistory, error: histErr } = await sb
+    .from('grocery_purchase_history')
+    .select('article_number, purchased_at')
+    .in('article_number', articleNumbers);
+  if (histErr) throw histErr;
+
+  const recentCountByArticle = new Map();
+  const everBoughtSet = new Set();
+  for (const row of allHistory) {
+    everBoughtSet.add(row.article_number);
+    if (row.purchased_at >= since.toISOString()) {
+      recentCountByArticle.set(row.article_number, (recentCountByArticle.get(row.article_number) || 0) + 1);
+    }
+  }
+  const maxRecentCount = Math.max(0, ...recentCountByArticle.values());
+
+  const scored = candidates.map((c) => {
+    const price = c.price_text != null ? parseFloat(c.price_text) : null;
+    const original = c.original_price != null ? parseFloat(c.original_price) : null;
+    const discountPct = price != null && original != null && original > price
+      ? (original - price) / original
+      : 0;
+
+    const recentCount = recentCountByArticle.get(c.article_number) || 0;
+    const frequencyScore = maxRecentCount > 0 ? recentCount / maxRecentCount : 0;
+    const neverBought = !everBoughtSet.has(c.article_number);
+
+    const score = SEARCH_SCORE_WEIGHTS.discount * discountPct
+      + SEARCH_SCORE_WEIGHTS.frequency * frequencyScore
+      + SEARCH_SCORE_WEIGHTS.neverBought * (neverBought ? 1 : 0);
+
+    return {
+      article_number: c.article_number,
+      name: c.name,
+      brand: c.brand,
+      price,
+      original_price: original,
+      discount_pct: Math.round(discountPct * 1000) / 10,
+      recent_purchases: recentCount,
+      never_bought: neverBought,
+      product_url: c.product_url,
+      image_url: c.image_url,
+      score: Math.round(score * 1000) / 1000,
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
+function formatSearchResultCaption(rank, r) {
+  const priceStr = r.price != null ? `${r.price.toFixed(2)}$` : 'prix ?';
+  const wasStr = r.original_price != null && r.original_price > (r.price ?? 0)
+    ? ` (était ${r.original_price.toFixed(2)}$, -${r.discount_pct}%)` : '';
+  const historyStr = r.never_bought ? '🆕 jamais acheté' : `acheté ${r.recent_purchases}x récemment`;
+  return `${rank}. ${r.name}${r.brand ? ' — ' + r.brand : ''}\n${priceStr}${wasStr}\n${historyStr} | score ${r.score}`;
+}
+
+function formatSearchResultsMessage(q, results) {
+  if (!results.length) return `Aucun résultat au circulaire pour "${q}".`;
+  const lines = [`🔍 Meilleurs fits pour "${q}":`, ''];
+  results.forEach((r, i) => lines.push(formatSearchResultCaption(i + 1, r), ''));
+  return lines.join('\n').trim();
+}
+
 // ---------------------------------------------------------------------
 // PROCHAINE COMMANDE (editable)
 // ---------------------------------------------------------------------
@@ -1291,6 +1380,28 @@ async function sendTelegramMessage(chatId, text) {
   });
 }
 
+async function sendTelegramPhoto(chatId, photoUrl, caption) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) { console.error('TELEGRAM_BOT_TOKEN manquant -- photo non envoyee'); return; }
+  await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption }),
+  });
+}
+
+// Album jusqu'a 10 photos -- limite native Telegram, qui tombe bien avec le
+// plafond de 10 resultats de /search.
+async function sendTelegramMediaGroup(chatId, media) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) { console.error('TELEGRAM_BOT_TOKEN manquant -- album non envoye'); return; }
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, media }),
+  });
+}
+
 // /historical-orders (utilise par syncMaxiOrders) ne montre une commande
 // qu'une fois pleinement traitee/livree cote Maxi -- delai decouvert au
 // premier test reel (commande invisible plusieurs minutes apres checkout).
@@ -1482,6 +1593,7 @@ const TELEGRAM_HELP = [
   '/token <valeur> — colle un nouveau token Maxi directement ici',
   '/commande [AAAA-MM-JJ] — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca). Si plusieurs commandes sont en attente, précise la date (ex: /commande 2026-08-09) -- sinon la liste des commandes en attente est renvoyée sans rien modifier.',
   '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
+  '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2)',
   '/list — cette liste',
 ].join('\n');
 
@@ -1584,6 +1696,38 @@ router.post('/telegram-webhook', async (req, res) => {
     }
     if (text.startsWith('/commande')) {
       await sendTelegramMessage(chatId, '❌ Format invalide. Utilise /commande ou /commande <AAAA-MM-JJ> (ex: /commande 2026-08-09).');
+      return;
+    }
+
+    if (text.startsWith('/search')) {
+      const q = text.slice('/search'.length).trim();
+      if (!q) {
+        await sendTelegramMessage(chatId, "❌ Envoie /search suivi d'un terme (ex: /search poulet).");
+        return;
+      }
+      try {
+        const results = await searchFlyerScored(sb, q, 10);
+        if (!results.length) {
+          await sendTelegramMessage(chatId, `Aucun résultat au circulaire pour "${q}".`);
+          return;
+        }
+        const withImage = results.filter((r) => r.image_url);
+        const withoutImage = results.filter((r) => !r.image_url);
+        const captionFor = (r) => formatSearchResultCaption(results.indexOf(r) + 1, r);
+
+        if (withImage.length >= 2) {
+          await sendTelegramMediaGroup(chatId, withImage.map((r) => ({ type: 'photo', media: r.image_url, caption: captionFor(r) })));
+        } else if (withImage.length === 1) {
+          await sendTelegramPhoto(chatId, withImage[0].image_url, captionFor(withImage[0]));
+        }
+        if (withoutImage.length && withImage.length) {
+          await sendTelegramMessage(chatId, withoutImage.map(captionFor).join('\n\n'));
+        } else if (!withImage.length) {
+          await sendTelegramMessage(chatId, formatSearchResultsMessage(q, results));
+        }
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur de recherche: ${err.message}`);
+      }
     }
   } catch (err) {
     console.error('Erreur webhook telegram:', err.message);
