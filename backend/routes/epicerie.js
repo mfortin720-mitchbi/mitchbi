@@ -1332,4 +1332,58 @@ router.get('/pending-orders', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// AGENT LOG -- canal asynchrone entre agents (ex: un agent navigateur qui
+// remplit le vrai panier sur maxi.ca) et ce systeme. Chaque agent ecrit/lit
+// quand il est actif -- pas de connexion live entre les deux.
+// message_type: 'info' | 'warning' | 'error' | 'done'
+// ---------------------------------------------------------------------
+
+// POST /api/epicerie/agent-log  { agent_name, message_type, message, payload?, week_of? }
+router.post('/agent-log', async (req, res) => {
+  try {
+    const { agent_name, message_type, message, payload, week_of } = req.body;
+    if (!agent_name || !message_type) return res.status(400).json({ success: false, error: 'agent_name et message_type requis' });
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('grocery_agent_log')
+      .insert({ agent_name, message_type, message: message || null, payload: payload || null, week_of: week_of || null })
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, entry: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/epicerie/agent-log?limit=20
+router.get('/agent-log', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const limit = parseInt(req.query.limit || '20', 10);
+    const { data, error } = await sb
+      .from('grocery_agent_log')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    res.json({ success: true, entries: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/epicerie/agent-log/:id  (marquer comme lu)
+router.put('/agent-log/:id', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { error } = await sb.from('grocery_agent_log').update({ read_at: new Date().toISOString() }).eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

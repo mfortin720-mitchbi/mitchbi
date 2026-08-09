@@ -836,6 +836,12 @@ function OrdersTab() {
   const [openOrderId, setOpenOrderId] = useState(null);
   const [openPendingId, setOpenPendingId] = useState(null);
   const [openComparisonId, setOpenComparisonId] = useState(null);
+  const [agentLog, setAgentLog] = useState([]);
+
+  const markLogRead = async (id) => {
+    setAgentLog((prev) => prev.map((e) => (e.id === id ? { ...e, read_at: new Date().toISOString() } : e)));
+    await apiFetch(`/api/epicerie/agent-log/${id}`, { method: 'PUT' });
+  };
 
   const loadPendingOrders = useCallback(async () => {
     setRefreshingPending(true);
@@ -852,10 +858,11 @@ function OrdersTab() {
     (async () => {
       setLoading(true);
       try {
-        const [ordersRes, comparisonsRes, pendingRes] = await Promise.all([
+        const [ordersRes, comparisonsRes, pendingRes, logRes] = await Promise.all([
           apiFetch('/api/epicerie/orders?limit=100'),
           apiFetch('/api/epicerie/order-comparisons?limit=10'),
           apiFetch('/api/epicerie/pending-orders'),
+          apiFetch('/api/epicerie/agent-log?limit=20'),
         ]);
         const ordersJson = await ordersRes.json();
         if (ordersJson.success) setOrders(ordersJson.orders);
@@ -863,6 +870,8 @@ function OrdersTab() {
         if (comparisonsJson.success) setComparisons(comparisonsJson.comparisons);
         const pendingJson = await pendingRes.json();
         if (pendingJson.success) setPendingOrders(pendingJson.orders);
+        const logJson = await logRes.json();
+        if (logJson.success) setAgentLog(logJson.entries);
       } finally {
         setLoading(false);
       }
@@ -871,8 +880,41 @@ function OrdersTab() {
 
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
+  const unreadLog = agentLog.filter((e) => !e.read_at);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {agentLog.length > 0 && (
+        <div style={card}>
+          <div style={label}>
+            Journal des agents{unreadLog.length > 0 ? ` — ${unreadLog.length} non lu(s)` : ''}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+            {agentLog.map((e) => {
+              const color = { info: BLUE, warning: GOLD, error: RED, done: GREEN }[e.message_type] || MUTED;
+              return (
+                <div key={e.id} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8,
+                  padding: '6px 10px', borderRadius: 6, background: e.read_at ? 'transparent' : '#14161f',
+                  border: `0.5px solid ${e.read_at ? '#1e2130' : color}`,
+                }}>
+                  <div>
+                    <span style={{ fontSize: 10, color, textTransform: 'uppercase', marginRight: 8 }}>{e.message_type}</span>
+                    <span style={{ fontSize: 10, color: MUTED, fontFamily: 'monospace', marginRight: 8 }}>{e.agent_name}</span>
+                    <span style={{ fontSize: 12, color: '#ddd' }}>{e.message || '—'}</span>
+                    <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>{new Date(e.created_at).toLocaleString('fr-CA')}</div>
+                  </div>
+                  {!e.read_at && (
+                    <button style={{ ...btn('#333'), padding: '2px 8px', fontSize: 10, flexShrink: 0 }} onClick={() => markLogRead(e.id)}>
+                      Marquer lu
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {pendingOrders.length > 0 && (
         <div style={card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
