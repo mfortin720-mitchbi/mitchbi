@@ -21,6 +21,7 @@ const MENU_ITEMS = [
       { id: 'epicerie-next-order', label: 'Prochaine commande' },
       { id: 'epicerie-flyer', label: 'Circulaire' },
       { id: 'epicerie-search', label: 'Recherche' },
+      { id: 'epicerie-agent-log', label: 'Journal des agents' },
     ]
   },
 ];
