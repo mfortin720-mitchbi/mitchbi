@@ -1491,6 +1491,7 @@ const REASON_LABELS = {
   eliane: 'Éliane',
   julie: 'Julie',
   previous: 'Commande précédente',
+  maxi_reco_items: 'Recommandation (agent)',
   other: 'Autre',
 };
 const REASON_OPTIONS = Object.keys(REASON_LABELS);
