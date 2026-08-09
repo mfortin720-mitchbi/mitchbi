@@ -1044,6 +1044,112 @@ async function resolveProductForAdd(sb, articleNumber) {
   return product || null;
 }
 
+// /dash <jours>: memes produits/logique que GET /dashboard/top-products
+// (frequence de commande), mais fenetre en jours bruts plutot que les
+// presets L30D/L90D/etc., et formate pour Telegram.
+async function topProductsForDays(sb, days, limit = 20) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceIso = since.toISOString();
+
+  const { count: totalOrders, error: countErr } = await sb
+    .from('grocery_orders')
+    .select('id', { count: 'exact', head: true })
+    .gte('order_date', sinceIso);
+  if (countErr) throw countErr;
+
+  let lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, unit_price, purchased_at');
+  lines = lines.filter((l) => l.purchased_at >= sinceIso);
+
+  const byProduct = new Map();
+  for (const l of lines) {
+    if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), prices: [] });
+    const e = byProduct.get(l.article_number);
+    e.orderIds.add(l.order_id);
+    if (l.unit_price != null) e.prices.push(l.unit_price);
+  }
+
+  const ranked = [...byProduct.entries()]
+    .map(([article_number, e]) => ({
+      article_number,
+      orders: e.orderIds.size,
+      frequency_pct: totalOrders ? Math.round((e.orderIds.size / totalOrders) * 1000) / 10 : 0,
+      avg_price: e.prices.length ? Math.round((e.prices.reduce((a, b) => a + b, 0) / e.prices.length) * 100) / 100 : null,
+    }))
+    .sort((a, b) => b.orders - a.orders)
+    .slice(0, limit);
+
+  const articleNumbers = ranked.map((r) => r.article_number);
+  const { data: products, error: prodErr } = await sb
+    .from('grocery_products')
+    .select('article_number, product_name, brand, image_url')
+    .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+  if (prodErr) throw prodErr;
+  const byArticle = new Map((products || []).map((p) => [p.article_number, p]));
+
+  return ranked.map((r) => ({
+    ...r,
+    product_name: byArticle.get(r.article_number)?.product_name || r.article_number,
+    brand: byArticle.get(r.article_number)?.brand || null,
+    image_url: byArticle.get(r.article_number)?.image_url || null,
+  }));
+}
+
+function formatDashResultCaption(rank, r) {
+  const priceStr = r.avg_price != null ? `${r.avg_price.toFixed(2)}$ (moy.)` : 'prix ?';
+  const title = `${escapeHtml(r.product_name)}${r.brand ? ' — ' + escapeHtml(r.brand) : ''}`;
+  return `${rank}. ${title}\n${priceStr}\n${r.orders} commande(s) (${r.frequency_pct}%)\n<code>${escapeHtml(r.article_number)}</code>`;
+}
+
+// /panier: contenu actuel de la queue active (meme resolution que
+// GET /next-order), formate pour Telegram.
+async function buildPanierResults(sb) {
+  const ctx = await getActiveCartContext(sb);
+  if (!ctx.weekOf) return [];
+  const { data, error } = await scopeToActiveQueue(sb.from('grocery_cart_queue').select('*'), ctx).order('product_name');
+  if (error) throw error;
+  if (!data.length) return [];
+
+  const articleNumbers = data.map((it) => it.article_number);
+  const { data: products, error: prodErr } = await sb
+    .from('grocery_products')
+    .select('article_number, image_url, brand')
+    .in('article_number', articleNumbers.length ? articleNumbers : ['']);
+  if (prodErr) throw prodErr;
+  const byArticle = new Map((products || []).map((p) => [p.article_number, p]));
+
+  return data.map((it) => ({
+    article_number: it.article_number,
+    product_name: it.product_name,
+    brand: byArticle.get(it.article_number)?.brand || null,
+    image_url: byArticle.get(it.article_number)?.image_url || null,
+    quantity: it.quantity,
+    status: it.status,
+    added_reason: it.added_reason,
+  }));
+}
+
+const ADDED_REASON_LABELS = {
+  frequency: 'Fréquence',
+  whitelist: 'Whitelist',
+  telegram: 'Telegram',
+  flyer_proposal: 'Proposé (circulaire)',
+  michel_request: 'Demande Michel',
+  eliane: 'Éliane',
+  julie: 'Julie',
+  previous: 'Commande précédente',
+  maxi_reco_items: 'Recommandation (agent)',
+  michel_telegram_search: 'Michel (Telegram)',
+  julie_telegram_search: 'Julie (Telegram)',
+  other: 'Autre',
+};
+
+function formatPanierCaption(rank, r) {
+  const title = `${escapeHtml(r.product_name)}${r.brand ? ' — ' + escapeHtml(r.brand) : ''}`;
+  const reasonLabel = ADDED_REASON_LABELS[r.added_reason] || r.added_reason || '';
+  return `${rank}. ${title}\nx${r.quantity} | ${escapeHtml(reasonLabel)}\n<code>${escapeHtml(r.article_number)}</code>`;
+}
+
 // Legende telegram generee par formatSearchResultCaption: le numero
 // d'article est toujours seul sur la derniere ligne (le tag <code> n'est
 // pas dans le texte brut renvoye par Telegram -- juste les chiffres).
@@ -1054,11 +1160,31 @@ function extractArticleNumberFromCaption(caption) {
   return /^\d{4,}$/.test(last) ? last : null;
 }
 
-function formatSearchResultsMessage(q, results) {
-  if (!results.length) return `Aucun résultat au circulaire pour "${escapeHtml(q)}".`;
-  const lines = [`🔍 Meilleurs fits pour "${escapeHtml(q)}":`, ''];
-  results.forEach((r, i) => lines.push(formatSearchResultCaption(i + 1, r), ''));
-  return lines.join('\n').trim();
+// Envoie une liste de resultats (search/dash/panier) en album(s) photo,
+// 10 max par sendMediaGroup (limite Telegram) -- chunke si plus long
+// (ex. /panier peut depasser 10 items, contrairement a /search et /dash
+// deja plafonnes cote requete). Les items sans image_url passent en texte.
+async function sendTelegramResultsAlbum(chatId, results, captionFn, { emptyText, header } = {}) {
+  if (!results.length) {
+    await sendTelegramMessage(chatId, emptyText || 'Aucun résultat.', 'HTML');
+    return;
+  }
+  const withImage = results.filter((r) => r.image_url);
+  const withoutImage = results.filter((r) => !r.image_url);
+  const captionFor = (r) => captionFn(results.indexOf(r) + 1, r);
+
+  for (let i = 0; i < withImage.length; i += 10) {
+    const chunk = withImage.slice(i, i + 10);
+    if (chunk.length >= 2) {
+      await sendTelegramMediaGroup(chatId, chunk.map((r) => ({ type: 'photo', media: r.image_url, caption: captionFor(r), parse_mode: 'HTML' })));
+    } else {
+      await sendTelegramPhoto(chatId, chunk[0].image_url, captionFor(chunk[0]), 'HTML');
+    }
+  }
+  if (withoutImage.length) {
+    const text = [header, ...withoutImage.map(captionFor)].filter(Boolean).join('\n\n');
+    await sendTelegramMessage(chatId, text, 'HTML');
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1640,7 +1766,9 @@ const TELEGRAM_HELP = [
   '/commande [AAAA-MM-JJ] — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca). Si plusieurs commandes sont en attente, précise la date (ex: /commande 2026-08-09) -- sinon la liste des commandes en attente est renvoyée sans rien modifier.',
   '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
   '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2)',
-  '/add [quantité] — en réponse ("reply") à une photo /search, ajoute ce produit à la commande en préparation. Fonctionne aussi sans reply: /add <numéro article> [quantité]',
+  '/dash <nombre de jours> — top 20 des produits les plus fréquemment achetés sur cette période (ex: /dash 90)',
+  '/panier — liste le contenu actuel de la commande en préparation, avec photos',
+  '/add [quantité] — en réponse ("reply") à une photo /search ou /dash, ajoute ce produit à la commande en préparation. Fonctionne aussi sans reply: /add <numéro article> [quantité]',
   '/list — cette liste',
 ].join('\n');
 
@@ -1754,26 +1882,43 @@ router.post('/telegram-webhook', async (req, res) => {
       }
       try {
         const results = await searchFlyerScored(sb, q, 10);
-        if (!results.length) {
-          await sendTelegramMessage(chatId, `Aucun résultat au circulaire pour "${q}".`);
-          return;
-        }
-        const withImage = results.filter((r) => r.image_url);
-        const withoutImage = results.filter((r) => !r.image_url);
-        const captionFor = (r) => formatSearchResultCaption(results.indexOf(r) + 1, r);
-
-        if (withImage.length >= 2) {
-          await sendTelegramMediaGroup(chatId, withImage.map((r) => ({ type: 'photo', media: r.image_url, caption: captionFor(r), parse_mode: 'HTML' })));
-        } else if (withImage.length === 1) {
-          await sendTelegramPhoto(chatId, withImage[0].image_url, captionFor(withImage[0]), 'HTML');
-        }
-        if (withoutImage.length && withImage.length) {
-          await sendTelegramMessage(chatId, withoutImage.map(captionFor).join('\n\n'), 'HTML');
-        } else if (!withImage.length) {
-          await sendTelegramMessage(chatId, formatSearchResultsMessage(q, results), 'HTML');
-        }
+        await sendTelegramResultsAlbum(chatId, results, formatSearchResultCaption, {
+          emptyText: `Aucun résultat au circulaire pour "${escapeHtml(q)}".`,
+          header: `🔍 Meilleurs fits pour "${escapeHtml(q)}":`,
+        });
       } catch (err) {
         await sendTelegramMessage(chatId, `❌ Erreur de recherche: ${err.message}`);
+      }
+      return;
+    }
+
+    if (text.startsWith('/dash')) {
+      const days = parseInt(text.slice('/dash'.length).trim(), 10);
+      if (!Number.isFinite(days) || days <= 0) {
+        await sendTelegramMessage(chatId, '❌ Format invalide. Utilise /dash <nombre de jours> (ex: /dash 90).');
+        return;
+      }
+      try {
+        const results = await topProductsForDays(sb, days, 20);
+        await sendTelegramResultsAlbum(chatId, results, formatDashResultCaption, {
+          emptyText: `Aucun achat dans les derniers ${days} jours.`,
+          header: `📊 Top ${results.length} achats (derniers ${days} jours):`,
+        });
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur: ${err.message}`);
+      }
+      return;
+    }
+
+    if (text === '/panier') {
+      try {
+        const results = await buildPanierResults(sb);
+        await sendTelegramResultsAlbum(chatId, results, formatPanierCaption, {
+          emptyText: 'Panier vide.',
+          header: `🛒 Panier actuel (${results.length} item(s)):`,
+        });
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur: ${err.message}`);
       }
       return;
     }
