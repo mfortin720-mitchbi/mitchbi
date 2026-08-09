@@ -124,6 +124,8 @@ function ConfigTab() {
   const [syncing, setSyncing] = useState(false);
   const [flyerMessage, setFlyerMessage] = useState('');
   const [refreshingFlyer, setRefreshingFlyer] = useState(false);
+  const [budgetInputs, setBudgetInputs] = useState({ tier_1_min: '40', tier_1_max: '100', tier_2_min: '100', tier_2_max: '160', tier_3_min: '160', tier_3_max: '220' });
+  const [selectedTier, setSelectedTier] = useState('1');
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
   const bookmarkletRef = useRef(null);
 
@@ -146,6 +148,16 @@ function ConfigTab() {
         setThresholdInput(threshold ? String(Math.round(parseFloat(threshold.value) * 100)) : '15');
         const priceCompare = json.config.find((c) => c.key === 'price_compare_duration_months');
         setPriceCompareInput(priceCompare ? priceCompare.value : '6');
+        const get = (key, fallback) => json.config.find((c) => c.key === key)?.value ?? fallback;
+        setBudgetInputs({
+          tier_1_min: get('grocery_budget_tier_1_min', '40'),
+          tier_1_max: get('grocery_budget_tier_1_max', '100'),
+          tier_2_min: get('grocery_budget_tier_2_min', '100'),
+          tier_2_max: get('grocery_budget_tier_2_max', '160'),
+          tier_3_min: get('grocery_budget_tier_3_min', '160'),
+          tier_3_max: get('grocery_budget_tier_3_max', '220'),
+        });
+        setSelectedTier(get('grocery_budget_tier_selected', '1'));
       }
     } finally {
       setLoading(false);
@@ -183,6 +195,39 @@ function ConfigTab() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'price_compare_duration_months', value: priceCompareInput }),
+      });
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveBudgetTiers = async () => {
+    setSaving(true);
+    try {
+      await Promise.all(
+        Object.entries(budgetInputs).map(([suffix, value]) =>
+          apiFetch('/api/epicerie/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: `grocery_budget_${suffix}`, value }),
+          })
+        )
+      );
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectBudgetTier = async (tier) => {
+    setSelectedTier(tier);
+    setSaving(true);
+    try {
+      await apiFetch('/api/epicerie/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'grocery_budget_tier_selected', value: tier }),
       });
       await load();
     } finally {
@@ -362,6 +407,29 @@ function ConfigTab() {
           <span style={{ color: MUTED, fontSize: 13 }}>mois</span>
           <button style={btn(BLUE)} onClick={savePriceCompare} disabled={saving}>Sauvegarder</button>
         </div>
+      </div>
+
+      {/* Paliers de budget -- pour le prochain panier */}
+      <div style={card}>
+        <div style={label}>Palier de budget — prochain panier</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Sélectionne le palier qui définit combien de produits l'algo de génération doit viser pour la prochaine commande.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {['1', '2', '3'].map((tier) => (
+            <label key={tier} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
+              <input type="radio" name="budget-tier" checked={selectedTier === tier} onChange={() => selectBudgetTier(tier)} disabled={saving} />
+              <span style={{ width: 60 }}>Palier {tier}</span>
+              <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_min`]}
+                onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_min`]: e.target.value })} />
+              <span style={{ color: MUTED }}>$ à</span>
+              <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_max`]}
+                onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_max`]: e.target.value })} />
+              <span style={{ color: MUTED }}>$</span>
+            </label>
+          ))}
+        </div>
+        <button style={btn(BLUE)} onClick={saveBudgetTiers} disabled={saving}>Sauvegarder les paliers</button>
       </div>
 
       {/* Presence Eliane/Julie */}
@@ -740,6 +808,7 @@ function OrderDetailRows({ orderId }) {
 function OrdersTab() {
   const [orders, setOrders] = useState([]);
   const [comparisons, setComparisons] = useState([]);
+  const [pendingOrders, setPendingOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openOrderId, setOpenOrderId] = useState(null);
 
@@ -747,14 +816,17 @@ function OrdersTab() {
     (async () => {
       setLoading(true);
       try {
-        const [ordersRes, comparisonsRes] = await Promise.all([
+        const [ordersRes, comparisonsRes, pendingRes] = await Promise.all([
           apiFetch('/api/epicerie/orders?limit=100'),
           apiFetch('/api/epicerie/order-comparisons?limit=10'),
+          apiFetch('/api/epicerie/pending-orders'),
         ]);
         const ordersJson = await ordersRes.json();
         if (ordersJson.success) setOrders(ordersJson.orders);
         const comparisonsJson = await comparisonsRes.json();
         if (comparisonsJson.success) setComparisons(comparisonsJson.comparisons);
+        const pendingJson = await pendingRes.json();
+        if (pendingJson.success) setPendingOrders(pendingJson.orders);
       } finally {
         setLoading(false);
       }
@@ -765,6 +837,39 @@ function OrdersTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {pendingOrders.length > 0 && (
+        <div style={card}>
+          <div style={label}>Commande(s) en cours (pas encore dans l'historique)</div>
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thCompact}>Commande</th>
+                  <th style={thCompact}>Passée le</th>
+                  <th style={thCompact}>Statut</th>
+                  <th style={thCompact}>Ramassage/livraison</th>
+                  <th style={thCompact}>Magasin</th>
+                  <th style={thCompact}>Items</th>
+                  <th style={thCompact}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingOrders.map((o) => (
+                  <tr key={o.id}>
+                    <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>#{o.order_number}</td>
+                    <td style={tdCompact}>{new Date(o.created).toLocaleString('fr-CA')}</td>
+                    <td style={{ ...tdCompact, color: GOLD }}>{o.delivery_status_label}</td>
+                    <td style={{ ...tdCompact, color: MUTED }}>{o.pickup_start_date ? new Date(o.pickup_start_date).toLocaleString('fr-CA') : '—'}</td>
+                    <td style={{ ...tdCompact, color: MUTED }}>{o.store_name || '—'}</td>
+                    <td style={tdCompact}>{o.total_items ?? '—'}</td>
+                    <td style={tdCompact}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       {comparisons.length > 0 && (
         <div style={card}>
           <div style={label}>Derniers comparatifs (panier planifié vs commande réelle)</div>
