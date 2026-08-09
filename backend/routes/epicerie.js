@@ -1094,6 +1094,21 @@ async function fetchPendingOrders(token) {
   return data.orders || [];
 }
 
+function mapOrderEntries(order) {
+  const entries = order.cart?.entries || [];
+  return entries
+    .map((e) => ({
+      article_number: e.product?.articleNumber ? String(e.product.articleNumber) : null,
+      product_name: e.product?.productName || null,
+      brand: e.product?.brand || null,
+      image_url: e.product?.primaryImage || null,
+      quantity: e.quantity,
+      unit_price: e.unitPrice ?? null,
+      total_price: e.totalPrice ?? null,
+    }))
+    .filter((l) => l.article_number);
+}
+
 // Snapshot du panier actif (avant reset) + lecture des commandes en cours
 // (pas l'historique -- voir MAXI_ORDERS_STATUS_URL ci-dessus) + diff par
 // article_number. N'efface PAS le panier -- l'appelant decide du reset.
@@ -1126,17 +1141,16 @@ async function compareCartToLastOrder(sb) {
 
   // la plus recente si plusieurs commandes en cours (cas rare)
   const order = [...pendingOrders].sort((a, b) => new Date(b.created) - new Date(a.created))[0];
-  const entries = order.cart?.entries || [];
-  const orderLines = entries
-    .map((e) => ({ article_number: e.product?.articleNumber ? String(e.product.articleNumber) : null, quantity: e.quantity, total_price: e.totalPrice }))
-    .filter((l) => l.article_number);
+  const orderLines = mapOrderEntries(order);
 
   const orderByArticle = new Map(orderLines.map((l) => [l.article_number, l]));
   const cartByArticle = new Map(cartItems.map((it) => [it.article_number, it]));
 
   const missing = cartItems.filter((it) => !orderByArticle.has(it.article_number));
   const extra = orderLines.filter((l) => !cartByArticle.has(l.article_number));
-  const matchedCount = cartItems.length - missing.length;
+  const matched = cartItems
+    .filter((it) => orderByArticle.has(it.article_number))
+    .map((it) => ({ ...orderByArticle.get(it.article_number), planned_quantity: it.quantity }));
 
   return {
     success: true,
@@ -1145,9 +1159,10 @@ async function compareCartToLastOrder(sb) {
     order_date: order.created,
     delivery_status: order.deliveryStatus || null,
     planned_count: cartItems.length,
-    matched_count: matchedCount,
+    matched_count: matched.length,
     missing,
     extra,
+    matched,
   };
 }
 
@@ -1161,6 +1176,7 @@ async function persistComparison(sb, comparison, triggeredBy) {
     matched_count: comparison.matched_count,
     missing_items: comparison.missing,
     extra_items: comparison.extra,
+    matched_items: comparison.matched || [],
     triggered_by: triggeredBy,
   });
 }
@@ -1305,6 +1321,7 @@ router.get('/pending-orders', async (req, res) => {
         store_name: o.cart?.booking?.pickupLocation?.name || null,
         total_items: o.cart?.totalItems ?? null,
         total_price: o.cart?.totalPrice ?? null,
+        items: mapOrderEntries(o),
       }));
     res.json({ success: true, orders: mapped });
   } catch (err) {
