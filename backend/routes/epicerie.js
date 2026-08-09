@@ -1320,10 +1320,24 @@ function mapOrderEntries(order) {
     .filter((l) => l.article_number);
 }
 
+// Date locale (America/Toronto) d'un timestamp ISO, format YYYY-MM-DD --
+// sert a matcher /commande <date> contre le champ `created` de la commande.
+function toLocalDateStr(iso) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+}
+
 // Snapshot du panier actif (avant reset) + lecture des commandes en cours
 // (pas l'historique -- voir MAXI_ORDERS_STATUS_URL ci-dessus) + diff par
 // article_number. N'efface PAS le panier -- l'appelant decide du reset.
-async function compareCartToLastOrder(sb) {
+//
+// dateStr (optionnel, YYYY-MM-DD): plusieurs commandes peuvent etre en
+// attente en meme temps (ex. une commande en preparation + une autre deja
+// soumise pour une date differente). Sans dateStr, une seule commande en
+// cours est traitee automatiquement; s'il y en a plusieurs, on refuse de
+// deviner et on retourne la liste pour que l'appelant precise la date --
+// un choix automatique errone a deja vide le mauvais panier une fois.
+async function compareCartToLastOrder(sb, dateStr) {
   const { token, expired } = await getMaxiToken(sb);
   if (!token || expired) return { success: false, error: 'Token Maxi expiré ou manquant.' };
 
@@ -1343,8 +1357,26 @@ async function compareCartToLastOrder(sb) {
     };
   }
 
-  // la plus recente si plusieurs commandes en cours (cas rare)
-  const order = [...pendingOrders].sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+  let order;
+  if (dateStr) {
+    const matches = pendingOrders.filter((o) => toLocalDateStr(o.created) === dateStr);
+    if (!matches.length) {
+      const available = pendingOrders.map((o) => toLocalDateStr(o.created)).join(', ');
+      return {
+        success: false,
+        error: `Aucune commande en cours trouvée pour le ${dateStr}. Commande(s) disponible(s): ${available}.`,
+      };
+    }
+    order = [...matches].sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+  } else if (pendingOrders.length > 1) {
+    return {
+      success: false,
+      ambiguous: true,
+      error: `Plusieurs commandes en cours -- précise la date avec /commande <date>:\n\n${formatPendingOrdersMessage(pendingOrders)}`,
+    };
+  } else {
+    order = pendingOrders[0];
+  }
   const orderLines = mapOrderEntries(order);
 
   const orderByArticle = new Map(orderLines.map((l) => [l.article_number, l]));
@@ -1386,6 +1418,19 @@ async function persistComparison(sb, comparison, triggeredBy) {
   });
 }
 
+// Une commande /commande reussie pour un cycle actif signifie que ce cycle
+// est termine -- on le marque completed pour liberer l'unicite (un seul
+// cycle actif a la fois) plutot que de le laisser bloque sur un ancien
+// statut (ex. recommendation_ready) apres que la queue ait ete videe.
+async function maybeCompleteActiveCycle(sb, nextConfigId) {
+  if (!nextConfigId) return;
+  await sb
+    .from('grocery_next_config')
+    .update({ status: 'completed' })
+    .eq('id', nextConfigId)
+    .not('status', 'in', '(completed,cancelled)');
+}
+
 const DELIVERY_STATUS_LABELS = {
   SUBMITTED: 'soumise',
   READY_FOR_ACTION: 'en préparation',
@@ -1417,11 +1462,12 @@ router.post('/reset-and-compare', async (req, res) => {
     if (!token || expired) {
       return res.json({ success: false, error: 'Token Maxi expiré ou manquant -- reconnecte-toi sur Maxi.ca et recolle-le avant de comparer.' });
     }
-    const comparison = await compareCartToLastOrder(sb);
+    const comparison = await compareCartToLastOrder(sb, req.body?.date);
     if (!comparison.success) return res.json(comparison);
 
     await persistComparison(sb, comparison, req.body?.triggered_by || 'web');
     await scopeToActiveQueue(sb.from('grocery_cart_queue').delete(), { nextConfigId: comparison.next_config_id, weekOf: comparison.week_of });
+    await maybeCompleteActiveCycle(sb, comparison.next_config_id);
 
     res.json(comparison);
   } catch (err) {
@@ -1434,7 +1480,7 @@ const TELEGRAM_HELP = [
   '',
   '/status_token — vérifie l\'état du token Maxi',
   '/token <valeur> — colle un nouveau token Maxi directement ici',
-  '/commande — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca)',
+  '/commande [AAAA-MM-JJ] — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca). Si plusieurs commandes sont en attente, précise la date (ex: /commande 2026-08-09) -- sinon la liste des commandes en attente est renvoyée sans rien modifier.',
   '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
   '/list — cette liste',
 ].join('\n');
@@ -1517,20 +1563,27 @@ router.post('/telegram-webhook', async (req, res) => {
       return;
     }
 
-    if (text === '/commande') {
+    const commandeMatch = text.match(/^\/commande(?:\s+(\d{4}-\d{2}-\d{2}))?$/);
+    if (commandeMatch) {
+      const dateArg = commandeMatch[1];
       const { token, expired } = await getMaxiToken(sb);
       if (!token || expired) {
         await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Réponds avec /token <ton_nouveau_token> puis renvoie /commande.');
         return;
       }
-      const comparison = await compareCartToLastOrder(sb);
+      const comparison = await compareCartToLastOrder(sb, dateArg);
       if (!comparison.success) {
         await sendTelegramMessage(chatId, `❌ ${comparison.error}`);
         return;
       }
       await persistComparison(sb, comparison, `telegram:${TELEGRAM_AUTHORIZED_CHATS[chatId]}`);
       await scopeToActiveQueue(sb.from('grocery_cart_queue').delete(), { nextConfigId: comparison.next_config_id, weekOf: comparison.week_of });
+      await maybeCompleteActiveCycle(sb, comparison.next_config_id);
       await sendTelegramMessage(chatId, formatComparisonMessage(comparison));
+      return;
+    }
+    if (text.startsWith('/commande')) {
+      await sendTelegramMessage(chatId, '❌ Format invalide. Utilise /commande ou /commande <AAAA-MM-JJ> (ex: /commande 2026-08-09).');
     }
   } catch (err) {
     console.error('Erreur webhook telegram:', err.message);
