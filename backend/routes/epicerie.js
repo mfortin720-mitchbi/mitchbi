@@ -916,89 +916,98 @@ router.post('/next-order', async (req, res) => {
 // meme logique que backend/grocery/generate-list.js, dupliquee ici parce que ce
 // service et le service grocery isole n'ont pas de code partage entre les deux
 // process Railway. Appelee automatiquement par le frontend quand le seuil change.)
+// Selection des produits "recurrents" (frequence >= seuil configure) et
+// whitelistes, blacklist toujours exclue -- partagee entre /generate-list
+// (remplace tout le panier de la semaine) et /add-recurring-whitelist
+// (complete un panier existant sans rien supprimer).
+async function computeRecurringWhitelistRows(sb) {
+  const { data: thresholdRow } = await sb
+    .from('grocery_config')
+    .select('value')
+    .eq('key', 'list_frequency_threshold')
+    .maybeSingle();
+  const threshold = parseFloat(thresholdRow?.value || '0.15');
+
+  const { count: totalOrders, error: countErr } = await sb
+    .from('grocery_orders')
+    .select('id', { count: 'exact', head: true });
+  if (countErr) throw countErr;
+
+  const lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, weight');
+
+  const { data: rules, error: rulesErr } = await sb
+    .from('grocery_product_rules')
+    .select('article_number, blacklisted, whitelisted, preferred_qty');
+  if (rulesErr) throw rulesErr;
+  const blacklist = new Set(rules.filter((r) => r.blacklisted).map((r) => r.article_number));
+  const whitelist = new Set(rules.filter((r) => r.whitelisted && !r.blacklisted).map((r) => r.article_number));
+  const preferredQty = new Map(rules.filter((r) => r.preferred_qty).map((r) => [r.article_number, r.preferred_qty]));
+
+  const byProduct = new Map();
+  for (const l of lines) {
+    if (blacklist.has(l.article_number)) continue;
+    if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], weights: [] });
+    const e = byProduct.get(l.article_number);
+    e.orderIds.add(l.order_id);
+    if (l.quantity > 0) e.qty.push(l.quantity);
+    if (l.weight != null) e.weights.push(l.weight);
+  }
+
+  const chosen = new Map(); // article_number -> { quantity, reason }
+  for (const [articleNumber, e] of byProduct) {
+    const freq = e.orderIds.size / totalOrders;
+    if (freq >= threshold) {
+      const avgQty = e.qty.length ? Math.round(e.qty.reduce((a, b) => a + b, 0) / e.qty.length) : 1;
+      // au poids (bananes, fromage...): la quantite entiere n'a pas de sens,
+      // on propose le poids moyen historique en kg a la place
+      const avgWeight = e.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
+      chosen.set(articleNumber, {
+        quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty),
+        weightQuantity: avgWeight,
+        reason: 'frequency',
+      });
+    }
+  }
+  for (const articleNumber of whitelist) {
+    if (!chosen.has(articleNumber)) {
+      const e = byProduct.get(articleNumber);
+      const avgWeight = e?.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
+      chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, weightQuantity: avgWeight, reason: 'whitelist' });
+    }
+  }
+
+  const { data: products, error: prodErr } = await sb
+    .from('grocery_products')
+    .select('article_number, product_name, product_url, is_weighted')
+    .in('article_number', [...chosen.keys()]);
+  if (prodErr) throw prodErr;
+  const byArticle = new Map(products.map((p) => [p.article_number, p]));
+
+  const d = new Date();
+  const diff = (7 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  const weekOf = d.toISOString().slice(0, 10);
+
+  const rows = [...chosen.entries()].map(([articleNumber, c]) => {
+    const p = byArticle.get(articleNumber);
+    return {
+      week_of: weekOf,
+      article_number: articleNumber,
+      product_name: p?.product_name || articleNumber,
+      product_url: p?.product_url || null,
+      quantity: p?.is_weighted ? c.weightQuantity : c.quantity,
+      status: 'pending',
+      added_reason: c.reason,
+    };
+  });
+
+  return { weekOf, rows };
+}
+
 router.post('/generate-list', async (req, res) => {
   try {
     const sb = getSupabase();
-
-    const { data: thresholdRow } = await sb
-      .from('grocery_config')
-      .select('value')
-      .eq('key', 'list_frequency_threshold')
-      .maybeSingle();
-    const threshold = parseFloat(thresholdRow?.value || '0.15');
-
-    const { count: totalOrders, error: countErr } = await sb
-      .from('grocery_orders')
-      .select('id', { count: 'exact', head: true });
-    if (countErr) throw countErr;
-
-    const lines = await fetchAll('grocery_purchase_history', 'order_id, article_number, quantity, weight');
-
-    const { data: rules, error: rulesErr } = await sb
-      .from('grocery_product_rules')
-      .select('article_number, blacklisted, whitelisted, preferred_qty');
-    if (rulesErr) throw rulesErr;
-    const blacklist = new Set(rules.filter((r) => r.blacklisted).map((r) => r.article_number));
-    const whitelist = new Set(rules.filter((r) => r.whitelisted && !r.blacklisted).map((r) => r.article_number));
-    const preferredQty = new Map(rules.filter((r) => r.preferred_qty).map((r) => [r.article_number, r.preferred_qty]));
-
-    const byProduct = new Map();
-    for (const l of lines) {
-      if (blacklist.has(l.article_number)) continue;
-      if (!byProduct.has(l.article_number)) byProduct.set(l.article_number, { orderIds: new Set(), qty: [], weights: [] });
-      const e = byProduct.get(l.article_number);
-      e.orderIds.add(l.order_id);
-      if (l.quantity > 0) e.qty.push(l.quantity);
-      if (l.weight != null) e.weights.push(l.weight);
-    }
-
-    const chosen = new Map(); // article_number -> { quantity, reason }
-    for (const [articleNumber, e] of byProduct) {
-      const freq = e.orderIds.size / totalOrders;
-      if (freq >= threshold) {
-        const avgQty = e.qty.length ? Math.round(e.qty.reduce((a, b) => a + b, 0) / e.qty.length) : 1;
-        // au poids (bananes, fromage...): la quantite entiere n'a pas de sens,
-        // on propose le poids moyen historique en kg a la place
-        const avgWeight = e.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
-        chosen.set(articleNumber, {
-          quantity: preferredQty.get(articleNumber) || Math.max(1, avgQty),
-          weightQuantity: avgWeight,
-          reason: 'frequency',
-        });
-      }
-    }
-    for (const articleNumber of whitelist) {
-      if (!chosen.has(articleNumber)) {
-        const e = byProduct.get(articleNumber);
-        const avgWeight = e?.weights.length ? Math.round((e.weights.reduce((a, b) => a + b, 0) / e.weights.length) * 100) / 100 : 1;
-        chosen.set(articleNumber, { quantity: preferredQty.get(articleNumber) || 1, weightQuantity: avgWeight, reason: 'whitelist' });
-      }
-    }
-
-    const { data: products, error: prodErr } = await sb
-      .from('grocery_products')
-      .select('article_number, product_name, product_url, is_weighted')
-      .in('article_number', [...chosen.keys()]);
-    if (prodErr) throw prodErr;
-    const byArticle = new Map(products.map((p) => [p.article_number, p]));
-
-    const d = new Date();
-    const diff = (7 - d.getDay()) % 7 || 7;
-    d.setDate(d.getDate() + diff);
-    const weekOf = d.toISOString().slice(0, 10);
-
-    const rows = [...chosen.entries()].map(([articleNumber, c]) => {
-      const p = byArticle.get(articleNumber);
-      return {
-        week_of: weekOf,
-        article_number: articleNumber,
-        product_name: p?.product_name || articleNumber,
-        product_url: p?.product_url || null,
-        quantity: p?.is_weighted ? c.weightQuantity : c.quantity,
-        status: 'pending',
-        added_reason: c.reason,
-      };
-    });
+    const { weekOf, rows } = await computeRecurringWhitelistRows(sb);
 
     const { error: delErr } = await sb.from('grocery_cart_queue').delete().eq('week_of', weekOf);
     if (delErr) throw delErr;
@@ -1008,6 +1017,59 @@ router.post('/generate-list', async (req, res) => {
     }
 
     res.json({ success: true, week_of: weekOf, count: rows.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/epicerie/add-recurring-whitelist -- complete le panier ACTIF
+// (semaine la plus recente en cours, sinon en cree une) avec les produits
+// recurrents/whitelistes manquants. N'efface jamais rien -- contrairement a
+// /generate-list, preserve tout ce qui est deja dans la queue (ajouts
+// manuels de Michel, items d'un autre agent, etc.), ignore juste les
+// articles deja presents.
+router.post('/add-recurring-whitelist', async (req, res) => {
+  try {
+    const sb = getSupabase();
+
+    const { data: weekRow, error: weekErr } = await sb
+      .from('grocery_cart_queue')
+      .select('week_of')
+      .order('week_of', { ascending: false })
+      .limit(1);
+    if (weekErr) throw weekErr;
+
+    const { weekOf: computedWeek, rows: candidates } = await computeRecurringWhitelistRows(sb);
+    const targetWeek = weekRow?.[0]?.week_of || computedWeek;
+
+    const { data: existing, error: existErr } = await sb
+      .from('grocery_cart_queue')
+      .select('article_number')
+      .eq('week_of', targetWeek);
+    if (existErr) throw existErr;
+    const existingSet = new Set(existing.map((e) => e.article_number));
+
+    const toAdd = [];
+    const alreadyPresent = [];
+    for (const c of candidates) {
+      const row = { ...c, week_of: targetWeek };
+      if (existingSet.has(c.article_number)) alreadyPresent.push(row);
+      else toAdd.push(row);
+    }
+
+    if (toAdd.length) {
+      const { error: insErr } = await sb.from('grocery_cart_queue').insert(toAdd);
+      if (insErr) throw insErr;
+    }
+
+    res.json({
+      success: true,
+      week_of: targetWeek,
+      added: toAdd,
+      already_present: alreadyPresent,
+      added_count: toAdd.length,
+      already_present_count: alreadyPresent.length,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
