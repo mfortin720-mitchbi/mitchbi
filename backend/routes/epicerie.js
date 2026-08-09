@@ -1044,6 +1044,16 @@ async function resolveProductForAdd(sb, articleNumber) {
   return product || null;
 }
 
+// Legende telegram generee par formatSearchResultCaption: le numero
+// d'article est toujours seul sur la derniere ligne (le tag <code> n'est
+// pas dans le texte brut renvoye par Telegram -- juste les chiffres).
+function extractArticleNumberFromCaption(caption) {
+  if (!caption) return null;
+  const lines = caption.trim().split('\n');
+  const last = lines[lines.length - 1].trim();
+  return /^\d{4,}$/.test(last) ? last : null;
+}
+
 function formatSearchResultsMessage(q, results) {
   if (!results.length) return `Aucun résultat au circulaire pour "${escapeHtml(q)}".`;
   const lines = [`🔍 Meilleurs fits pour "${escapeHtml(q)}":`, ''];
@@ -1629,8 +1639,8 @@ const TELEGRAM_HELP = [
   '/token <valeur> — colle un nouveau token Maxi directement ici',
   '/commande [AAAA-MM-JJ] — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca). Si plusieurs commandes sont en attente, précise la date (ex: /commande 2026-08-09) -- sinon la liste des commandes en attente est renvoyée sans rien modifier.',
   '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
-  '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2). Le numéro d\'article affiché sous chaque résultat se copie en un tap.',
-  '/add <numéro article> [quantité] — ajoute ce produit à la commande en préparation (copie le numéro depuis un résultat /search)',
+  '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2)',
+  '/add [quantité] — en réponse ("reply") à une photo /search, ajoute ce produit à la commande en préparation. Fonctionne aussi sans reply: /add <numéro article> [quantité]',
   '/list — cette liste',
 ].join('\n');
 
@@ -1769,13 +1779,28 @@ router.post('/telegram-webhook', async (req, res) => {
     }
 
     if (text.startsWith('/add')) {
-      const addMatch = text.match(/^\/add\s+(\S+)(?:\s+(\d+))?$/);
-      if (!addMatch) {
-        await sendTelegramMessage(chatId, '❌ Format invalide. Utilise /add <numéro article> [quantité] (ex: /add 21464728 2) -- copie le numéro depuis un résultat /search.');
+      // Reply directement a une photo /search: pas besoin de copier le numero --
+      // on le relit dans la legende du message repondu (derniere ligne, voir
+      // formatSearchResultCaption). "/add" seul ou "/add <quantite>" en reply.
+      const rest = text.slice('/add'.length).trim();
+      const replyCaption = message?.reply_to_message?.caption || null;
+      const articleFromReply = extractArticleNumberFromCaption(replyCaption);
+
+      let articleNumber = null;
+      let quantity = 1;
+      if (articleFromReply && (!rest || /^\d+$/.test(rest))) {
+        articleNumber = articleFromReply;
+        if (rest) quantity = parseInt(rest, 10);
+      } else if (rest) {
+        const parts = rest.split(/\s+/);
+        articleNumber = parts[0];
+        if (parts[1] && /^\d+$/.test(parts[1])) quantity = parseInt(parts[1], 10);
+      }
+
+      if (!articleNumber) {
+        await sendTelegramMessage(chatId, '❌ Format invalide. Réponds ("reply") à une photo /search avec /add [quantité], ou utilise /add <numéro article> [quantité].');
         return;
       }
-      const articleNumber = addMatch[1];
-      const quantity = addMatch[2] ? parseInt(addMatch[2], 10) : 1;
       try {
         const product = await resolveProductForAdd(sb, articleNumber);
         if (!product) {
