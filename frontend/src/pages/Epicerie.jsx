@@ -78,6 +78,12 @@ const MEAL_TYPE_LABELS = {
   ready_to_cook: 'Repas préparés ou prêts à cuire',
 };
 const fieldLabel = { fontSize: 11, color: MUTED, display: 'block', marginBottom: 4 };
+// Toutes les commandes en ligne passent par Clémenceau (confirmé en pratique) --
+// le stock_status du circulaire n'est pertinent que pour le magasin selectionne ici.
+const STORE_LABELS = {
+  '8923': 'Beauport Clémenceau',
+  '8981': 'Charlesbourg Louis-XIV',
+};
 function RuleBadge({ blacklisted, whitelisted }) {
   if (blacklisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.blacklisted.bg, color: RULE_BADGE.blacklisted.color }}>Blacklisté</span>;
   if (whitelisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.whitelisted.bg, color: RULE_BADGE.whitelisted.color }}>Whitelisté</span>;
@@ -363,6 +369,20 @@ function ConfigTab() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: 'grocery_budget_tier_selected', value: tier }),
+      });
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectStore = async (storeId) => {
+    setSaving(true);
+    try {
+      await apiFetch('/api/epicerie/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'maxi_store_id', value: storeId }),
       });
       await load();
     } finally {
@@ -848,7 +868,7 @@ function ConfigTab() {
       <div style={card}>
         <div style={label}>Circulaire — API native Maxi</div>
         <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
-          Récupère les spéciaux en cours pour le magasin {flyerStoreId} directement depuis l'API Maxi/PC Express
+          Récupère les spéciaux en cours pour le magasin {STORE_LABELS[flyerStoreId] || flyerStoreId} directement depuis l'API Maxi/PC Express
           (ne nécessite pas de token). Dernière mise à jour : {flyerLastSynced ? new Date(flyerLastSynced).toLocaleString('fr-CA') : 'jamais'}.
         </p>
         <button style={btn(BLUE)} onClick={refreshFlyer} disabled={refreshingFlyer}>
@@ -857,6 +877,28 @@ function ConfigTab() {
         {flyerMessage && (
           <p style={{ fontSize: 12, color: flyerMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{flyerMessage}</p>
         )}
+      </div>
+
+      {/* Magasin -- toutes les commandes en ligne passent par Clemenceau en pratique,
+          important pour la fiabilite du stock_status affiche dans Circulaire */}
+      <div style={card}>
+        <div style={label}>Magasin</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Détermine le circulaire et le statut de stock affichés. Toutes les commandes en ligne passent par Clémenceau en pratique — le stock de Louis-XIV n'est pas nécessairement représentatif.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {Object.keys(STORE_LABELS).map((storeId) => (
+            <button key={storeId} onClick={() => selectStore(storeId)} disabled={saving}
+              style={{
+                flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                border: flyerStoreId === storeId ? `1px solid ${BLUE}` : '0.5px solid #2a2e3f',
+                background: flyerStoreId === storeId ? '#1a1a2b' : '#0f1117',
+              }}>
+              <div style={{ fontSize: 13, color: flyerStoreId === storeId ? '#fff' : '#ddd', fontWeight: 600 }}>{STORE_LABELS[storeId]}</div>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 2, fontFamily: 'monospace' }}>{storeId}</div>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
