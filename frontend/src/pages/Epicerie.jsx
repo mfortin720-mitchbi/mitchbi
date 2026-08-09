@@ -1139,6 +1139,8 @@ function NextOrderTab() {
   const [resetting, setResetting] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [compareMessage, setCompareMessage] = useState('');
+  const [addingRecurring, setAddingRecurring] = useState(false);
+  const [addRecurringMessage, setAddRecurringMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1250,10 +1252,44 @@ function NextOrderTab() {
     }
   };
 
+  // Ajoute les produits recurrents (frequence >= seuil) et whitelistes au
+  // panier actif (ou en amorce un si aucun n'existe) -- ne supprime jamais
+  // rien, preserve les ajouts manuels et ceux d'un autre agent.
+  const addRecurringWhitelist = async () => {
+    setAddingRecurring(true);
+    setAddRecurringMessage('');
+    try {
+      const res = await apiFetch('/api/epicerie/add-recurring-whitelist', { method: 'POST' });
+      const json = await res.json();
+      if (!json.success) {
+        setAddRecurringMessage(`Erreur: ${json.error}`);
+        return;
+      }
+      const parts = [`${json.added_count} produit(s) ajouté(s)`];
+      if (json.already_present_count) parts.push(`${json.already_present_count} déjà présent(s), ignoré(s)`);
+      setAddRecurringMessage(parts.join(', ') + '.');
+      await load();
+    } catch (err) {
+      setAddRecurringMessage(`Erreur: ${err.message}`);
+    } finally {
+      setAddingRecurring(false);
+    }
+  };
+
   if (loading) return <div style={{ color: MUTED, fontSize: 13 }}>Chargement...</div>;
 
   if (!weekOf) {
-    return <div style={card}><p style={{ fontSize: 13, color: MUTED }}>Aucune liste générée pour l'instant.</p></div>;
+    return (
+      <div style={card}>
+        <p style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>Aucune liste générée pour l'instant.</p>
+        <button style={btn(BLUE)} onClick={addRecurringWhitelist} disabled={addingRecurring}>
+          {addingRecurring ? 'Ajout...' : '+ Ajouter les produits récurrents et whitelistés'}
+        </button>
+        {addRecurringMessage && (
+          <p style={{ fontSize: 12, color: addRecurringMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{addRecurringMessage}</p>
+        )}
+      </div>
+    );
   }
 
   // Prix payé si connu, sinon moyenne recente -- meilleure estimation disponible,
@@ -1272,6 +1308,10 @@ function NextOrderTab() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <div style={label}>Semaine du {new Date(weekOf).toLocaleDateString('fr-CA')} — {items.length} items</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button style={{ ...btn(BLUE), padding: '4px 10px', fontSize: 11 }} onClick={addRecurringWhitelist} disabled={addingRecurring}
+            title="Ajoute les produits récurrents (fréquence) et whitelistés manquants, sans rien supprimer">
+            {addingRecurring ? 'Ajout...' : '+ Récurrents/whitelist'}
+          </button>
           <select style={{ ...input, padding: '4px 8px', fontSize: 11, width: 170 }} value={resetReason} onChange={(e) => setResetReason(e.target.value)}>
             <option value="ALL">Tous les items</option>
             {REASON_OPTIONS.map((r) => <option key={r} value={r}>{REASON_LABELS[r]}</option>)}
@@ -1285,6 +1325,9 @@ function NextOrderTab() {
           </button>
         </div>
       </div>
+      {addRecurringMessage && (
+        <p style={{ fontSize: 12, color: addRecurringMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{addRecurringMessage}</p>
+      )}
       {compareMessage && (
         <p style={{ fontSize: 12, color: compareMessage.startsWith('Erreur') ? RED : MUTED, margin: '8px 0 0' }}>{compareMessage}</p>
       )}
