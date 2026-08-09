@@ -540,10 +540,14 @@ function ConfigTab() {
           <p style={{ fontSize: 12, color: MUTED }}>Aucun produit blacklisté.</p>
         )}
         {(data?.rules || []).filter((r) => r.blacklisted).map((r) => (
-          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130' }}>
-            <div>
-              <div style={{ fontSize: 13, color: '#ddd' }}>{r.article_number}</div>
-              {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
+          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              {r.image_url && <img className="ep-thumb" src={r.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+              <div>
+                <div style={{ fontSize: 13, color: '#ddd', textTransform: 'lowercase' }}>{r.product_name || r.article_number}</div>
+                <div style={{ fontSize: 11, color: MUTED, fontFamily: 'monospace' }}>{r.article_number}</div>
+                {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
+              </div>
             </div>
             <button style={btn('#333')} onClick={() => deleteRule(r.id)} disabled={saving}>Retirer</button>
           </div>
@@ -565,9 +569,13 @@ function ConfigTab() {
         )}
         {(data?.rules || []).filter((r) => r.whitelisted).map((r) => (
           <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid #1e2130', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, color: '#ddd' }}>{r.article_number}</div>
-              {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              {r.image_url && <img className="ep-thumb" src={r.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+              <div>
+                <div style={{ fontSize: 13, color: '#ddd', textTransform: 'lowercase' }}>{r.product_name || r.article_number}</div>
+                <div style={{ fontSize: 11, color: MUTED, fontFamily: 'monospace' }}>{r.article_number}</div>
+                {r.notes && <div style={{ fontSize: 11, color: MUTED }}>{r.notes}</div>}
+              </div>
             </div>
             <select style={{ ...input, padding: '3px 6px', fontSize: 11, width: 160 }} value={r.category || ''}
               onChange={(e) => updateRuleCategory(r, e.target.value || null)} disabled={saving}>

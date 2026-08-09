@@ -307,13 +307,28 @@ router.get('/config', async (req, res) => {
     if (rulesRes.error) throw rulesRes.error;
     if (tokenRes.error) throw tokenRes.error;
 
+    // thumbnail + nom produit pour l'affichage blacklist/whitelist -- sans ca
+    // les regles n'affichent qu'un numero d'article illisible
+    const ruleArticleNumbers = rulesRes.data.map((r) => r.article_number);
+    const { data: ruleProducts, error: ruleProdErr } = await sb
+      .from('grocery_products')
+      .select('article_number, product_name, image_url')
+      .in('article_number', ruleArticleNumbers.length ? ruleArticleNumbers : ['']);
+    if (ruleProdErr) throw ruleProdErr;
+    const ruleProductByArticle = new Map(ruleProducts.map((p) => [p.article_number, p]));
+    const rules = rulesRes.data.map((r) => ({
+      ...r,
+      product_name: ruleProductByArticle.get(r.article_number)?.product_name || null,
+      image_url: ruleProductByArticle.get(r.article_number)?.image_url || null,
+    }));
+
     const tokenExpired = tokenRes.data?.expires_at ? new Date(tokenRes.data.expires_at) < new Date() : null;
 
     res.json({
       success: true,
       config: configRes.data,
       household: householdRes.data[0] || null,
-      rules: rulesRes.data,
+      rules,
       token: tokenRes.data
         ? { present: true, captured_at: tokenRes.data.captured_at, expires_at: tokenRes.data.expires_at, expired: tokenExpired }
         : { present: false },
