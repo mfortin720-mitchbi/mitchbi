@@ -888,6 +888,7 @@ function OrdersTab() {
                   <th style={thCompact}>Commande</th>
                   <th style={thCompact}>Passée le</th>
                   <th style={thCompact}>Statut</th>
+                  <th style={thCompact}>Cutoff (ajout possible avant)</th>
                   <th style={thCompact}>Ramassage/livraison</th>
                   <th style={thCompact}>Magasin</th>
                   <th style={thCompact}>Items</th>
@@ -895,30 +896,36 @@ function OrdersTab() {
                 </tr>
               </thead>
               <tbody>
-                {pendingOrders.map((o) => (
-                  <Fragment key={o.id}>
-                    <tr onClick={() => setOpenPendingId(openPendingId === o.id ? null : o.id)} style={{ cursor: 'pointer' }}>
-                      <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{openPendingId === o.id ? '▾ ' : '▸ '}#{o.order_number}</td>
-                      <td style={tdCompact}>{new Date(o.created).toLocaleString('fr-CA')}</td>
-                      <td style={{ ...tdCompact, color: GOLD }}>{o.delivery_status_label}</td>
-                      <td style={{ ...tdCompact, color: MUTED }}>{o.pickup_start_date ? new Date(o.pickup_start_date).toLocaleString('fr-CA') : '—'}</td>
-                      <td style={{ ...tdCompact, color: MUTED }}>{o.store_name || '—'}</td>
-                      <td style={tdCompact}>{o.total_items ?? '—'}</td>
-                      <td style={tdCompact}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
-                    </tr>
-                    {openPendingId === o.id && (o.items || []).map((it) => (
-                      <tr key={it.article_number} style={{ background: '#14161f' }}>
-                        <td style={tdCompact}>
-                          {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                {pendingOrders.map((o) => {
+                  const cutoffPassed = o.cutoff_date && new Date(o.cutoff_date) < new Date();
+                  return (
+                    <Fragment key={o.id}>
+                      <tr onClick={() => setOpenPendingId(openPendingId === o.id ? null : o.id)} style={{ cursor: 'pointer' }}>
+                        <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{openPendingId === o.id ? '▾ ' : '▸ '}#{o.order_number}</td>
+                        <td style={tdCompact}>{new Date(o.created).toLocaleString('fr-CA')}</td>
+                        <td style={{ ...tdCompact, color: GOLD }}>{o.delivery_status_label}</td>
+                        <td style={{ ...tdCompact, color: o.cutoff_date ? (cutoffPassed ? RED : GREEN) : MUTED }}>
+                          {o.cutoff_date ? `${new Date(o.cutoff_date).toLocaleString('fr-CA')}${cutoffPassed ? ' (passé)' : ''}` : '—'}
                         </td>
-                        <td colSpan={2} style={{ ...tdCompact, textTransform: 'lowercase' }}>{it.product_name}</td>
-                        <td style={{ ...tdCompact, color: MUTED }}>{it.brand?.toLowerCase() || '—'}</td>
-                        <td style={{ ...tdCompact, color: MUTED }}>x{it.quantity}</td>
-                        <td colSpan={2} style={tdCompact}>{it.total_price != null ? `${Number(it.total_price).toFixed(2)}$` : '—'}</td>
+                        <td style={{ ...tdCompact, color: MUTED }}>{o.pickup_start_date ? new Date(o.pickup_start_date).toLocaleString('fr-CA') : '—'}</td>
+                        <td style={{ ...tdCompact, color: MUTED }}>{o.store_name || '—'}</td>
+                        <td style={tdCompact}>{o.total_items ?? '—'}</td>
+                        <td style={tdCompact}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
                       </tr>
-                    ))}
-                  </Fragment>
-                ))}
+                      {openPendingId === o.id && (o.items || []).map((it) => (
+                        <tr key={it.article_number} style={{ background: '#14161f' }}>
+                          <td style={tdCompact}>
+                            {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                          </td>
+                          <td colSpan={2} style={{ ...tdCompact, textTransform: 'lowercase' }}>{it.product_name}</td>
+                          <td style={{ ...tdCompact, color: MUTED }}>{it.brand?.toLowerCase() || '—'}</td>
+                          <td style={{ ...tdCompact, color: MUTED }}>x{it.quantity}</td>
+                          <td colSpan={3} style={tdCompact}>{it.total_price != null ? `${Number(it.total_price).toFixed(2)}$` : '—'}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

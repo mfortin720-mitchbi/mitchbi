@@ -1317,6 +1317,9 @@ router.get('/pending-orders', async (req, res) => {
         created: o.created,
         delivery_status: o.deliveryStatus || null,
         delivery_status_label: DELIVERY_STATUS_LABELS[o.deliveryStatus] || o.deliveryStatus || 'statut inconnu',
+        // deadline pour encore ajouter/modifier des items avant que le magasin
+        // commence la preparation -- passe une fois le statut READY_FOR_ACTION
+        cutoff_date: o.cutOffDate || o.cart?.cutOffDate || null,
         pickup_start_date: o.cart?.booking?.pickupStartDate || null,
         store_name: o.cart?.booking?.pickupLocation?.name || null,
         total_items: o.cart?.totalItems ?? null,
