@@ -373,6 +373,79 @@ router.put('/household-config', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// NEXT_GROCERY_CONFIG -- config ponctuelle par cycle de planification
+// (statut draft -> ready -> recommendation_generated -> approved -> completed),
+// consommee par la skill externe maxi-reco-items (voir grocery_agent_log).
+// Distincte de grocery_household_config (presence hebdo generale) --
+// deliberement pas fusionnees pour l'instant, a ajuster plus tard.
+// ---------------------------------------------------------------------
+
+const NEXT_CONFIG_FIELDS = [
+  'status', 'target_date_or_week', 'dinner_count', 'julie_present', 'eliane_present',
+  'additional_people_count', 'budget', 'max_prep_minutes', 'meal_types',
+  'temporary_preferences', 'temporary_exclusions', 'recurring_whitelist_policy',
+  'substitution_policy', 'notes',
+];
+
+function computePeopleCount({ julie_present, eliane_present, additional_people_count }) {
+  const count = 1 + (julie_present ? 1 : 0) + (eliane_present ? 1 : 0) + (additional_people_count || 0);
+  return Math.min(8, Math.max(1, count));
+}
+
+// GET /api/epicerie/next-config  (le cycle de planification le plus recent, ou null)
+router.get('/next-config', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('grocery_next_config')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    res.json({ success: true, config: data?.[0] || null });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/epicerie/next-config  (demarre un nouveau cycle de planification)
+router.post('/next-config', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const payload = {};
+    for (const f of NEXT_CONFIG_FIELDS) if (req.body[f] !== undefined) payload[f] = req.body[f];
+    payload.people_count = computePeopleCount(payload);
+    const { data, error } = await sb.from('grocery_next_config').insert(payload).select().single();
+    if (error) throw error;
+    res.json({ success: true, config: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/epicerie/next-config/:id
+router.put('/next-config/:id', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { data: existing, error: findErr } = await sb.from('grocery_next_config').select('*').eq('id', req.params.id).single();
+    if (findErr) throw findErr;
+
+    const payload = {};
+    for (const f of NEXT_CONFIG_FIELDS) if (req.body[f] !== undefined) payload[f] = req.body[f];
+    // people_count depend des 3 champs presence/additionnels -- recalcule des
+    // qu'un seul change, en repartant des valeurs existantes pour les autres
+    payload.people_count = computePeopleCount({ ...existing, ...payload });
+    payload.updated_at = new Date().toISOString();
+
+    const { data, error } = await sb.from('grocery_next_config').update(payload).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json({ success: true, config: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/epicerie/product-rules  (creer/mettre a jour une regle -- blacklist, whitelist, qte preferee)
 router.post('/product-rules', async (req, res) => {
   try {
