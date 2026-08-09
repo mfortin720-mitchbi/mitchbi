@@ -25,6 +25,28 @@ const RULE_BADGE = {
   blacklisted: { label: 'Blacklisté', bg: '#2b0d0d', color: '#D85A30' },
   whitelisted: { label: 'Whitelisté', bg: '#0d2b1a', color: '#1D9E75' },
 };
+
+// next_grocery_config -- cycle de planification ponctuel consomme par la
+// skill externe maxi-reco-items (voir grocery_agent_log)
+const NEXT_CONFIG_DEFAULTS = {
+  target_date_or_week: '', dinner_count: '', julie_present: false, eliane_present: false,
+  additional_people_count: 0, budget: '', max_prep_minutes: '', meal_types: '',
+  temporary_preferences: '', temporary_exclusions: '', recurring_whitelist_policy: 'probably_needed',
+  substitution_policy: '', notes: '',
+};
+const NEXT_CONFIG_STATUS_LABELS = {
+  draft: 'Brouillon',
+  ready: 'Prêt (déclenche maxi-reco-items)',
+  recommendation_generated: 'Recommandation générée',
+  approved: 'Approuvé',
+  completed: 'Complété',
+};
+const RECURRING_POLICY_LABELS = {
+  all: 'Tous les récurrents/whitelist',
+  probably_needed: 'Probablement nécessaires seulement',
+  none: 'Aucun ajout automatique',
+};
+const fieldLabel = { fontSize: 11, color: MUTED, display: 'block', marginBottom: 4 };
 function RuleBadge({ blacklisted, whitelisted }) {
   if (blacklisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.blacklisted.bg, color: RULE_BADGE.blacklisted.color }}>Blacklisté</span>;
   if (whitelisted) return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: RULE_BADGE.whitelisted.bg, color: RULE_BADGE.whitelisted.color }}>Whitelisté</span>;
@@ -129,6 +151,76 @@ function ConfigTab() {
   const [showTierSettings, setShowTierSettings] = useState(false);
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
   const bookmarkletRef = useRef(null);
+  const [nextConfig, setNextConfig] = useState(null);
+  const [nextConfigForm, setNextConfigForm] = useState(NEXT_CONFIG_DEFAULTS);
+  const [savingNextConfig, setSavingNextConfig] = useState(false);
+
+  const loadNextConfig = useCallback(async () => {
+    const res = await apiFetch('/api/epicerie/next-config');
+    const json = await res.json();
+    if (json.success) {
+      setNextConfig(json.config);
+      if (json.config) {
+        setNextConfigForm({
+          target_date_or_week: json.config.target_date_or_week || '',
+          dinner_count: json.config.dinner_count ?? '',
+          julie_present: json.config.julie_present,
+          eliane_present: json.config.eliane_present,
+          additional_people_count: json.config.additional_people_count ?? 0,
+          budget: json.config.budget ?? '',
+          max_prep_minutes: json.config.max_prep_minutes ?? '',
+          meal_types: (json.config.meal_types || []).join(', '),
+          temporary_preferences: json.config.temporary_preferences || '',
+          temporary_exclusions: json.config.temporary_exclusions || '',
+          recurring_whitelist_policy: json.config.recurring_whitelist_policy || 'probably_needed',
+          substitution_policy: json.config.substitution_policy || '',
+          notes: json.config.notes || '',
+        });
+      }
+    }
+  }, []);
+
+  useEffect(() => { loadNextConfig(); }, [loadNextConfig]);
+
+  const peopleCountPreview = Math.min(8, Math.max(1,
+    1 + (nextConfigForm.julie_present ? 1 : 0) + (nextConfigForm.eliane_present ? 1 : 0) + (parseInt(nextConfigForm.additional_people_count, 10) || 0)
+  ));
+
+  const saveNextConfig = async () => {
+    setSavingNextConfig(true);
+    try {
+      const payload = {
+        ...nextConfigForm,
+        dinner_count: nextConfigForm.dinner_count ? parseInt(nextConfigForm.dinner_count, 10) : null,
+        additional_people_count: parseInt(nextConfigForm.additional_people_count, 10) || 0,
+        budget: nextConfigForm.budget ? parseFloat(nextConfigForm.budget) : null,
+        max_prep_minutes: nextConfigForm.max_prep_minutes ? parseInt(nextConfigForm.max_prep_minutes, 10) : null,
+        meal_types: nextConfigForm.meal_types.split(',').map((s) => s.trim()).filter(Boolean),
+        target_date_or_week: nextConfigForm.target_date_or_week || null,
+      };
+      const url = nextConfig ? `/api/epicerie/next-config/${nextConfig.id}` : '/api/epicerie/next-config';
+      const method = nextConfig ? 'PUT' : 'POST';
+      const res = await apiFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const json = await res.json();
+      if (json.success) setNextConfig(json.config);
+    } finally {
+      setSavingNextConfig(false);
+    }
+  };
+
+  const setNextConfigStatus = async (status) => {
+    if (!nextConfig) return;
+    setSavingNextConfig(true);
+    try {
+      const res = await apiFetch(`/api/epicerie/next-config/${nextConfig.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (json.success) setNextConfig(json.config);
+    } finally {
+      setSavingNextConfig(false);
+    }
+  };
 
   // React sanitise/bloque tout href="javascript:..." passe en prop JSX (protection
   // anti-XSS) -- le lien "bookmarklet" deviendrait un no-op qui throw. Seul un
@@ -452,6 +544,117 @@ function ConfigTab() {
             <button style={btn(BLUE)} onClick={saveBudgetTiers} disabled={saving}>Sauvegarder les paliers</button>
           </div>
         )}
+      </div>
+
+      {/* next_grocery_config -- cycle de planification ponctuel pour maxi-reco-items */}
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={label}>Planification prochain repas</div>
+          {nextConfig && (
+            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#1a1a2b', color: BLUE }}>
+              {NEXT_CONFIG_STATUS_LABELS[nextConfig.status] || nextConfig.status}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Config ponctuelle consommée par l'agent externe maxi-reco-items. Distincte de "Présence cette semaine" ci-dessous (à ajuster plus tard).
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <label style={fieldLabel}>Date/semaine visée</label>
+            <input type="date" style={{ ...input, width: '100%' }} value={nextConfigForm.target_date_or_week}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, target_date_or_week: e.target.value })} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Nombre de soupers</label>
+            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.dinner_count}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, dinner_count: e.target.value })} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
+            <input type="checkbox" checked={nextConfigForm.julie_present}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, julie_present: e.target.checked })} />
+            Julie présente
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
+            <input type="checkbox" checked={nextConfigForm.eliane_present}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, eliane_present: e.target.checked })} />
+            Éliane présente
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#ddd' }}>+ personnes:</span>
+            <input type="number" min="0" max="5" style={{ ...input, width: 60 }} value={nextConfigForm.additional_people_count}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, additional_people_count: e.target.value })} />
+          </div>
+          <div style={{ fontSize: 13, color: GOLD }}>= {peopleCountPreview} portion(s)</div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <label style={fieldLabel}>Budget ($)</label>
+            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.budget}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, budget: e.target.value })} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Temps prép max (min)</label>
+            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.max_prep_minutes}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, max_prep_minutes: e.target.value })} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Politique récurrents/whitelist</label>
+            <select style={{ ...input, width: '100%' }} value={nextConfigForm.recurring_whitelist_policy}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, recurring_whitelist_policy: e.target.value })}>
+              {Object.keys(RECURRING_POLICY_LABELS).map((k) => <option key={k} value={k}>{RECURRING_POLICY_LABELS[k]}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Types de repas (séparés par virgule)</label>
+          <input style={{ ...input, width: '100%' }} placeholder="souper, dîner" value={nextConfigForm.meal_types}
+            onChange={(e) => setNextConfigForm({ ...nextConfigForm, meal_types: e.target.value })} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+          <div>
+            <label style={fieldLabel}>Préférences ponctuelles</label>
+            <input style={{ ...input, width: '100%' }} value={nextConfigForm.temporary_preferences}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, temporary_preferences: e.target.value })} />
+          </div>
+          <div>
+            <label style={fieldLabel}>Exclusions ponctuelles</label>
+            <input style={{ ...input, width: '100%' }} value={nextConfigForm.temporary_exclusions}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, temporary_exclusions: e.target.value })} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Politique de substitution</label>
+          <input style={{ ...input, width: '100%' }} value={nextConfigForm.substitution_policy}
+            onChange={(e) => setNextConfigForm({ ...nextConfigForm, substitution_policy: e.target.value })} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Notes</label>
+          <input style={{ ...input, width: '100%' }} value={nextConfigForm.notes}
+            onChange={(e) => setNextConfigForm({ ...nextConfigForm, notes: e.target.value })} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button style={btn(BLUE)} onClick={saveNextConfig} disabled={savingNextConfig}>
+            {nextConfig ? 'Sauvegarder' : 'Créer'}
+          </button>
+          {nextConfig && nextConfig.status === 'draft' && (
+            <button style={btn(GREEN)} onClick={() => setNextConfigStatus('ready')} disabled={savingNextConfig}>
+              Marquer "Prêt" (déclenche maxi-reco-items)
+            </button>
+          )}
+          {nextConfig && !['draft', 'completed'].includes(nextConfig.status) && (
+            <button style={btn('#333')} onClick={() => setNextConfigStatus('draft')} disabled={savingNextConfig}>
+              Repasser en brouillon
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Presence Eliane/Julie */}
