@@ -29,24 +29,53 @@ const RULE_BADGE = {
 };
 
 // next_grocery_config -- cycle de planification ponctuel consomme par la
-// skill externe maxi-reco-items (voir grocery_agent_log)
+// skill externe maxi-reco-items (voir grocery_agent_log). Budget et
+// presence Julie/Eliane sont derives en lecture (grocery_config +
+// grocery_household_config), jamais saisis ici -- source unique ailleurs.
 const NEXT_CONFIG_DEFAULTS = {
-  target_date_or_week: '', dinner_count: '', julie_present: false, eliane_present: false,
-  additional_people_count: 0, budget: '', max_prep_minutes: '', meal_types: '',
-  temporary_preferences: '', temporary_exclusions: '', recurring_whitelist_policy: 'probably_needed',
-  substitution_policy: '', notes: '',
+  target_date_or_week: '', dinner_count: '', additional_people_count: 0, max_prep_time: '',
+  meal_types: [], temporary_preferences: '', temporary_exclusions: '',
+  recurring_whitelist_policy: 'probably_needed', substitution_policy: '', notes: '',
 };
+// Michel controle: draft, ready, changes_requested, approved, cancelled.
+// maxi-reco-items controle: recommendation_in_progress, recommendation_ready,
+// queue_updated, completed, error. Un changement de statut ne declenche
+// jamais d'execution automatique.
 const NEXT_CONFIG_STATUS_LABELS = {
   draft: 'Brouillon',
-  ready: 'Prêt (déclenche maxi-reco-items)',
-  recommendation_generated: 'Recommandation générée',
+  ready: 'Prêt pour maxi-reco-items',
+  recommendation_in_progress: 'Recommandation en cours (agent)',
+  recommendation_ready: 'Recommandation prête à réviser',
+  changes_requested: 'Ajustements demandés',
   approved: 'Approuvé',
+  queue_updated: 'Queue mise à jour (agent)',
   completed: 'Complété',
+  cancelled: 'Annulé',
+  error: 'Erreur',
 };
 const RECURRING_POLICY_LABELS = {
   all: 'Tous les récurrents/whitelist',
   probably_needed: 'Probablement nécessaires seulement',
   none: 'Aucun ajout automatique',
+};
+const MAX_PREP_TIME_LABELS = {
+  under_20: 'Moins de 20 minutes',
+  '20_to_40': '20 à 40 minutes',
+  up_to_60: "Jusqu'à 60 minutes",
+  no_preference: 'Sans préférence',
+};
+const SUBSTITUTION_POLICY_LABELS = {
+  none: 'Aucune substitution',
+  comparable_brand: 'Marque comparable',
+  comparable_brand_and_format: 'Marque et format comparables',
+  ask_each_time: 'Demander avant chaque remplacement',
+};
+const MEAL_TYPE_LABELS = {
+  best_specials: 'Meilleurs spéciaux, sans préférence',
+  meat: 'Viande',
+  fish_seafood: 'Poisson et fruits de mer',
+  vegetarian: 'Végétarien',
+  ready_to_cook: 'Repas préparés ou prêts à cuire',
 };
 const fieldLabel = { fontSize: 11, color: MUTED, display: 'block', marginBottom: 4 };
 function RuleBadge({ blacklisted, whitelisted }) {
@@ -187,12 +216,9 @@ function ConfigTab() {
         setNextConfigForm({
           target_date_or_week: json.config.target_date_or_week || '',
           dinner_count: json.config.dinner_count ?? '',
-          julie_present: json.config.julie_present,
-          eliane_present: json.config.eliane_present,
           additional_people_count: json.config.additional_people_count ?? 0,
-          budget: json.config.budget ?? '',
-          max_prep_minutes: json.config.max_prep_minutes ?? '',
-          meal_types: (json.config.meal_types || []).join(', '),
+          max_prep_time: json.config.max_prep_time || '',
+          meal_types: json.config.meal_types || [],
           temporary_preferences: json.config.temporary_preferences || '',
           temporary_exclusions: json.config.temporary_exclusions || '',
           recurring_whitelist_policy: json.config.recurring_whitelist_policy || 'probably_needed',
@@ -205,22 +231,24 @@ function ConfigTab() {
 
   useEffect(() => { loadNextConfig(); }, [loadNextConfig]);
 
-  const peopleCountPreview = Math.min(8, Math.max(1,
-    1 + (nextConfigForm.julie_present ? 1 : 0) + (nextConfigForm.eliane_present ? 1 : 0) + (parseInt(nextConfigForm.additional_people_count, 10) || 0)
-  ));
+  const toggleMealType = (key) => {
+    setNextConfigForm((prev) => ({
+      ...prev,
+      meal_types: prev.meal_types.includes(key) ? prev.meal_types.filter((m) => m !== key) : [...prev.meal_types, key],
+    }));
+  };
 
-  const saveNextConfig = async () => {
+  const saveNextConfig = async (statusOverride) => {
     setSavingNextConfig(true);
     try {
       const payload = {
         ...nextConfigForm,
-        dinner_count: nextConfigForm.dinner_count ? parseInt(nextConfigForm.dinner_count, 10) : null,
+        dinner_count: nextConfigForm.dinner_count !== '' ? parseInt(nextConfigForm.dinner_count, 10) : null,
         additional_people_count: parseInt(nextConfigForm.additional_people_count, 10) || 0,
-        budget: nextConfigForm.budget ? parseFloat(nextConfigForm.budget) : null,
-        max_prep_minutes: nextConfigForm.max_prep_minutes ? parseInt(nextConfigForm.max_prep_minutes, 10) : null,
-        meal_types: nextConfigForm.meal_types.split(',').map((s) => s.trim()).filter(Boolean),
+        max_prep_time: nextConfigForm.max_prep_time || null,
         target_date_or_week: nextConfigForm.target_date_or_week || null,
       };
+      if (statusOverride) payload.status = statusOverride;
       const url = nextConfig ? `/api/epicerie/next-config/${nextConfig.id}` : '/api/epicerie/next-config';
       const method = nextConfig ? 'PUT' : 'POST';
       const res = await apiFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -231,18 +259,9 @@ function ConfigTab() {
     }
   };
 
-  const setNextConfigStatus = async (status) => {
-    if (!nextConfig) return;
-    setSavingNextConfig(true);
-    try {
-      const res = await apiFetch(`/api/epicerie/next-config/${nextConfig.id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
-      });
-      const json = await res.json();
-      if (json.success) setNextConfig(json.config);
-    } finally {
-      setSavingNextConfig(false);
-    }
+  const startNewPlanning = () => {
+    setNextConfig(null);
+    setNextConfigForm(NEXT_CONFIG_DEFAULTS);
   };
 
   // React sanitise/bloque tout href="javascript:..." passe en prop JSX (protection
@@ -496,35 +515,6 @@ function ConfigTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
-      {/* Seuil de generation */}
-      <div style={card}>
-        <div style={label}>Seuil de fréquence — liste hebdomadaire</div>
-        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
-          Un produit entre automatiquement dans la liste s'il apparaît dans au moins ce % des commandes passées.
-        </p>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input style={{ ...input, width: 70 }} type="number" min="1" max="100" value={thresholdInput}
-            onChange={(e) => setThresholdInput(e.target.value)} />
-          <span style={{ color: MUTED, fontSize: 13 }}>%</span>
-          <button style={btn(BLUE)} onClick={saveThreshold} disabled={saving}>Sauvegarder</button>
-        </div>
-        {genMessage && <p style={{ fontSize: 11, color: GREEN, margin: '8px 0 0' }}>{genMessage}</p>}
-      </div>
-
-      {/* Duree de comparaison des prix */}
-      <div style={card}>
-        <div style={label}>Durée de comparaison des prix</div>
-        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
-          Nombre de mois utilisés pour calculer le "prix moyen payé" affiché dans Prochaine commande.
-        </p>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input style={{ ...input, width: 70 }} type="number" min="1" max="36" value={priceCompareInput}
-            onChange={(e) => setPriceCompareInput(e.target.value)} />
-          <span style={{ color: MUTED, fontSize: 13 }}>mois</span>
-          <button style={btn(BLUE)} onClick={savePriceCompare} disabled={saving}>Sauvegarder</button>
-        </div>
-      </div>
-
       {/* Paliers de budget -- pour le prochain panier */}
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -580,51 +570,50 @@ function ConfigTab() {
           )}
         </div>
         <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
-          Config ponctuelle consommée par l'agent externe maxi-reco-items. Distincte de "Présence cette semaine" ci-dessous (à ajuster plus tard).
+          Config ponctuelle consommée par l'agent externe maxi-reco-items.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+        {nextConfig && (
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12, padding: '8px 12px', background: '#0f1117', borderRadius: 6, fontSize: 12 }}>
+            <span style={{ color: '#ddd' }}>
+              Palier {nextConfig.budget_tier_selected} ({nextConfig.budget_min}$-{nextConfig.budget_max}$)
+            </span>
+            <span style={{ color: '#ddd' }}>
+              {nextConfig.people_count} portion(s) — Julie {nextConfig.julie_present ? '✓' : '✗'}, Éliane {nextConfig.eliane_present ? '✓' : '✗'}
+            </span>
+            <a href="#presence-semaine" style={{ color: BLUE, fontSize: 11 }}
+              onClick={(ev) => { ev.preventDefault(); document.getElementById('presence-semaine')?.scrollIntoView({ behavior: 'smooth' }); }}>
+              Ajuster la présence →
+            </a>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={fieldLabel}>Date/semaine visée</label>
             <input type="date" style={{ ...input, width: '100%' }} value={nextConfigForm.target_date_or_week}
               onChange={(e) => setNextConfigForm({ ...nextConfigForm, target_date_or_week: e.target.value })} />
           </div>
           <div>
-            <label style={fieldLabel}>Nombre de soupers</label>
-            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.dinner_count}
+            <label style={fieldLabel}>Nombre de soupers (0-7)</label>
+            <input type="number" min="0" max="7" style={{ ...input, width: '100%' }} value={nextConfigForm.dinner_count}
               onChange={(e) => setNextConfigForm({ ...nextConfigForm, dinner_count: e.target.value })} />
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
-            <input type="checkbox" checked={nextConfigForm.julie_present}
-              onChange={(e) => setNextConfigForm({ ...nextConfigForm, julie_present: e.target.checked })} />
-            Julie présente
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
-            <input type="checkbox" checked={nextConfigForm.eliane_present}
-              onChange={(e) => setNextConfigForm({ ...nextConfigForm, eliane_present: e.target.checked })} />
-            Éliane présente
-          </label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: '#ddd' }}>+ personnes:</span>
-            <input type="number" min="0" max="5" style={{ ...input, width: 60 }} value={nextConfigForm.additional_people_count}
+          <div>
+            <label style={fieldLabel}>+ personnes additionnelles (0-5)</label>
+            <input type="number" min="0" max="5" style={{ ...input, width: '100%' }} value={nextConfigForm.additional_people_count}
               onChange={(e) => setNextConfigForm({ ...nextConfigForm, additional_people_count: e.target.value })} />
           </div>
-          <div style={{ fontSize: 13, color: GOLD }}>= {peopleCountPreview} portion(s)</div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
-            <label style={fieldLabel}>Budget ($)</label>
-            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.budget}
-              onChange={(e) => setNextConfigForm({ ...nextConfigForm, budget: e.target.value })} />
-          </div>
-          <div>
-            <label style={fieldLabel}>Temps prép max (min)</label>
-            <input type="number" min="0" style={{ ...input, width: '100%' }} value={nextConfigForm.max_prep_minutes}
-              onChange={(e) => setNextConfigForm({ ...nextConfigForm, max_prep_minutes: e.target.value })} />
+            <label style={fieldLabel}>Temps de préparation</label>
+            <select style={{ ...input, width: '100%' }} value={nextConfigForm.max_prep_time}
+              onChange={(e) => setNextConfigForm({ ...nextConfigForm, max_prep_time: e.target.value })}>
+              <option value="">—</option>
+              {Object.keys(MAX_PREP_TIME_LABELS).map((k) => <option key={k} value={k}>{MAX_PREP_TIME_LABELS[k]}</option>)}
+            </select>
           </div>
           <div>
             <label style={fieldLabel}>Politique récurrents/whitelist</label>
@@ -636,10 +625,26 @@ function ConfigTab() {
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <label style={fieldLabel}>Types de repas (séparés par virgule)</label>
-          <input style={{ ...input, width: '100%' }} placeholder="souper, dîner" value={nextConfigForm.meal_types}
-            onChange={(e) => setNextConfigForm({ ...nextConfigForm, meal_types: e.target.value })} />
+          <label style={fieldLabel}>Types de repas (choix multiples)</label>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            {Object.keys(MEAL_TYPE_LABELS).map((k) => (
+              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ddd', cursor: 'pointer' }}>
+                <input type="checkbox" checked={nextConfigForm.meal_types.includes(k)} onChange={() => toggleMealType(k)} />
+                {MEAL_TYPE_LABELS[k]}
+              </label>
+            ))}
+          </div>
         </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={fieldLabel}>Politique de substitution</label>
+          <select style={{ ...input, width: '100%' }} value={nextConfigForm.substitution_policy}
+            onChange={(e) => setNextConfigForm({ ...nextConfigForm, substitution_policy: e.target.value })}>
+            <option value="">—</option>
+            {Object.keys(SUBSTITUTION_POLICY_LABELS).map((k) => <option key={k} value={k}>{SUBSTITUTION_POLICY_LABELS[k]}</option>)}
+          </select>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
             <label style={fieldLabel}>Préférences ponctuelles</label>
@@ -653,35 +658,35 @@ function ConfigTab() {
           </div>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={fieldLabel}>Politique de substitution</label>
-          <input style={{ ...input, width: '100%' }} value={nextConfigForm.substitution_policy}
-            onChange={(e) => setNextConfigForm({ ...nextConfigForm, substitution_policy: e.target.value })} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
           <label style={fieldLabel}>Notes</label>
           <input style={{ ...input, width: '100%' }} value={nextConfigForm.notes}
             onChange={(e) => setNextConfigForm({ ...nextConfigForm, notes: e.target.value })} />
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button style={btn(BLUE)} onClick={saveNextConfig} disabled={savingNextConfig}>
-            {nextConfig ? 'Sauvegarder' : 'Créer'}
-          </button>
-          {nextConfig && nextConfig.status === 'draft' && (
-            <button style={btn(GREEN)} onClick={() => setNextConfigStatus('ready')} disabled={savingNextConfig}>
-              Marquer "Prêt" (déclenche maxi-reco-items)
-            </button>
+          {(!nextConfig || ['draft', 'ready'].includes(nextConfig.status)) && (
+            <>
+              <button style={btn(BLUE)} onClick={() => saveNextConfig()} disabled={savingNextConfig}>Enregistrer le brouillon</button>
+              <button style={btn(GREEN)} onClick={() => saveNextConfig('ready')} disabled={savingNextConfig}>Prêt pour maxi-reco-items</button>
+            </>
           )}
-          {nextConfig && !['draft', 'completed'].includes(nextConfig.status) && (
-            <button style={btn('#333')} onClick={() => setNextConfigStatus('draft')} disabled={savingNextConfig}>
-              Repasser en brouillon
-            </button>
+          {nextConfig && nextConfig.status === 'recommendation_ready' && (
+            <>
+              <button style={btn('#333')} onClick={() => saveNextConfig('changes_requested')} disabled={savingNextConfig}>Demander des ajustements</button>
+              <button style={btn(GREEN)} onClick={() => saveNextConfig('approved')} disabled={savingNextConfig}>Approuver</button>
+            </>
+          )}
+          {nextConfig && !['completed', 'cancelled'].includes(nextConfig.status) && (
+            <button style={{ ...btn(RED), opacity: 0.85 }} onClick={() => saveNextConfig('cancelled')} disabled={savingNextConfig}>Annuler</button>
+          )}
+          {nextConfig && ['completed', 'cancelled'].includes(nextConfig.status) && (
+            <button style={btn(BLUE)} onClick={startNewPlanning} disabled={savingNextConfig}>Nouvelle planification</button>
           )}
         </div>
       </div>
 
       {/* Presence Eliane/Julie */}
-      <div style={card}>
+      <div id="presence-semaine" style={card}>
         <div style={label}>Présence cette semaine</div>
         <div style={{ display: 'flex', gap: 24, marginTop: 8 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
@@ -695,68 +700,6 @@ function ConfigTab() {
             Julie présente
           </label>
         </div>
-      </div>
-
-      {/* Token Maxi */}
-      <div style={card}>
-        <div style={label}>Token Maxi (session)</div>
-        {token.present ? (
-          <p style={{ fontSize: 12, margin: '0 0 12px' }}>
-            <span style={{ color: token.expired ? RED : GREEN }}>{token.expired ? '⚠ Expiré' : '✓ Valide'}</span>
-            <span style={{ color: MUTED }}> — capturé {token.captured_at ? new Date(token.captured_at).toLocaleString('fr-CA') : '—'}
-              {token.expires_at ? `, expire ${new Date(token.expires_at).toLocaleString('fr-CA')}` : ''}</span>
-          </p>
-        ) : (
-          <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>Aucun token enregistré.</p>
-        )}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '0 0 12px' }}>
-          <button style={btn(BLUE)} onClick={() => window.open('https://www.maxi.ca/fr', '_blank')}>
-            1. Ouvrir Maxi.ca
-          </button>
-          <a ref={bookmarkletRef} href="#" onClick={(e) => e.preventDefault()}
-            style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'grab' }}
-            title="Glisser ce bouton dans ta barre de favoris">
-            2. 📋 Copier AccessToken (glisser dans les favoris)
-          </a>
-        </div>
-        <p style={{ fontSize: 11, color: MUTED, margin: '0 0 12px' }}>
-          Glisse le bouton "2." dans ta barre de favoris <strong>une seule fois</strong>. Ensuite : connecte-toi sur Maxi.ca,
-          clique ce favori (le token est copié automatiquement), reviens ici et colle-le. Un navigateur ne permet pas à
-          mitchbi.com d'exécuter un script directement sur maxi.ca — d'où le favori.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <textarea style={{ ...input, minHeight: 60, fontFamily: 'monospace', fontSize: 11 }}
-            placeholder="Coller le token ici"
-            value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input style={input} type="datetime-local" value={tokenExpiresInput}
-              onChange={(e) => setTokenExpiresInput(e.target.value)} />
-            <button style={btn(BLUE)} onClick={saveToken} disabled={saving || !tokenInput.trim()}>Sauvegarder le token</button>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-            <button style={btn('#333')} onClick={syncNow} disabled={syncing || saving}>
-              {syncing ? 'Synchronisation...' : '↻ Synchroniser les commandes maintenant'}
-            </button>
-          </div>
-          {syncMessage && (
-            <p style={{ fontSize: 12, color: syncMessage.startsWith('Erreur') ? RED : GREEN, margin: '4px 0 0' }}>{syncMessage}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Circulaire (API native Maxi) */}
-      <div style={card}>
-        <div style={label}>Circulaire — API native Maxi</div>
-        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
-          Récupère les spéciaux en cours pour le magasin {flyerStoreId} directement depuis l'API Maxi/PC Express
-          (ne nécessite pas de token). Dernière mise à jour : {flyerLastSynced ? new Date(flyerLastSynced).toLocaleString('fr-CA') : 'jamais'}.
-        </p>
-        <button style={btn(BLUE)} onClick={refreshFlyer} disabled={refreshingFlyer}>
-          {refreshingFlyer ? 'Récupération...' : '↻ Rafraîchir le circulaire maintenant'}
-        </button>
-        {flyerMessage && (
-          <p style={{ fontSize: 12, color: flyerMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{flyerMessage}</p>
-        )}
       </div>
 
       {/* Blacklist */}
@@ -823,6 +766,97 @@ function ConfigTab() {
           </select>
           <button style={btn(GREEN)} onClick={addWhitelistRule} disabled={saving || !newWhitelistRule.article_number.trim()}>+ Whitelister</button>
         </div>
+      </div>
+
+      {/* Seuil de generation */}
+      <div style={card}>
+        <div style={label}>Seuil de fréquence — liste hebdomadaire</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Un produit entre automatiquement dans la liste s'il apparaît dans au moins ce % des commandes passées.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input style={{ ...input, width: 70 }} type="number" min="1" max="100" value={thresholdInput}
+            onChange={(e) => setThresholdInput(e.target.value)} />
+          <span style={{ color: MUTED, fontSize: 13 }}>%</span>
+          <button style={btn(BLUE)} onClick={saveThreshold} disabled={saving}>Sauvegarder</button>
+        </div>
+        {genMessage && <p style={{ fontSize: 11, color: GREEN, margin: '8px 0 0' }}>{genMessage}</p>}
+      </div>
+
+      {/* Duree de comparaison des prix */}
+      <div style={card}>
+        <div style={label}>Durée de comparaison des prix</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Nombre de mois utilisés pour calculer le "prix moyen payé" affiché dans Prochaine commande.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input style={{ ...input, width: 70 }} type="number" min="1" max="36" value={priceCompareInput}
+            onChange={(e) => setPriceCompareInput(e.target.value)} />
+          <span style={{ color: MUTED, fontSize: 13 }}>mois</span>
+          <button style={btn(BLUE)} onClick={savePriceCompare} disabled={saving}>Sauvegarder</button>
+        </div>
+      </div>
+
+      {/* Token Maxi */}
+      <div style={card}>
+        <div style={label}>Token Maxi (session)</div>
+        {token.present ? (
+          <p style={{ fontSize: 12, margin: '0 0 12px' }}>
+            <span style={{ color: token.expired ? RED : GREEN }}>{token.expired ? '⚠ Expiré' : '✓ Valide'}</span>
+            <span style={{ color: MUTED }}> — capturé {token.captured_at ? new Date(token.captured_at).toLocaleString('fr-CA') : '—'}
+              {token.expires_at ? `, expire ${new Date(token.expires_at).toLocaleString('fr-CA')}` : ''}</span>
+          </p>
+        ) : (
+          <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>Aucun token enregistré.</p>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '0 0 12px' }}>
+          <button style={btn(BLUE)} onClick={() => window.open('https://www.maxi.ca/fr', '_blank')}>
+            1. Ouvrir Maxi.ca
+          </button>
+          <a ref={bookmarkletRef} href="#" onClick={(e) => e.preventDefault()}
+            style={{ ...btn('#333'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center', cursor: 'grab' }}
+            title="Glisser ce bouton dans ta barre de favoris">
+            2. 📋 Copier AccessToken (glisser dans les favoris)
+          </a>
+        </div>
+        <p style={{ fontSize: 11, color: MUTED, margin: '0 0 12px' }}>
+          Glisse le bouton "2." dans ta barre de favoris <strong>une seule fois</strong>. Ensuite : connecte-toi sur Maxi.ca,
+          clique ce favori (le token est copié automatiquement), reviens ici et colle-le. Un navigateur ne permet pas à
+          mitchbi.com d'exécuter un script directement sur maxi.ca — d'où le favori.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea style={{ ...input, minHeight: 60, fontFamily: 'monospace', fontSize: 11 }}
+            placeholder="Coller le token ici"
+            value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input style={input} type="datetime-local" value={tokenExpiresInput}
+              onChange={(e) => setTokenExpiresInput(e.target.value)} />
+            <button style={btn(BLUE)} onClick={saveToken} disabled={saving || !tokenInput.trim()}>Sauvegarder le token</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <button style={btn('#333')} onClick={syncNow} disabled={syncing || saving}>
+              {syncing ? 'Synchronisation...' : '↻ Synchroniser les commandes maintenant'}
+            </button>
+          </div>
+          {syncMessage && (
+            <p style={{ fontSize: 12, color: syncMessage.startsWith('Erreur') ? RED : GREEN, margin: '4px 0 0' }}>{syncMessage}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Circulaire (API native Maxi) */}
+      <div style={card}>
+        <div style={label}>Circulaire — API native Maxi</div>
+        <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
+          Récupère les spéciaux en cours pour le magasin {flyerStoreId} directement depuis l'API Maxi/PC Express
+          (ne nécessite pas de token). Dernière mise à jour : {flyerLastSynced ? new Date(flyerLastSynced).toLocaleString('fr-CA') : 'jamais'}.
+        </p>
+        <button style={btn(BLUE)} onClick={refreshFlyer} disabled={refreshingFlyer}>
+          {refreshingFlyer ? 'Récupération...' : '↻ Rafraîchir le circulaire maintenant'}
+        </button>
+        {flyerMessage && (
+          <p style={{ fontSize: 12, color: flyerMessage.startsWith('Erreur') ? RED : GREEN, margin: '8px 0 0' }}>{flyerMessage}</p>
+        )}
       </div>
     </div>
   );

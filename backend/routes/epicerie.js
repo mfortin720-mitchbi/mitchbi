@@ -374,23 +374,53 @@ router.put('/household-config', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
-// NEXT_GROCERY_CONFIG -- config ponctuelle par cycle de planification
-// (statut draft -> ready -> recommendation_generated -> approved -> completed),
+// NEXT_GROCERY_CONFIG -- config ponctuelle par cycle de planification,
 // consommee par la skill externe maxi-reco-items (voir grocery_agent_log).
-// Distincte de grocery_household_config (presence hebdo generale) --
-// deliberement pas fusionnees pour l'instant, a ajuster plus tard.
+// Budget et presence Julie/Eliane ne sont PAS dupliques ici -- lus depuis
+// grocery_config (palier actif) et grocery_household_config (presence
+// hebdo), fusionnes en lecture seule dans la reponse GET.
+//
+// Cycle de statuts: draft -> ready -> recommendation_in_progress ->
+// recommendation_ready -> approved -> queue_updated -> completed, avec
+// branches changes_requested (retour a recommendation_in_progress),
+// cancelled (depuis n'importe quel statut) et error. Michel controle
+// draft/ready/changes_requested/approved/cancelled ; maxi-reco-items
+// controle recommendation_in_progress/recommendation_ready/queue_updated/
+// completed/error. Un changement de statut ici ne declenche jamais
+// d'execution automatique -- maxi-reco-items va lire l'etat quand on
+// l'appelle separement.
 // ---------------------------------------------------------------------
 
 const NEXT_CONFIG_FIELDS = [
-  'status', 'target_date_or_week', 'dinner_count', 'julie_present', 'eliane_present',
-  'additional_people_count', 'budget', 'max_prep_minutes', 'meal_types',
-  'temporary_preferences', 'temporary_exclusions', 'recurring_whitelist_policy',
-  'substitution_policy', 'notes',
+  'status', 'target_date_or_week', 'dinner_count', 'additional_people_count', 'max_prep_time',
+  'meal_types', 'temporary_preferences', 'temporary_exclusions', 'recurring_whitelist_policy',
+  'substitution_policy', 'notes', 'approved_at',
 ];
 
-function computePeopleCount({ julie_present, eliane_present, additional_people_count }) {
-  const count = 1 + (julie_present ? 1 : 0) + (eliane_present ? 1 : 0) + (additional_people_count || 0);
-  return Math.min(8, Math.max(1, count));
+// Enrichit un cycle next_config avec le palier de budget actif et la
+// presence Julie/Eliane -- valeurs derivees, jamais stockees ici.
+async function enrichNextConfig(sb, config) {
+  if (!config) return null;
+  const [{ data: configRows }, { data: householdRows }] = await Promise.all([
+    sb.from('grocery_config').select('key, value').in('key', ['grocery_budget_tier_selected', 'grocery_budget_tier_1_min', 'grocery_budget_tier_1_max', 'grocery_budget_tier_2_min', 'grocery_budget_tier_2_max', 'grocery_budget_tier_3_min', 'grocery_budget_tier_3_max']),
+    sb.from('grocery_household_config').select('eliane_present_week, julie_present_week').order('updated_at', { ascending: false }).limit(1),
+  ]);
+  const cfg = Object.fromEntries((configRows || []).map((r) => [r.key, r.value]));
+  const selectedTier = cfg.grocery_budget_tier_selected || '1';
+  const household = householdRows?.[0] || {};
+  const julie = !!household.julie_present_week;
+  const eliane = !!household.eliane_present_week;
+  const peopleCount = Math.min(8, Math.max(1, 1 + (julie ? 1 : 0) + (eliane ? 1 : 0) + (config.additional_people_count || 0)));
+
+  return {
+    ...config,
+    julie_present: julie,
+    eliane_present: eliane,
+    people_count: peopleCount,
+    budget_tier_selected: selectedTier,
+    budget_min: cfg[`grocery_budget_tier_${selectedTier}_min`] || null,
+    budget_max: cfg[`grocery_budget_tier_${selectedTier}_max`] || null,
+  };
 }
 
 // GET /api/epicerie/next-config  (le cycle de planification le plus recent, ou null)
@@ -403,7 +433,7 @@ router.get('/next-config', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(1);
     if (error) throw error;
-    res.json({ success: true, config: data?.[0] || null });
+    res.json({ success: true, config: await enrichNextConfig(sb, data?.[0] || null) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -415,10 +445,9 @@ router.post('/next-config', async (req, res) => {
     const sb = getSupabase();
     const payload = {};
     for (const f of NEXT_CONFIG_FIELDS) if (req.body[f] !== undefined) payload[f] = req.body[f];
-    payload.people_count = computePeopleCount(payload);
     const { data, error } = await sb.from('grocery_next_config').insert(payload).select().single();
     if (error) throw error;
-    res.json({ success: true, config: data });
+    res.json({ success: true, config: await enrichNextConfig(sb, data) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -428,19 +457,14 @@ router.post('/next-config', async (req, res) => {
 router.put('/next-config/:id', async (req, res) => {
   try {
     const sb = getSupabase();
-    const { data: existing, error: findErr } = await sb.from('grocery_next_config').select('*').eq('id', req.params.id).single();
-    if (findErr) throw findErr;
-
     const payload = {};
     for (const f of NEXT_CONFIG_FIELDS) if (req.body[f] !== undefined) payload[f] = req.body[f];
-    // people_count depend des 3 champs presence/additionnels -- recalcule des
-    // qu'un seul change, en repartant des valeurs existantes pour les autres
-    payload.people_count = computePeopleCount({ ...existing, ...payload });
+    if (payload.status === 'approved' && !payload.approved_at) payload.approved_at = new Date().toISOString();
     payload.updated_at = new Date().toISOString();
 
     const { data, error } = await sb.from('grocery_next_config').update(payload).eq('id', req.params.id).select().single();
     if (error) throw error;
-    res.json({ success: true, config: data });
+    res.json({ success: true, config: await enrichNextConfig(sb, data) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
