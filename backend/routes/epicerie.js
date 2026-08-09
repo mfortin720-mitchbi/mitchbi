@@ -1429,7 +1429,36 @@ router.post('/reset-and-compare', async (req, res) => {
   }
 });
 
-// POST /api/epicerie/telegram-webhook  (commandes /reset et /status, chat_id whiteliste)
+const TELEGRAM_HELP = [
+  '📋 Commandes disponibles:',
+  '',
+  '/status_token — vérifie l\'état du token Maxi',
+  '/token <valeur> — colle un nouveau token Maxi directement ici',
+  '/commande — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca)',
+  '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
+  '/list — cette liste',
+].join('\n');
+
+function formatPendingOrdersMessage(orders) {
+  if (!orders.length) return 'Aucune commande en cours chez Maxi.';
+  return orders.map((o) => {
+    const statusLabel = DELIVERY_STATUS_LABELS[o.deliveryStatus] || o.deliveryStatus || 'statut inconnu';
+    const orderNumber = o.cart?.orderNumber ? String(o.cart.orderNumber) : String(o.id);
+    const items = o.cart?.totalItems ?? null;
+    const total = o.cart?.totalPrice != null ? `${Number(o.cart.totalPrice).toFixed(2)}$` : null;
+    const store = o.cart?.booking?.pickupLocation?.name || null;
+    const pickup = o.cart?.booking?.pickupStartDate ? new Date(o.cart.booking.pickupStartDate).toLocaleString('fr-CA') : null;
+    const cutoff = o.cutOffDate ? new Date(o.cutOffDate).toLocaleString('fr-CA') : null;
+    const lines = [`#${orderNumber} — ${statusLabel}`];
+    if (items != null) lines.push(`${items} item(s)${total ? `, ${total}` : ''}`);
+    if (store) lines.push(store);
+    if (pickup) lines.push(`Ramassage/livraison: ${pickup}`);
+    if (cutoff) lines.push(`Cutoff: ${cutoff}`);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+// POST /api/epicerie/telegram-webhook  (chat_id whiteliste -- voir TELEGRAM_HELP pour les commandes)
 router.post('/telegram-webhook', async (req, res) => {
   res.json({ ok: true }); // ack immediat -- Telegram retry si pas de reponse rapide
   try {
@@ -1445,7 +1474,12 @@ router.post('/telegram-webhook', async (req, res) => {
 
     const sb = getSupabase();
 
-    if (text === '/status') {
+    if (text === '/list') {
+      await sendTelegramMessage(chatId, TELEGRAM_HELP);
+      return;
+    }
+
+    if (text === '/status_token') {
       const { token, expired } = await getMaxiToken(sb);
       const status = !token ? 'Aucun token enregistré.' : expired ? '⚠️ Token expiré.' : '✅ Token valide.';
       const hint = !token || expired ? '\nRéponds avec /token <ton_nouveau_token> pour le mettre à jour directement ici.' : '';
@@ -1468,10 +1502,25 @@ router.post('/telegram-webhook', async (req, res) => {
       return;
     }
 
-    if (text === '/reset') {
+    if (text === '/status_commande') {
       const { token, expired } = await getMaxiToken(sb);
       if (!token || expired) {
-        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Réponds avec /token <ton_nouveau_token> puis renvoie /reset.');
+        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Réponds avec /token <ton_nouveau_token> puis renvoie /status_commande.');
+        return;
+      }
+      try {
+        const orders = await fetchPendingOrders(token);
+        await sendTelegramMessage(chatId, formatPendingOrdersMessage(orders));
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur en lisant les commandes: ${err.message}`);
+      }
+      return;
+    }
+
+    if (text === '/commande') {
+      const { token, expired } = await getMaxiToken(sb);
+      if (!token || expired) {
+        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Réponds avec /token <ton_nouveau_token> puis renvoie /commande.');
         return;
       }
       const comparison = await compareCartToLastOrder(sb);
