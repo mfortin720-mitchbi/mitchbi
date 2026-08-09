@@ -31,6 +31,49 @@ async function fetchAll(table, select) {
   return rows;
 }
 
+function computeNextSunday() {
+  const d = new Date();
+  const diff = (7 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+// Resout "la queue active" de grocery_cart_queue -- design discute avec
+// codex-grocery-planning via grocery_agent_log (2026-08-09). Si un cycle
+// grocery_next_config non complete/annule existe (contrainte DB: un seul a
+// la fois, voir grocery_next_config_single_active), il devient la source de
+// verite (next_config_id) et son target_date_or_week sert de week_of pour
+// les nouvelles lignes. Sinon, fallback sur l'ancien comportement (week_of
+// le plus recent dans la queue).
+async function getActiveCartContext(sb) {
+  const { data: configs, error: configErr } = await sb
+    .from('grocery_next_config')
+    .select('id, target_date_or_week, status')
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (configErr) throw configErr;
+  const activeConfig = (configs || []).find((c) => !['completed', 'cancelled'].includes(c.status));
+
+  if (activeConfig) {
+    return { nextConfigId: activeConfig.id, weekOf: activeConfig.target_date_or_week || computeNextSunday() };
+  }
+
+  const { data: weekRow, error: weekErr } = await sb
+    .from('grocery_cart_queue')
+    .select('week_of')
+    .order('week_of', { ascending: false })
+    .limit(1);
+  if (weekErr) throw weekErr;
+  return { nextConfigId: null, weekOf: weekRow?.[0]?.week_of || null };
+}
+
+// Applique le filtre "queue active" a une query select()/delete() sur
+// grocery_cart_queue -- par next_config_id si un cycle est actif, sinon par
+// week_of (comportement historique).
+function scopeToActiveQueue(query, ctx) {
+  return ctx.nextConfigId ? query.eq('next_config_id', ctx.nextConfigId) : query.eq('week_of', ctx.weekOf);
+}
+
 // ---------------------------------------------------------------------
 // SYNC MAXI (historique de commandes -- incrementale, basee sur order_number)
 // ---------------------------------------------------------------------
@@ -445,9 +488,25 @@ router.post('/next-config', async (req, res) => {
     const sb = getSupabase();
     const payload = {};
     for (const f of NEXT_CONFIG_FIELDS) if (req.body[f] !== undefined) payload[f] = req.body[f];
+
+    // un seul cycle actif a la fois (contrainte DB grocery_next_config_single_active,
+    // decidee avec Michel le 2026-08-09): demarrer une nouvelle planification
+    // cloture automatiquement l'ancienne si elle n'etait pas deja terminee
+    const { data: existingActive, error: activeErr } = await sb
+      .from('grocery_next_config')
+      .select('id, status')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (activeErr) throw activeErr;
+    const previousActive = (existingActive || []).find((c) => !['completed', 'cancelled'].includes(c.status));
+    if (previousActive) {
+      const { error: cancelErr } = await sb.from('grocery_next_config').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', previousActive.id);
+      if (cancelErr) throw cancelErr;
+    }
+
     const { data, error } = await sb.from('grocery_next_config').insert(payload).select().single();
     if (error) throw error;
-    res.json({ success: true, config: await enrichNextConfig(sb, data) });
+    res.json({ success: true, config: await enrichNextConfig(sb, data), previous_cycle_cancelled: previousActive?.id || null });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -879,26 +938,17 @@ router.get('/search', async (req, res) => {
 // PROCHAINE COMMANDE (editable)
 // ---------------------------------------------------------------------
 
-// GET /api/epicerie/next-order  (la semaine la plus recente dans grocery_cart_queue)
+// GET /api/epicerie/next-order  (la queue active: cycle grocery_next_config
+// en cours, sinon la semaine la plus recente dans grocery_cart_queue)
 router.get('/next-order', async (req, res) => {
   try {
     const sb = getSupabase();
-    const { data: weekRow, error: weekErr } = await sb
-      .from('grocery_cart_queue')
-      .select('week_of')
-      .order('week_of', { ascending: false })
-      .limit(1);
-    if (weekErr) throw weekErr;
+    const ctx = await getActiveCartContext(sb);
+    if (!ctx.weekOf) return res.json({ success: true, week_of: null, items: [] });
 
-    const weekOf = weekRow?.[0]?.week_of || null;
-    if (!weekOf) return res.json({ success: true, week_of: null, items: [] });
-
-    const { data, error } = await sb
-      .from('grocery_cart_queue')
-      .select('*')
-      .eq('week_of', weekOf)
-      .order('product_name');
+    const { data, error } = await scopeToActiveQueue(sb.from('grocery_cart_queue').select('*'), ctx).order('product_name');
     if (error) throw error;
+    const weekOf = ctx.weekOf;
 
     const articleNumbers = data.map((it) => it.article_number);
 
@@ -992,24 +1042,16 @@ router.post('/next-order', async (req, res) => {
     );
     if (stubErr) throw stubErr;
 
-    if (!week_of) {
-      const { data: weekRow } = await sb
-        .from('grocery_cart_queue')
-        .select('week_of')
-        .order('week_of', { ascending: false })
-        .limit(1);
-      if (weekRow?.[0]?.week_of) {
-        week_of = weekRow[0].week_of;
-      } else {
-        const d = new Date();
-        const diff = (7 - d.getDay()) % 7 || 7;
-        d.setDate(d.getDate() + diff);
-        week_of = d.toISOString().slice(0, 10);
-      }
-    }
+    // resout le contexte actif meme si week_of est fourni explicitement (le
+    // frontend echo souvent le weekOf deja charge) -- ne tague avec
+    // next_config_id que si ca correspond bien a la semaine du cycle actif
+    const ctx = await getActiveCartContext(sb);
+    if (!week_of) week_of = ctx.weekOf || computeNextSunday();
+    const nextConfigId = ctx.nextConfigId && week_of === ctx.weekOf ? ctx.nextConfigId : null;
 
     const { error } = await sb.from('grocery_cart_queue').insert({
       week_of,
+      next_config_id: nextConfigId,
       article_number,
       product_name: product_name || article_number,
       product_url: product_url || null,
@@ -1119,9 +1161,12 @@ async function computeRecurringWhitelistRows(sb) {
 router.post('/generate-list', async (req, res) => {
   try {
     const sb = getSupabase();
-    const { weekOf, rows } = await computeRecurringWhitelistRows(sb);
+    const ctx = await getActiveCartContext(sb);
+    const { rows: candidates } = await computeRecurringWhitelistRows(sb);
+    const weekOf = ctx.weekOf || computeNextSunday();
+    const rows = candidates.map((r) => ({ ...r, week_of: weekOf, next_config_id: ctx.nextConfigId }));
 
-    const { error: delErr } = await sb.from('grocery_cart_queue').delete().eq('week_of', weekOf);
+    const { error: delErr } = await scopeToActiveQueue(sb.from('grocery_cart_queue').delete(), { ...ctx, weekOf });
     if (delErr) throw delErr;
     if (rows.length) {
       const { error: insErr } = await sb.from('grocery_cart_queue').insert(rows);
@@ -1134,37 +1179,29 @@ router.post('/generate-list', async (req, res) => {
   }
 });
 
-// POST /api/epicerie/add-recurring-whitelist -- complete le panier ACTIF
-// (semaine la plus recente en cours, sinon en cree une) avec les produits
-// recurrents/whitelistes manquants. N'efface jamais rien -- contrairement a
-// /generate-list, preserve tout ce qui est deja dans la queue (ajouts
-// manuels de Michel, items d'un autre agent, etc.), ignore juste les
-// articles deja presents.
+// POST /api/epicerie/add-recurring-whitelist -- complete la queue ACTIVE
+// (cycle grocery_next_config en cours, sinon la semaine la plus recente,
+// voir getActiveCartContext) avec les produits recurrents/whitelistes
+// manquants. N'efface jamais rien -- contrairement a /generate-list,
+// preserve tout ce qui est deja dans la queue (ajouts manuels de Michel,
+// items d'un autre agent, etc.), ignore juste les articles deja presents.
 router.post('/add-recurring-whitelist', async (req, res) => {
   try {
     const sb = getSupabase();
-
-    const { data: weekRow, error: weekErr } = await sb
-      .from('grocery_cart_queue')
-      .select('week_of')
-      .order('week_of', { ascending: false })
-      .limit(1);
-    if (weekErr) throw weekErr;
-
+    const ctx = await getActiveCartContext(sb);
     const { weekOf: computedWeek, rows: candidates } = await computeRecurringWhitelistRows(sb);
-    const targetWeek = weekRow?.[0]?.week_of || computedWeek;
+    const targetWeek = ctx.weekOf || computedWeek;
 
-    const { data: existing, error: existErr } = await sb
-      .from('grocery_cart_queue')
-      .select('article_number')
-      .eq('week_of', targetWeek);
+    const { data: existing, error: existErr } = await scopeToActiveQueue(
+      sb.from('grocery_cart_queue').select('article_number'), { ...ctx, weekOf: targetWeek }
+    );
     if (existErr) throw existErr;
     const existingSet = new Set(existing.map((e) => e.article_number));
 
     const toAdd = [];
     const alreadyPresent = [];
     for (const c of candidates) {
-      const row = { ...c, week_of: targetWeek };
+      const row = { ...c, week_of: targetWeek, next_config_id: ctx.nextConfigId };
       if (existingSet.has(c.article_number)) alreadyPresent.push(row);
       else toAdd.push(row);
     }
@@ -1290,19 +1327,12 @@ async function compareCartToLastOrder(sb) {
   const { token, expired } = await getMaxiToken(sb);
   if (!token || expired) return { success: false, error: 'Token Maxi expiré ou manquant.' };
 
-  const { data: weekRow, error: weekErr } = await sb
-    .from('grocery_cart_queue')
-    .select('week_of')
-    .order('week_of', { ascending: false })
-    .limit(1);
-  if (weekErr) throw weekErr;
-  const weekOf = weekRow?.[0]?.week_of;
-  if (!weekOf) return { success: false, error: 'Aucun panier actif à comparer.' };
+  const ctx = await getActiveCartContext(sb);
+  if (!ctx.weekOf) return { success: false, error: 'Aucun panier actif à comparer.' };
 
-  const { data: cartItems, error: cartErr } = await sb
-    .from('grocery_cart_queue')
-    .select('article_number, product_name, quantity')
-    .eq('week_of', weekOf);
+  const { data: cartItems, error: cartErr } = await scopeToActiveQueue(
+    sb.from('grocery_cart_queue').select('article_number, product_name, quantity'), ctx
+  );
   if (cartErr) throw cartErr;
 
   const pendingOrders = await fetchPendingOrders(token);
@@ -1328,7 +1358,8 @@ async function compareCartToLastOrder(sb) {
 
   return {
     success: true,
-    week_of: weekOf,
+    week_of: ctx.weekOf,
+    next_config_id: ctx.nextConfigId,
     order_number: order.cart?.orderNumber ? String(order.cart.orderNumber) : String(order.id),
     order_date: order.created,
     delivery_status: order.deliveryStatus || null,
@@ -1390,7 +1421,7 @@ router.post('/reset-and-compare', async (req, res) => {
     if (!comparison.success) return res.json(comparison);
 
     await persistComparison(sb, comparison, req.body?.triggered_by || 'web');
-    await sb.from('grocery_cart_queue').delete().eq('week_of', comparison.week_of);
+    await scopeToActiveQueue(sb.from('grocery_cart_queue').delete(), { nextConfigId: comparison.next_config_id, weekOf: comparison.week_of });
 
     res.json(comparison);
   } catch (err) {
@@ -1449,7 +1480,7 @@ router.post('/telegram-webhook', async (req, res) => {
         return;
       }
       await persistComparison(sb, comparison, `telegram:${TELEGRAM_AUTHORIZED_CHATS[chatId]}`);
-      await sb.from('grocery_cart_queue').delete().eq('week_of', comparison.week_of);
+      await scopeToActiveQueue(sb.from('grocery_cart_queue').delete(), { nextConfigId: comparison.next_config_id, weekOf: comparison.week_of });
       await sendTelegramMessage(chatId, formatComparisonMessage(comparison));
     }
   } catch (err) {
