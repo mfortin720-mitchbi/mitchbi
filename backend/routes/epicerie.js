@@ -1008,17 +1008,45 @@ async function searchFlyerScored(sb, q, limit = 10) {
   return scored.slice(0, limit);
 }
 
+// <code> = monospace tap-to-copy sur Telegram mobile -- permet de copier le
+// numero d'article puis de le coller directement dans /add <numero>.
 function formatSearchResultCaption(rank, r) {
   const priceStr = r.price != null ? `${r.price.toFixed(2)}$` : 'prix ?';
   const wasStr = r.original_price != null && r.original_price > (r.price ?? 0)
     ? ` (était ${r.original_price.toFixed(2)}$, -${r.discount_pct}%)` : '';
   const historyStr = r.never_bought ? '🆕 jamais acheté' : `acheté ${r.recent_purchases}x récemment`;
-  return `${rank}. ${r.name}${r.brand ? ' — ' + r.brand : ''}\n${priceStr}${wasStr}\n${historyStr} | score ${r.score}`;
+  const title = `${escapeHtml(r.name)}${r.brand ? ' — ' + escapeHtml(r.brand) : ''}`;
+  return `${rank}. ${title}\n${priceStr}${wasStr}\n${historyStr} | score ${r.score}\n<code>${escapeHtml(r.article_number)}</code>`;
+}
+
+// Resout un numero d'article pour /add: le circulaire courant (source de
+// /search) est prioritaire, sinon le catalogue historique grocery_products.
+async function resolveProductForAdd(sb, articleNumber) {
+  const { data: flyerItem } = await sb
+    .from('grocery_flyer_items')
+    .select('article_number, name, brand, image_url, product_url')
+    .eq('article_number', articleNumber)
+    .maybeSingle();
+  if (flyerItem) {
+    return {
+      article_number: articleNumber,
+      product_name: flyerItem.name,
+      brand: flyerItem.brand,
+      image_url: flyerItem.image_url,
+      product_url: flyerItem.product_url,
+    };
+  }
+  const { data: product } = await sb
+    .from('grocery_products')
+    .select('article_number, product_name, brand, image_url, product_url')
+    .eq('article_number', articleNumber)
+    .maybeSingle();
+  return product || null;
 }
 
 function formatSearchResultsMessage(q, results) {
-  if (!results.length) return `Aucun résultat au circulaire pour "${q}".`;
-  const lines = [`🔍 Meilleurs fits pour "${q}":`, ''];
+  if (!results.length) return `Aucun résultat au circulaire pour "${escapeHtml(q)}".`;
+  const lines = [`🔍 Meilleurs fits pour "${escapeHtml(q)}":`, ''];
   results.forEach((r, i) => lines.push(formatSearchResultCaption(i + 1, r), ''));
   return lines.join('\n').trim();
 }
@@ -1370,24 +1398,32 @@ const TELEGRAM_AUTHORIZED_CHATS = {
   '8616082335': 'Julie',
 };
 
-async function sendTelegramMessage(chatId, text) {
+async function sendTelegramMessage(chatId, text, parseMode) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) { console.error('TELEGRAM_BOT_TOKEN manquant -- message non envoye'); return; }
+  const body = { chat_id: chatId, text };
+  if (parseMode) body.parse_mode = parseMode;
   await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify(body),
   });
 }
 
-async function sendTelegramPhoto(chatId, photoUrl, caption) {
+async function sendTelegramPhoto(chatId, photoUrl, caption, parseMode) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) { console.error('TELEGRAM_BOT_TOKEN manquant -- photo non envoyee'); return; }
+  const body = { chat_id: chatId, photo: photoUrl, caption };
+  if (parseMode) body.parse_mode = parseMode;
   await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption }),
+    body: JSON.stringify(body),
   });
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // Album jusqu'a 10 photos -- limite native Telegram, qui tombe bien avec le
@@ -1593,7 +1629,8 @@ const TELEGRAM_HELP = [
   '/token <valeur> — colle un nouveau token Maxi directement ici',
   '/commande [AAAA-MM-JJ] — compare le panier planifié à la commande passée sur Maxi, puis vide le panier (à utiliser une fois la commande passée sur maxi.ca). Si plusieurs commandes sont en attente, précise la date (ex: /commande 2026-08-09) -- sinon la liste des commandes en attente est renvoyée sans rien modifier.',
   '/status_commande — statut des commandes Maxi en cours (pas encore livrées)',
-  '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2)',
+  '/search <terme> — cherche dans le circulaire courant, classé par score (rabais 0.4 + fréquence d\'achat récente 0.4 + jamais acheté 0.2). Le numéro d\'article affiché sous chaque résultat se copie en un tap.',
+  '/add <numéro article> [quantité] — ajoute ce produit à la commande en préparation (copie le numéro depuis un résultat /search)',
   '/list — cette liste',
 ].join('\n');
 
@@ -1716,17 +1753,79 @@ router.post('/telegram-webhook', async (req, res) => {
         const captionFor = (r) => formatSearchResultCaption(results.indexOf(r) + 1, r);
 
         if (withImage.length >= 2) {
-          await sendTelegramMediaGroup(chatId, withImage.map((r) => ({ type: 'photo', media: r.image_url, caption: captionFor(r) })));
+          await sendTelegramMediaGroup(chatId, withImage.map((r) => ({ type: 'photo', media: r.image_url, caption: captionFor(r), parse_mode: 'HTML' })));
         } else if (withImage.length === 1) {
-          await sendTelegramPhoto(chatId, withImage[0].image_url, captionFor(withImage[0]));
+          await sendTelegramPhoto(chatId, withImage[0].image_url, captionFor(withImage[0]), 'HTML');
         }
         if (withoutImage.length && withImage.length) {
-          await sendTelegramMessage(chatId, withoutImage.map(captionFor).join('\n\n'));
+          await sendTelegramMessage(chatId, withoutImage.map(captionFor).join('\n\n'), 'HTML');
         } else if (!withImage.length) {
-          await sendTelegramMessage(chatId, formatSearchResultsMessage(q, results));
+          await sendTelegramMessage(chatId, formatSearchResultsMessage(q, results), 'HTML');
         }
       } catch (err) {
         await sendTelegramMessage(chatId, `❌ Erreur de recherche: ${err.message}`);
+      }
+      return;
+    }
+
+    if (text.startsWith('/add')) {
+      const addMatch = text.match(/^\/add\s+(\S+)(?:\s+(\d+))?$/);
+      if (!addMatch) {
+        await sendTelegramMessage(chatId, '❌ Format invalide. Utilise /add <numéro article> [quantité] (ex: /add 21464728 2) -- copie le numéro depuis un résultat /search.');
+        return;
+      }
+      const articleNumber = addMatch[1];
+      const quantity = addMatch[2] ? parseInt(addMatch[2], 10) : 1;
+      try {
+        const product = await resolveProductForAdd(sb, articleNumber);
+        if (!product) {
+          await sendTelegramMessage(chatId, `❌ Numéro d'article "${articleNumber}" introuvable (ni circulaire ni historique).`);
+          return;
+        }
+
+        const reason = `${TELEGRAM_AUTHORIZED_CHATS[chatId].toLowerCase()}_telegram_search`;
+        const ctx = await getActiveCartContext(sb);
+        const weekOf = ctx.weekOf || computeNextSunday();
+        const scopeCtx = { nextConfigId: ctx.nextConfigId, weekOf };
+
+        const { data: existing, error: existingErr } = await scopeToActiveQueue(
+          sb.from('grocery_cart_queue').select('id').eq('article_number', articleNumber),
+          scopeCtx
+        ).maybeSingle();
+        if (existingErr) throw existingErr;
+
+        if (existing) {
+          await sb.from('grocery_cart_queue').update({ added_reason: reason }).eq('id', existing.id);
+          await sendTelegramMessage(chatId, `ℹ️ ${product.product_name} déjà dans le panier.`);
+          return;
+        }
+
+        await sb.from('grocery_products').upsert(
+          {
+            article_number: articleNumber,
+            product_name: product.product_name || articleNumber,
+            brand: product.brand || null,
+            image_url: product.image_url || null,
+            product_url: product.product_url || null,
+          },
+          { onConflict: 'article_number', ignoreDuplicates: true }
+        );
+
+        const { error: insertErr } = await sb.from('grocery_cart_queue').insert({
+          week_of: weekOf,
+          next_config_id: scopeCtx.nextConfigId,
+          article_number: articleNumber,
+          product_name: product.product_name || articleNumber,
+          product_url: product.product_url || null,
+          quantity,
+          status: 'pending',
+          added_reason: reason,
+        });
+        if (insertErr) throw insertErr;
+
+        await sendTelegramMessage(chatId, `✅ ${product.product_name} ajouté au panier (x${quantity}).`);
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur: ${err.message}`);
       }
     }
   } catch (err) {
