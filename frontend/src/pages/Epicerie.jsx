@@ -130,6 +130,7 @@ const TABS = [
   { id: 'flyer', label: 'Circulaire' },
   { id: 'search', label: 'Recherche' },
   { id: 'agent-log', label: 'Journal des agents' },
+  { id: 'readme', label: 'README' },
 ];
 
 // Reprend le theme sombre de l'app pour le rendu Markdown des messages du
@@ -183,6 +184,7 @@ export default function Epicerie({ activeTab = 'dashboard', onTabChange }) {
       {activeTab === 'flyer' && <FlyerTab />}
       {activeTab === 'search' && <SearchTab />}
       {activeTab === 'agent-log' && <AgentLogTab />}
+      {activeTab === 'readme' && <EpicerieReadmeTab />}
     </div>
   );
 }
@@ -2277,6 +2279,113 @@ function SearchTab() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// README
+// ---------------------------------------------------------------------
+
+const ReadmeSection = ({ title, children }) => (
+  <div style={{ ...card, marginBottom: 16 }}>
+    <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 12 }}>{title}</div>
+    <div style={{ fontSize: 13, color: '#c7cdd9', lineHeight: 1.6 }}>{children}</div>
+  </div>
+);
+const RCode = ({ children }) => (
+  <code style={{ background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 4, padding: '1px 6px', fontSize: 12, color: BLUE, fontFamily: 'monospace' }}>{children}</code>
+);
+const RCmdRow = ({ cmd, desc }) => (
+  <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', margin: '4px 0' }}>
+    <RCode>{cmd}</RCode>
+    <span style={{ color: MUTED, fontSize: 12 }}>{desc}</span>
+  </div>
+);
+const RTabRow = ({ name, desc }) => (
+  <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', margin: '4px 0' }}>
+    <span style={{ color: '#fff', fontSize: 13, minWidth: 150 }}>{name}</span>
+    <span style={{ color: MUTED, fontSize: 12 }}>{desc}</span>
+  </div>
+);
+
+function EpicerieReadmeTab() {
+  return (
+    <div style={{ maxWidth: 820 }}>
+      <ReadmeSection title="🛒 Comment ça marche">
+        <p>
+          Le module lit et écrit les données Maxi via l'API native PC Express (pas de navigation automatisée —
+          bloquée par Akamai). Le <RCode>Circulaire</RCode> ne nécessite aucun token ; tout ce qui touche à
+          l'historique, aux commandes en cours ou au panier réel nécessite le <b>token Maxi</b> (session, expire
+          après ~1h).
+        </p>
+        <p style={{ marginTop: 8 }}>
+          Le panier en préparation (<RCode>Prochaine commande</RCode>) peut être piloté par un{' '}
+          <b>cycle de planification</b> (voir plus bas) ou géré manuellement — les deux fonctionnent, un seul
+          cycle peut être actif à la fois.
+        </p>
+      </ReadmeSection>
+
+      <ReadmeSection title="📑 Les onglets">
+        <RTabRow name="Config" desc="seuils, palier de budget, planification, présence, token Maxi, circulaire, blacklist/whitelist, magasin" />
+        <RTabRow name="Dashboard" desc="produits les plus achetés, par plage de dates" />
+        <RTabRow name="Commandes" desc="historique livré + commandes en cours chez Maxi + comparatifs panier/commande" />
+        <RTabRow name="Prochaine commande" desc="le panier en préparation — total, ajout manuel, reset, comparer à une vraie commande" />
+        <RTabRow name="Circulaire" desc="spéciaux en cours pour le magasin sélectionné (Config)" />
+        <RTabRow name="Recherche" desc="chercher un produit dans l'historique + le circulaire" />
+        <RTabRow name="Journal des agents" desc="messages échangés avec l'agent externe de recommandation" />
+      </ReadmeSection>
+
+      <ReadmeSection title="🔑 Token Maxi">
+        <p>
+          Dans <RCode>Config</RCode> : ouvrir Maxi.ca, se connecter, cliquer le favori "Copier AccessToken"
+          (glissé une seule fois dans la barre de favoris), coller le token dans Config <i>ou</i> l'envoyer par
+          Telegram avec <RCode>/token</RCode>. Expire après ~1h — <RCode>/status_token</RCode> le confirme.
+        </p>
+      </ReadmeSection>
+
+      <ReadmeSection title="⌨️ Commandes Telegram">
+        <p>Envoyées au bot par toi ou Julie, réponse immédiate :</p>
+        <div style={{ margin: '10px 0' }}>
+          <RCmdRow cmd="/status_token" desc="état du token Maxi" />
+          <RCmdRow cmd="/token <valeur>" desc="colle un nouveau token" />
+          <RCmdRow cmd="/commande" desc="compare le panier à la commande passée sur Maxi, puis vide le panier" />
+          <RCmdRow cmd="/status_commande" desc="commandes en cours chez Maxi (pas encore livrées)" />
+          <RCmdRow cmd="/list" desc="cette liste" />
+        </div>
+        <p style={{ color: MUTED, fontSize: 12 }}>
+          À utiliser après avoir réellement passé la commande sur maxi.ca : <RCode>/commande</RCode> attend
+          quelques minutes si la commande n'est pas encore visible côté serveur plutôt que de comparer à une
+          commande périmée.
+        </p>
+      </ReadmeSection>
+
+      <ReadmeSection title="🔄 Cycle de planification (Config → Planification prochain repas)">
+        <p>
+          Statut : <RCode>draft</RCode> → <RCode>ready</RCode> → <RCode>recommendation_in_progress</RCode> →{' '}
+          <RCode>recommendation_ready</RCode> → <RCode>approved</RCode> → <RCode>queue_updated</RCode> →{' '}
+          <RCode>completed</RCode> (branches : <RCode>changes_requested</RCode>, <RCode>cancelled</RCode>,{' '}
+          <RCode>error</RCode>).
+        </p>
+        <p style={{ marginTop: 8 }}>
+          Tu contrôles draft/ready/changes_requested/approved/cancelled ; l'agent externe contrôle le reste.
+          Un seul cycle actif à la fois — en démarrer un nouveau clôture automatiquement l'ancien. Le budget et
+          la présence Julie/Éliane ne se ressaisissent pas ici : lus directement depuis Config et "Présence
+          cette semaine".
+        </p>
+      </ReadmeSection>
+
+      <ReadmeSection title="⚡ Pièges connus">
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <li>Toutes les commandes en ligne passent par Maxi Beauport Clémenceau en pratique — le magasin
+            sélectionné dans Config détermine le stock affiché dans Circulaire, choisis Clémenceau pour un
+            stock représentatif.</li>
+          <li>Le token expire vite (~1h) : si <RCode>/commande</RCode> ou une sync échoue, c'est souvent ça —{' '}
+            <RCode>/status_token</RCode> confirme.</li>
+          <li>Une commande fraîchement passée peut prendre quelques minutes avant d'apparaître côté Maxi —{' '}
+            <RCode>/commande</RCode> ne touche jamais au panier tant qu'elle n'est pas trouvée.</li>
+        </ul>
+      </ReadmeSection>
     </div>
   );
 }
