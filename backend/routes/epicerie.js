@@ -398,29 +398,43 @@ router.delete('/product-rules/:id', async (req, res) => {
 });
 
 // POST /api/epicerie/token  (sauvegarde le token Maxi chiffre)
+// Le JWT Maxi encode sa propre expiration (claim `exp`, epoch seconds) --
+// utilise comme fallback quand expires_at n'est pas fourni explicitement
+// (ex: token colle via Telegram, pas de champ date a remplir la-bas).
+function decodeJwtExpiry(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+    return payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveMaxiToken(sb, token, expiresAt) {
+  const encKey = process.env.ENCRYPTION_KEY;
+  if (!encKey) throw new Error('ENCRYPTION_KEY manquante');
+  const encrypted = CryptoJS.AES.encrypt(token, encKey).toString();
+  const { error } = await sb.from('grocery_secrets').upsert(
+    {
+      key: 'maxi_access_token',
+      value_encrypted: encrypted,
+      captured_at: new Date().toISOString(),
+      expires_at: expiresAt || decodeJwtExpiry(token),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+  if (error) throw error;
+  // token frais = bon moment pour rattraper les commandes manquantes
+  return syncMaxiOrders(sb);
+}
+
 router.post('/token', async (req, res) => {
   try {
     const { token, expires_at } = req.body;
     if (!token) return res.status(400).json({ success: false, error: 'token requis' });
-    const encKey = process.env.ENCRYPTION_KEY;
-    if (!encKey) throw new Error('ENCRYPTION_KEY manquante');
-
-    const encrypted = CryptoJS.AES.encrypt(token, encKey).toString();
     const sb = getSupabase();
-    const { error } = await sb.from('grocery_secrets').upsert(
-      {
-        key: 'maxi_access_token',
-        value_encrypted: encrypted,
-        captured_at: new Date().toISOString(),
-        expires_at: expires_at || null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'key' }
-    );
-    if (error) throw error;
-
-    // token frais = bon moment pour rattraper les commandes manquantes
-    const syncResult = await syncMaxiOrders(sb);
+    const syncResult = await saveMaxiToken(sb, token, expires_at || null);
     res.json({ success: true, sync: syncResult });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -1066,10 +1080,27 @@ async function sendTelegramMessage(chatId, text) {
   });
 }
 
-// Snapshot du panier actif (avant reset) + sync de l'historique Maxi (pour
-// aller chercher la commande qui vient d'etre passee) + diff par article_number.
-// N'efface PAS le panier -- l'appelant decide s'il fait le reset apres coup.
+// /historical-orders (utilise par syncMaxiOrders) ne montre une commande
+// qu'une fois pleinement traitee/livree cote Maxi -- delai decouvert au
+// premier test reel (commande invisible plusieurs minutes apres checkout).
+// Cet endpoint-ci montre les commandes EN COURS (soumise, prete pour
+// ramassage/livraison, etc.) immediatement apres le checkout.
+const MAXI_ORDERS_STATUS_URL = `${MAXI_API_BASE}/orders?status=SUBMITTED,READY_FOR_ACTION,READY_FOR_PICK_UP,COMPLETED`;
+
+async function fetchPendingOrders(token) {
+  const res = await fetch(MAXI_ORDERS_STATUS_URL, { headers: { ...MAXI_API_HEADERS_BASE, Authorization: `bearer ${token}` } });
+  if (!res.ok) throw new Error(`Erreur API Maxi orders-status (${res.status})`);
+  const data = await res.json();
+  return data.orders || [];
+}
+
+// Snapshot du panier actif (avant reset) + lecture des commandes en cours
+// (pas l'historique -- voir MAXI_ORDERS_STATUS_URL ci-dessus) + diff par
+// article_number. N'efface PAS le panier -- l'appelant decide du reset.
 async function compareCartToLastOrder(sb) {
+  const { token, expired } = await getMaxiToken(sb);
+  if (!token || expired) return { success: false, error: 'Token Maxi expiré ou manquant.' };
+
   const { data: weekRow, error: weekErr } = await sb
     .from('grocery_cart_queue')
     .select('week_of')
@@ -1085,35 +1116,20 @@ async function compareCartToLastOrder(sb) {
     .eq('week_of', weekOf);
   if (cartErr) throw cartErr;
 
-  const syncResult = await syncMaxiOrders(sb);
-  if (!syncResult.success) {
-    return { success: false, error: `Sync Maxi échouée: ${syncResult.error}`, sync: syncResult };
-  }
-  if (!syncResult.new_orders) {
-    // Pas de nouvelle commande trouvee -- probablement pas encore visible dans
-    // l'historique Maxi (delai de traitement cote Maxi apres un checkout).
-    // Ne PAS comparer au dernier ordre connu (serait perime) ni vider le panier.
+  const pendingOrders = await fetchPendingOrders(token);
+  if (!pendingOrders.length) {
     return {
       success: false,
-      error: "Aucune nouvelle commande trouvée sur Maxi depuis le dernier sync -- elle n'est peut-être pas encore visible dans l'historique (délai de traitement côté Maxi après un checkout). Réessaie dans quelques minutes, le panier n'a pas été touché.",
-      sync: syncResult,
+      error: "Aucune commande en cours trouvée sur Maxi -- elle n'est peut-être pas encore visible côté serveur juste après le checkout. Réessaie dans quelques minutes, le panier n'a pas été touché.",
     };
   }
 
-  const { data: lastOrderRows, error: lastOrderErr } = await sb
-    .from('grocery_orders')
-    .select('id, order_number, order_date')
-    .order('order_date', { ascending: false })
-    .limit(1);
-  if (lastOrderErr) throw lastOrderErr;
-  const lastOrder = lastOrderRows?.[0];
-  if (!lastOrder) return { success: false, error: 'Aucune commande trouvée dans l\'historique Maxi.', sync: syncResult };
-
-  const { data: orderLines, error: linesErr } = await sb
-    .from('grocery_purchase_history')
-    .select('article_number, quantity, total_price')
-    .eq('order_id', lastOrder.id);
-  if (linesErr) throw linesErr;
+  // la plus recente si plusieurs commandes en cours (cas rare)
+  const order = [...pendingOrders].sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+  const entries = order.cart?.entries || [];
+  const orderLines = entries
+    .map((e) => ({ article_number: e.product?.articleNumber ? String(e.product.articleNumber) : null, quantity: e.quantity, total_price: e.totalPrice }))
+    .filter((l) => l.article_number);
 
   const orderByArticle = new Map(orderLines.map((l) => [l.article_number, l]));
   const cartByArticle = new Map(cartItems.map((it) => [it.article_number, it]));
@@ -1125,13 +1141,13 @@ async function compareCartToLastOrder(sb) {
   return {
     success: true,
     week_of: weekOf,
-    order_number: lastOrder.order_number,
-    order_date: lastOrder.order_date,
+    order_number: order.cart?.orderNumber ? String(order.cart.orderNumber) : String(order.id),
+    order_date: order.created,
+    delivery_status: order.deliveryStatus || null,
     planned_count: cartItems.length,
     matched_count: matchedCount,
     missing,
     extra,
-    sync: syncResult,
   };
 }
 
@@ -1140,6 +1156,7 @@ async function persistComparison(sb, comparison, triggeredBy) {
     week_of: comparison.week_of,
     order_number: comparison.order_number,
     order_date: comparison.order_date,
+    delivery_status: comparison.delivery_status || null,
     planned_count: comparison.planned_count,
     matched_count: comparison.matched_count,
     missing_items: comparison.missing,
@@ -1148,9 +1165,17 @@ async function persistComparison(sb, comparison, triggeredBy) {
   });
 }
 
+const DELIVERY_STATUS_LABELS = {
+  SUBMITTED: 'soumise',
+  READY_FOR_ACTION: 'en préparation',
+  READY_FOR_PICK_UP: 'prête pour ramassage/livraison',
+  COMPLETED: 'complétée',
+};
+
 function formatComparisonMessage(comparison) {
+  const statusLabel = DELIVERY_STATUS_LABELS[comparison.delivery_status] || comparison.delivery_status || 'statut inconnu';
   const lines = [
-    `✅ Commande #${comparison.order_number} comparée au panier planifié (semaine du ${comparison.week_of}).`,
+    `✅ Commande #${comparison.order_number} (${statusLabel}) comparée au panier planifié (semaine du ${comparison.week_of}).`,
     `${comparison.matched_count}/${comparison.planned_count} items planifiés retrouvés dans la commande.`,
   ];
   if (comparison.missing.length) {
@@ -1202,14 +1227,30 @@ router.post('/telegram-webhook', async (req, res) => {
     if (text === '/status') {
       const { token, expired } = await getMaxiToken(sb);
       const status = !token ? 'Aucun token enregistré.' : expired ? '⚠️ Token expiré.' : '✅ Token valide.';
-      await sendTelegramMessage(chatId, `Statut token Maxi: ${status}`);
+      const hint = !token || expired ? '\nRéponds avec /token <ton_nouveau_token> pour le mettre à jour directement ici.' : '';
+      await sendTelegramMessage(chatId, `Statut token Maxi: ${status}${hint}`);
+      return;
+    }
+
+    if (text.startsWith('/token')) {
+      const newToken = text.slice('/token'.length).trim();
+      if (!newToken) {
+        await sendTelegramMessage(chatId, "❌ Envoie /token suivi du token collé juste après (ex: /token eyJ...).");
+        return;
+      }
+      try {
+        await saveMaxiToken(sb, newToken, null);
+        await sendTelegramMessage(chatId, '✅ Token Maxi mis à jour et commandes synchronisées.');
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Erreur en sauvegardant le token: ${err.message}`);
+      }
       return;
     }
 
     if (text === '/reset') {
       const { token, expired } = await getMaxiToken(sb);
       if (!token || expired) {
-        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Va sur mitchbi.com > Épicerie > Config pour le renouveler avant de comparer.');
+        await sendTelegramMessage(chatId, '⚠️ Token Maxi expiré ou manquant. Réponds avec /token <ton_nouveau_token> puis renvoie /reset.');
         return;
       }
       const comparison = await compareCartToLastOrder(sb);
@@ -1238,6 +1279,34 @@ router.get('/order-comparisons', async (req, res) => {
       .limit(limit);
     if (error) throw error;
     res.json({ success: true, comparisons: data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/epicerie/pending-orders -- commandes en cours (pas encore livrees/
+// dans l'historique), lecture directe depuis Maxi, rien de persiste ici.
+router.get('/pending-orders', async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { token, expired } = await getMaxiToken(sb);
+    if (!token || expired) return res.json({ success: false, error: 'Token Maxi expiré ou manquant.' });
+
+    const orders = await fetchPendingOrders(token);
+    const mapped = orders
+      .sort((a, b) => new Date(b.created) - new Date(a.created))
+      .map((o) => ({
+        id: o.id,
+        order_number: o.cart?.orderNumber ? String(o.cart.orderNumber) : String(o.id),
+        created: o.created,
+        delivery_status: o.deliveryStatus || null,
+        delivery_status_label: DELIVERY_STATUS_LABELS[o.deliveryStatus] || o.deliveryStatus || 'statut inconnu',
+        pickup_start_date: o.cart?.booking?.pickupStartDate || null,
+        store_name: o.cart?.booking?.pickupLocation?.name || null,
+        total_items: o.cart?.totalItems ?? null,
+        total_price: o.cart?.totalPrice ?? null,
+      }));
+    res.json({ success: true, orders: mapped });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
