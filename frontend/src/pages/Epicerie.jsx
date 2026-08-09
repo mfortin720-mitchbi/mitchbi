@@ -126,6 +126,7 @@ function ConfigTab() {
   const [refreshingFlyer, setRefreshingFlyer] = useState(false);
   const [budgetInputs, setBudgetInputs] = useState({ tier_1_min: '40', tier_1_max: '100', tier_2_min: '100', tier_2_max: '160', tier_3_min: '160', tier_3_max: '220' });
   const [selectedTier, setSelectedTier] = useState('1');
+  const [showTierSettings, setShowTierSettings] = useState(false);
   const [newBlacklistRule, setNewBlacklistRule] = useState({ article_number: '', notes: '' });
   const bookmarkletRef = useRef(null);
 
@@ -411,25 +412,46 @@ function ConfigTab() {
 
       {/* Paliers de budget -- pour le prochain panier */}
       <div style={card}>
-        <div style={label}>Palier de budget — prochain panier</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={label}>Palier de budget — prochain panier</div>
+          <button style={{ ...btn('#333'), padding: '4px 10px', fontSize: 11 }} onClick={() => setShowTierSettings((v) => !v)}>
+            {showTierSettings ? 'Fermer' : '⚙ Modifier les paliers'}
+          </button>
+        </div>
         <p style={{ fontSize: 12, color: MUTED, margin: '0 0 12px' }}>
           Sélectionne le palier qui définit combien de produits l'algo de génération doit viser pour la prochaine commande.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: showTierSettings ? 16 : 0 }}>
           {['1', '2', '3'].map((tier) => (
-            <label key={tier} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#ddd', cursor: 'pointer' }}>
-              <input type="radio" name="budget-tier" checked={selectedTier === tier} onChange={() => selectBudgetTier(tier)} disabled={saving} />
-              <span style={{ width: 60 }}>Palier {tier}</span>
-              <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_min`]}
-                onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_min`]: e.target.value })} />
-              <span style={{ color: MUTED }}>$ à</span>
-              <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_max`]}
-                onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_max`]: e.target.value })} />
-              <span style={{ color: MUTED }}>$</span>
-            </label>
+            <button key={tier} onClick={() => selectBudgetTier(tier)} disabled={saving}
+              style={{
+                flex: 1, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                border: selectedTier === tier ? `1px solid ${BLUE}` : '0.5px solid #2a2e3f',
+                background: selectedTier === tier ? '#1a1a2b' : '#0f1117',
+              }}>
+              <div style={{ fontSize: 13, color: selectedTier === tier ? '#fff' : '#ddd', fontWeight: 600 }}>Palier {tier}</div>
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{budgetInputs[`tier_${tier}_min`]}$ à {budgetInputs[`tier_${tier}_max`]}$</div>
+            </button>
           ))}
         </div>
-        <button style={btn(BLUE)} onClick={saveBudgetTiers} disabled={saving}>Sauvegarder les paliers</button>
+        {showTierSettings && (
+          <div style={{ borderTop: '0.5px solid #2a2e3f', paddingTop: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {['1', '2', '3'].map((tier) => (
+                <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#ddd' }}>
+                  <span style={{ width: 60 }}>Palier {tier}</span>
+                  <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_min`]}
+                    onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_min`]: e.target.value })} />
+                  <span style={{ color: MUTED }}>$ à</span>
+                  <input style={{ ...input, width: 70 }} type="number" min="0" value={budgetInputs[`tier_${tier}_max`]}
+                    onChange={(e) => setBudgetInputs({ ...budgetInputs, [`tier_${tier}_max`]: e.target.value })} />
+                  <span style={{ color: MUTED }}>$</span>
+                </div>
+              ))}
+            </div>
+            <button style={btn(BLUE)} onClick={saveBudgetTiers} disabled={saving}>Sauvegarder les paliers</button>
+          </div>
+        )}
       </div>
 
       {/* Presence Eliane/Julie */}
@@ -810,7 +832,21 @@ function OrdersTab() {
   const [comparisons, setComparisons] = useState([]);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshingPending, setRefreshingPending] = useState(false);
   const [openOrderId, setOpenOrderId] = useState(null);
+  const [openPendingId, setOpenPendingId] = useState(null);
+  const [openComparisonId, setOpenComparisonId] = useState(null);
+
+  const loadPendingOrders = useCallback(async () => {
+    setRefreshingPending(true);
+    try {
+      const res = await apiFetch('/api/epicerie/pending-orders');
+      const json = await res.json();
+      if (json.success) setPendingOrders(json.orders);
+    } finally {
+      setRefreshingPending(false);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -839,7 +875,12 @@ function OrdersTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {pendingOrders.length > 0 && (
         <div style={card}>
-          <div style={label}>Commande(s) en cours (pas encore dans l'historique)</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={label}>Commande(s) en cours (pas encore dans l'historique) — clique une ligne pour voir les produits</div>
+            <button style={{ ...btn('#333'), padding: '4px 10px', fontSize: 11 }} onClick={loadPendingOrders} disabled={refreshingPending}>
+              {refreshingPending ? 'Rafraîchissement...' : '↻ Rafraîchir'}
+            </button>
+          </div>
           <div style={{ overflowX: 'auto', marginTop: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -855,15 +896,28 @@ function OrdersTab() {
               </thead>
               <tbody>
                 {pendingOrders.map((o) => (
-                  <tr key={o.id}>
-                    <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>#{o.order_number}</td>
-                    <td style={tdCompact}>{new Date(o.created).toLocaleString('fr-CA')}</td>
-                    <td style={{ ...tdCompact, color: GOLD }}>{o.delivery_status_label}</td>
-                    <td style={{ ...tdCompact, color: MUTED }}>{o.pickup_start_date ? new Date(o.pickup_start_date).toLocaleString('fr-CA') : '—'}</td>
-                    <td style={{ ...tdCompact, color: MUTED }}>{o.store_name || '—'}</td>
-                    <td style={tdCompact}>{o.total_items ?? '—'}</td>
-                    <td style={tdCompact}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
-                  </tr>
+                  <Fragment key={o.id}>
+                    <tr onClick={() => setOpenPendingId(openPendingId === o.id ? null : o.id)} style={{ cursor: 'pointer' }}>
+                      <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>{openPendingId === o.id ? '▾ ' : '▸ '}#{o.order_number}</td>
+                      <td style={tdCompact}>{new Date(o.created).toLocaleString('fr-CA')}</td>
+                      <td style={{ ...tdCompact, color: GOLD }}>{o.delivery_status_label}</td>
+                      <td style={{ ...tdCompact, color: MUTED }}>{o.pickup_start_date ? new Date(o.pickup_start_date).toLocaleString('fr-CA') : '—'}</td>
+                      <td style={{ ...tdCompact, color: MUTED }}>{o.store_name || '—'}</td>
+                      <td style={tdCompact}>{o.total_items ?? '—'}</td>
+                      <td style={tdCompact}>{o.total_price != null ? `${Number(o.total_price).toFixed(2)}$` : '—'}</td>
+                    </tr>
+                    {openPendingId === o.id && (o.items || []).map((it) => (
+                      <tr key={it.article_number} style={{ background: '#14161f' }}>
+                        <td style={tdCompact}>
+                          {it.image_url && <img className="ep-thumb" src={it.image_url} alt="" style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4, background: '#fff' }} />}
+                        </td>
+                        <td colSpan={2} style={{ ...tdCompact, textTransform: 'lowercase' }}>{it.product_name}</td>
+                        <td style={{ ...tdCompact, color: MUTED }}>{it.brand?.toLowerCase() || '—'}</td>
+                        <td style={{ ...tdCompact, color: MUTED }}>x{it.quantity}</td>
+                        <td colSpan={2} style={tdCompact}>{it.total_price != null ? `${Number(it.total_price).toFixed(2)}$` : '—'}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -872,7 +926,7 @@ function OrdersTab() {
       )}
       {comparisons.length > 0 && (
         <div style={card}>
-          <div style={label}>Derniers comparatifs (panier planifié vs commande réelle)</div>
+          <div style={label}>Derniers comparatifs (panier planifié vs commande réelle) — clique une ligne pour le détail</div>
           <div style={{ overflowX: 'auto', marginTop: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -888,17 +942,51 @@ function OrdersTab() {
               </thead>
               <tbody>
                 {comparisons.map((c) => (
-                  <tr key={c.id}>
-                    <td style={tdCompact}>{new Date(c.compared_at).toLocaleString('fr-CA')}</td>
-                    <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>#{c.order_number}</td>
-                    <td style={{ ...tdCompact, color: MUTED }}>{new Date(c.week_of).toLocaleDateString('fr-CA')}</td>
-                    <td style={tdCompact}>{c.matched_count}/{c.planned_count}</td>
-                    <td style={{ ...tdCompact, color: c.missing_items?.length ? GOLD : MUTED }}>
-                      {c.missing_items?.length ? c.missing_items.map((m) => m.product_name).join(', ') : '—'}
-                    </td>
-                    <td style={{ ...tdCompact, color: c.extra_items?.length ? BLUE : MUTED }}>{c.extra_items?.length || 0}</td>
-                    <td style={{ ...tdCompact, color: MUTED }}>{c.triggered_by || '—'}</td>
-                  </tr>
+                  <Fragment key={c.id}>
+                    <tr onClick={() => setOpenComparisonId(openComparisonId === c.id ? null : c.id)} style={{ cursor: 'pointer' }}>
+                      <td style={tdCompact}>{openComparisonId === c.id ? '▾ ' : '▸ '}{new Date(c.compared_at).toLocaleString('fr-CA')}</td>
+                      <td style={{ ...tdCompact, color: MUTED, fontFamily: 'monospace' }}>#{c.order_number}</td>
+                      <td style={{ ...tdCompact, color: MUTED }}>{new Date(c.week_of).toLocaleDateString('fr-CA')}</td>
+                      <td style={tdCompact}>{c.matched_count}/{c.planned_count}</td>
+                      <td style={{ ...tdCompact, color: c.missing_items?.length ? GOLD : MUTED }}>{c.missing_items?.length || 0}</td>
+                      <td style={{ ...tdCompact, color: c.extra_items?.length ? BLUE : MUTED }}>{c.extra_items?.length || 0}</td>
+                      <td style={{ ...tdCompact, color: MUTED }}>{c.triggered_by || '—'}</td>
+                    </tr>
+                    {openComparisonId === c.id && (
+                      <tr>
+                        <td colSpan={7} style={{ ...tdCompact, background: '#14161f', padding: 12 }}>
+                          {(c.matched_items || []).length > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 11, color: GREEN, marginBottom: 4 }}>✓ Retrouvés dans la commande ({c.matched_items.length})</div>
+                              {c.matched_items.map((m) => (
+                                <div key={m.article_number} style={{ fontSize: 12, color: '#ddd', padding: '2px 0' }}>
+                                  {m.product_name || m.article_number} — planifié x{m.planned_quantity}, commandé x{m.quantity}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(c.missing_items || []).length > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 11, color: GOLD, marginBottom: 4 }}>⚠️ Planifiés mais absents de la commande ({c.missing_items.length})</div>
+                              {c.missing_items.map((m) => (
+                                <div key={m.article_number} style={{ fontSize: 12, color: '#ddd', padding: '2px 0' }}>{m.product_name || m.article_number}</div>
+                              ))}
+                            </div>
+                          )}
+                          {(c.extra_items || []).length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, color: BLUE, marginBottom: 4 }}>➕ Achetés mais pas planifiés ({c.extra_items.length})</div>
+                              {c.extra_items.map((m) => (
+                                <div key={m.article_number} style={{ fontSize: 12, color: '#ddd', padding: '2px 0' }}>
+                                  {m.product_name || m.article_number} — x{m.quantity}{m.total_price != null ? `, ${Number(m.total_price).toFixed(2)}$` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
