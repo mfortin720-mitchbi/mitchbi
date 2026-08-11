@@ -141,6 +141,7 @@ const AccountStatus = (acc) => {
 
 const CHALLENGE_STATUS_COLORS = { ongoing: BLUE, completed: GREEN, breached: RED, funded: '#9B59B6' };
 const CHALLENGE_STATUS_SUFFIX = { completed: ' ✓', breached: ' ✗', funded: ' 💰' };
+const PHASE2_COLOR = '#00BCD4'; // fond du badge pour toute license en phase/stage 2+ (statut "ongoing")
 
 // Numéro de phase extrait du texte libre challenge_phase (ex. "Stellar 2-Step (Phase 2)" -> 2,
 // "Alpha Pro (Stage 1)" -> 1) -- générique entre firmes plutôt que de chercher "Phase 2" en dur
@@ -573,6 +574,12 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             // qu'on veut qu'une case fasse ressortir d'elle-même plutôt que de compter sur
             // quelqu'un qui remarque un % à 3 chiffres dans le coin.
             const justReachedTarget = acc.challenge_status === 'ongoing' && progress != null && progress >= 100;
+            // Phase 2+ prend le pas sur la couleur de statut par défaut (bleu "ongoing") -- un
+            // statut terminal (completed/breached/funded) reste prioritaire, plus important à
+            // signaler clairement que le numéro de phase.
+            const phaseBadgeColor = (acc.challenge_status === 'ongoing' && phaseNum >= 2)
+              ? PHASE2_COLOR
+              : (CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED);
             return (
               <Card
                 key={acc.login}
@@ -600,9 +607,9 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 7 }}>
                     <div style={{
                       display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                      color: CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED,
-                      background: `${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}22`,
-                      border: `0.5px solid ${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}55`
+                      color: phaseBadgeColor,
+                      background: `${phaseBadgeColor}22`,
+                      border: `0.5px solid ${phaseBadgeColor}55`
                     }}>
                       {phaseNum >= 2 && '🚀 '}{acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
                     </div>
