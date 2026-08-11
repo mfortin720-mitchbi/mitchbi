@@ -570,10 +570,20 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             const hasPosition = acc.open_positions_count > 0;
             const progress = challengeProgress(acc);
             const phaseNum = phaseNumber(acc.challenge_phase);
-            // Target atteint mais pas encore marqué "completed" dans config.py -- le cas exact
-            // qu'on veut qu'une case fasse ressortir d'elle-même plutôt que de compter sur
-            // quelqu'un qui remarque un % à 3 chiffres dans le coin.
-            const justReachedTarget = acc.challenge_status === 'ongoing' && progress != null && progress >= 100;
+            // Le vrai passage de phase = target ET un minimum de jours de trading -- pas le
+            // target seul. Découvert sur FundedNext 14114959 : le solde a dépassé le target de
+            // Phase 1 dès le 4e jour, mais la firme n'a fait avancer le compte en Phase 2 que le
+            // 5e jour (son vrai minimum). min_trading_days vient de config.py (par firme, voir
+            // trading_monitor.py) ; trading_days_count est calculé côté backend depuis
+            // trades_view. Si l'un des deux est absent (pas encore configuré), on ne bloque pas.
+            const targetReached = progress != null && progress >= 100;
+            const daysComplete = acc.min_trading_days == null || (acc.trading_days_count ?? 0) >= acc.min_trading_days;
+            const justReachedTarget = acc.challenge_status === 'ongoing' && targetReached && daysComplete;
+            // Target atteint mais jours de trading minimum pas encore comblés -- exactement le
+            // cas FundedNext qui a motivé tout ça : on ne veut plus jamais annoncer "target
+            // atteint" tant que ce n'est pas vraiment complet, mais on veut quand même montrer
+            // la progression plutôt que de rester silencieux.
+            const awaitingMinDays = acc.challenge_status === 'ongoing' && targetReached && !daysComplete;
             // Phase 2+ prend le pas sur la couleur de statut par défaut (bleu "ongoing") -- un
             // statut terminal (completed/breached/funded) reste prioritaire, plus important à
             // signaler clairement que le numéro de phase.
@@ -620,6 +630,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                         background: `${GREEN}22`, border: `0.5px solid ${GREEN}66`
                       }}>
                         🎯 Target atteint
+                      </div>
+                    ) : awaitingMinDays ? (
+                      <div title={`Target atteint mais ${acc.trading_days_count ?? 0}/${acc.min_trading_days} jours de trading requis -- pas encore un passage officiel`} style={{
+                        display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700,
+                        color: GOLD, padding: '1px 6px', borderRadius: 4,
+                        background: `${GOLD}22`, border: `0.5px solid ${GOLD}66`
+                      }}>
+                        ⏳ {acc.trading_days_count ?? 0}/{acc.min_trading_days}j
                       </div>
                     ) : progress != null && (
                       <div title="Progression vers le target" style={{

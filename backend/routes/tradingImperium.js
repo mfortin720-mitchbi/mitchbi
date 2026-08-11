@@ -22,14 +22,41 @@ const run = (query, params = {}) => getBigQuery().query({ query, params, locatio
 
 // GET /api/trading-imperium/accounts — latest state of all 6 accounts (top balance bar),
 // joined with their current challenge phase/status for the phase badge.
+//
+// trading_days_count: each firm's real pass condition is target reached AND a minimum number of
+// trading days elapsed since phase_start_date -- not target alone (confirmed on FundedNext
+// 14114959, which crossed its Phase 1 target on trading day 4 but only actually advanced to
+// Phase 2 on day 5, its real minimum). min_trading_days/trading_days_profitable_only come from
+// config.py via challenge_phases (see trading_monitor.py). Most firms count a trading day as any
+// day with >=1 closed position; The5ers requires the day to also be profitable (net_pnl on that
+// day >= 0.5% of the phase's deposit) -- trading_days_profitable_only picks which count applies.
 router.get('/accounts', async (req, res) => {
   try {
     const rows = await run(`
+      WITH daily AS (
+        SELECT login, DATE(closed_at) AS trade_day, SUM(net_pnl) AS daily_pnl
+        FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\`
+        WHERE is_closed = TRUE
+        GROUP BY login, trade_day
+      ),
+      counts AS (
+        SELECT
+          d.login,
+          COUNT(*) AS all_days,
+          COUNTIF(d.daily_pnl >= 0.005 * c.deposit) AS profitable_days
+        FROM daily d
+        JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_challenge_view\` c ON c.login = d.login
+        WHERE d.trade_day >= c.phase_start_date
+        GROUP BY d.login
+      )
       SELECT a.*,
         c.challenge_phase, c.challenge_target, c.challenge_status,
-        c.phase_start_date, c.phase_end_date, c.initial_login
+        c.phase_start_date, c.phase_end_date, c.initial_login,
+        c.min_trading_days, c.trading_days_profitable_only,
+        IF(c.trading_days_profitable_only, counts.profitable_days, counts.all_days) AS trading_days_count
       FROM \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a
       LEFT JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_challenge_view\` c USING (account_id)
+      LEFT JOIN counts ON counts.login = a.login
       ORDER BY a.license_firm, a.login
     `);
     res.json({ success: true, accounts: rows });
