@@ -139,8 +139,16 @@ const AccountStatus = (acc) => {
   return { label: '🟢 Actif', color: GREEN };
 };
 
-const CHALLENGE_STATUS_COLORS = { ongoing: BLUE, completed: GREEN, breached: RED };
-const CHALLENGE_STATUS_SUFFIX = { completed: ' ✓', breached: ' ✗' };
+const CHALLENGE_STATUS_COLORS = { ongoing: BLUE, completed: GREEN, breached: RED, funded: '#9B59B6' };
+const CHALLENGE_STATUS_SUFFIX = { completed: ' ✓', breached: ' ✗', funded: ' 💰' };
+
+// Numéro de phase extrait du texte libre challenge_phase (ex. "Stellar 2-Step (Phase 2)" -> 2,
+// "Alpha Pro (Stage 1)" -> 1) -- générique entre firmes plutôt que de chercher "Phase 2" en dur
+// dans le texte, pour rester correct si une firme a une Phase/Stage 3+.
+const phaseNumber = phaseText => {
+  const m = /(?:phase|stage)\s*(\d+)/i.exec(phaseText || '');
+  return m ? Number(m[1]) : null;
+};
 
 export default function TradingImperium({ activeTab = 'overview', onTabChange }) {
   const [accounts, setAccounts] = useState([]);
@@ -560,6 +568,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             const selected = filterLogin === acc.login;
             const hasPosition = acc.open_positions_count > 0;
             const progress = challengeProgress(acc);
+            const phaseNum = phaseNumber(acc.challenge_phase);
+            // Target atteint mais pas encore marqué "completed" dans config.py -- le cas exact
+            // qu'on veut qu'une case fasse ressortir d'elle-même plutôt que de compter sur
+            // quelqu'un qui remarque un % à 3 chiffres dans le coin.
+            const justReachedTarget = acc.challenge_status === 'ongoing' && progress != null && progress >= 100;
             return (
               <Card
                 key={acc.login}
@@ -567,7 +580,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 style={{
                   padding: '11px 12px',
                   cursor: 'pointer',
-                  border: hasPosition ? '2px solid #fff' : `0.5px solid ${firmColor(acc.license_firm)}33`,
+                  border: hasPosition
+                    ? `2px solid ${justReachedTarget ? GREEN : '#fff'}`
+                    : justReachedTarget
+                    ? `1.5px solid ${GREEN}`
+                    : `0.5px solid ${firmColor(acc.license_firm)}33`,
                   boxShadow: selected ? `0 0 0 2px ${BLUE}` : 'none'
                 }}
               >
@@ -587,9 +604,17 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       background: `${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}22`,
                       border: `0.5px solid ${CHALLENGE_STATUS_COLORS[acc.challenge_status] || MUTED}55`
                     }}>
-                      {acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
+                      {phaseNum >= 2 && '🚀 '}{acc.challenge_phase}{CHALLENGE_STATUS_SUFFIX[acc.challenge_status] || ''}
                     </div>
-                    {progress != null && (
+                    {justReachedTarget ? (
+                      <div title="Balance/équité au-dessus du target -- pas encore marqué complété dans config.py" style={{
+                        display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700,
+                        color: GREEN, padding: '1px 6px', borderRadius: 4,
+                        background: `${GREEN}22`, border: `0.5px solid ${GREEN}66`
+                      }}>
+                        🎯 Target atteint
+                      </div>
+                    ) : progress != null && (
                       <div title="Progression vers le target" style={{
                         display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600,
                         color: progressColor(progress)
