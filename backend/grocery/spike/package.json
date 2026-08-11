@@ -1,0 +1,9 @@
+{
+  "name": "grocery-spike",
+  "private": true,
+  "description": "Spike jetable — pas lié au service backend/grocery en prod",
+  "dependencies": {
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

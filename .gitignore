@@ -11,3 +11,14 @@ backend/node_modules/
 # Build
 frontend/dist/
 backend/dist/
+
+# Google Drive sync artifacts
+.tmp.driveupload/
+
+# Spike: session/screenshots jamais commités (données de compte perso)
+backend/grocery/spike/screenshots/
+backend/grocery/spike/session-state.local.json
+
+# Service grocery: secrets + deps locales
+backend/grocery/.env
+backend/grocery/node_modules/

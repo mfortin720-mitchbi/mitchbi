@@ -12,6 +12,19 @@ const MENU_ITEMS = [
     ]
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },
+  {
+    id: 'epicerie-config', icon: '🛒', label: 'Épicerie',
+    subItems: [
+      { id: 'epicerie-config', label: 'Config' },
+      { id: 'epicerie-dashboard', label: 'Dashboard' },
+      { id: 'epicerie-orders', label: 'Commandes' },
+      { id: 'epicerie-next-order', label: 'Prochaine commande' },
+      { id: 'epicerie-flyer', label: 'Circulaire' },
+      { id: 'epicerie-search', label: 'Recherche' },
+      { id: 'epicerie-agent-log', label: 'Journal des agents' },
+      { id: 'epicerie-readme', label: 'README' },
+    ]
+  },
 ];
 
 const BOTTOM_ITEMS = [
