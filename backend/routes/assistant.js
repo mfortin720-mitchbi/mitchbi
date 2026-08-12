@@ -184,26 +184,57 @@ const TOOLS = [
       },
       required: ['sql']
     }
-  },
-  {
-    name: 'save_memory',
-    description: `Enregistre une information à retenir pour les prochaines conversations (mémoire persistante). Utilise-la PROACTIVEMENT, sans attendre qu'on te le demande, dès qu'une information mérite d'être retenue :
-- 'user' : qui est l'utilisateur, ses préférences, son style de trading, son niveau de connaissance.
-- 'feedback' : une correction ou une confirmation sur ta façon de répondre ou d'analyser (ex: "ne me donne pas de chiffres sans les vérifier chronologiquement", "cette façon de simuler le P&L était la bonne approche").
-- 'project' : un fait ou une décision sur un compte/challenge/stratégie en cours (ex: un changement de RR décidé, un compte qui approche d'un seuil, pourquoi une décision a été prise).
-- 'reference' : un pointeur vers une info ou un outil externe utile pour plus tard.
-N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actuel d'un compte) -- ces données sont toujours interrogeables en direct et n'ont pas besoin d'être mémorisées. Une mémoire doit rester utile après coup : inclus le "pourquoi" si pertinent, pas juste le "quoi".`,
-    input_schema: {
-      type: 'object',
-      properties: {
-        memory_type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
-        summary: { type: 'string', description: 'Résumé en une ligne (~100 caractères).' },
-        content: { type: 'string', description: 'Contenu complet à retenir, avec le contexte/pourquoi si pertinent.' }
-      },
-      required: ['memory_type', 'summary', 'content']
-    }
   }
 ];
+
+// Outil séparé de TOOLS -- volontairement PAS mêlé à la boucle principale.
+// Il a d'abord été ajouté à TOOLS avec une instruction "utilise-le même en plein
+// milieu de l'échange", et le modèle s'est mis à l'intercaler entre des appels
+// query_bigquery pendant des analyses déjà lourdes (ex: vérification MFE
+// chronologique bougie par bougie), épuisant le budget de 8 itérations avant
+// de produire une réponse finale (bug constaté en prod le 2026-08-12). La
+// mémorisation tourne maintenant dans un second appel léger, après coup, qui
+// ne partage pas ce budget -- voir maybeExtractMemories().
+const SAVE_MEMORY_TOOL = {
+  name: 'save_memory',
+  description: `Enregistre une information à retenir pour les prochaines conversations (mémoire persistante). Utilise-la dès qu'une information mérite d'être retenue :
+- 'user' : qui est l'utilisateur, ses préférences, son style de trading, son niveau de connaissance.
+- 'feedback' : une correction ou une confirmation sur la façon de répondre ou d'analyser (ex: "ne pas donner de chiffres sans les vérifier chronologiquement", "cette façon de simuler le P&L était la bonne approche").
+- 'project' : un fait ou une décision sur un compte/challenge/stratégie en cours (ex: un changement de RR décidé, un compte qui approche d'un seuil, pourquoi une décision a été prise).
+- 'reference' : un pointeur vers une info ou un outil externe utile pour plus tard.
+N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actuel d'un compte) -- ces données sont toujours interrogeables en direct et n'ont pas besoin d'être mémorisées. Une mémoire doit rester utile après coup : inclus le "pourquoi" si pertinent, pas juste le "quoi". Appelle l'outil une fois par élément distinct à retenir (0, 1 ou plusieurs appels).`,
+  input_schema: {
+    type: 'object',
+    properties: {
+      memory_type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
+      summary: { type: 'string', description: 'Résumé en une ligne (~100 caractères).' },
+      content: { type: 'string', description: 'Contenu complet à retenir, avec le contexte/pourquoi si pertinent.' }
+    },
+    required: ['memory_type', 'summary', 'content']
+  }
+};
+
+async function maybeExtractMemories(email, userText, assistantText) {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 1024,
+      system: `Tu relis un échange entre l'utilisateur et NexusIQ (l'assistant AI de MitchBI) pour décider ce qui mérite d'être retenu pour les prochaines conversations. Appelle save_memory pour chaque élément distinct qui vaut la peine d'être mémorisé (préférence exprimée, correction/confirmation sur une façon de faire, décision ou fait de projet important). S'il n'y a rien à retenir de cet échange précis (ex: une simple question factuelle déjà répondue via les données), n'appelle aucun outil. Ne produis aucun texte, uniquement des appels d'outil ou rien.`,
+      tools: [SAVE_MEMORY_TOOL],
+      messages: [
+        { role: 'user', content: userText },
+        { role: 'assistant', content: assistantText },
+      ]
+    });
+    for (const block of response.content) {
+      if (block.type === 'tool_use' && block.name === 'save_memory') {
+        await saveMemory(email, block.input);
+      }
+    }
+  } catch (e) {
+    console.error('[assistant] maybeExtractMemories failed:', e.message);
+  }
+}
 
 function buildSystemPrompt(email, memoryContext) {
   return `Tu es NexusIQ, l'assistant AI personnel de ${email} pour MitchBI.
@@ -221,11 +252,6 @@ Voici tout ce qu'il faut savoir sur le pipeline et les processus (extrait du REA
 ${README_CONTEXT}
 
 ${memoryContext ? `MÉMOIRE -- ce que tu as retenu de vos échanges précédents (le plus récent en dernier), utilise-la pour rester cohérent d'une conversation à l'autre sans qu'on ait à tout te répéter :\n${memoryContext}\n` : ''}
-Tu as l'obligation d'utiliser l'outil save_memory pour enregistrer ce qui mérite d'être retenu de CETTE
-conversation -- ne te limite pas aux cas où on te le demande explicitement. Fais-le dès qu'une préférence,
-une correction, une décision ou un fait de projet important apparaît, même en plein milieu de l'échange,
-pas seulement à la toute fin.
-
 Tu es direct, précis et professionnel. Tu réponds en français sauf si on te parle en anglais. Cite les
 chiffres exacts retournés par query_bigquery, n'invente jamais de valeur.
 
@@ -282,9 +308,6 @@ router.post('/', async (req, res) => {
           if (block.name === 'query_bigquery') {
             const rows = await queryBigQuery(block.input.sql);
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(rows).slice(0, 8000) });
-          } else if (block.name === 'save_memory') {
-            await saveMemory(email, block.input);
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Mémorisé.' });
           } else {
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: `Outil inconnu: ${block.name}`, is_error: true });
           }
@@ -298,6 +321,14 @@ router.post('/', async (req, res) => {
     const reply = finalText || "Désolé, je n'ai pas pu générer de réponse.";
     await logConversation(email, 'assistant', reply);
     res.json({ response: reply });
+
+    // Fire-and-forget: décide après coup si quelque chose de cet échange mérite
+    // d'être mémorisé. Ne bloque pas la réponse et ne partage pas le budget
+    // d'itérations de la boucle principale (voir commentaire sur SAVE_MEMORY_TOOL).
+    if (finalText && lastUserMsg?.role === 'user') {
+      const userText = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
+      maybeExtractMemories(email, userText, reply).catch(e => console.error('[assistant] memory extraction error:', e.message));
+    }
   } catch (err) {
     console.error('Assistant error:', err);
     res.status(500).json({ error: err.message });
