@@ -66,6 +66,38 @@ router.get('/accounts', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/ea-config — latest EA attach status + config dump per account,
+// parsed by trading_monitor.py from the EA's own print() log (MQL5/Logs/*.log, not the terminal
+// Journal) -- config_json is returned parsed so the frontend can read `.attached`, `.reason`,
+// `.config` (flat "Section.Key" -> value strings) directly.
+router.get('/ea-config', async (req, res) => {
+  try {
+    const rows = await run(`
+      SELECT account_id, login, ea_version, change_reason, recorded_at, config_json
+      FROM \`${PROJECT_ID}.${DATASET_ID}.latest_ea_config_view\`
+      ORDER BY account_id
+    `);
+    const configs = rows.map(r => {
+      let parsed = null;
+      try { parsed = JSON.parse(r.config_json); } catch (e) { /* leave null on malformed JSON */ }
+      return {
+        account_id: r.account_id,
+        login: r.login,
+        ea_version: r.ea_version,
+        recorded_at: r.recorded_at,
+        attached: parsed?.attached ?? null,
+        reason: parsed?.reason ?? null,
+        at: parsed?.at ?? null,
+        config: parsed?.config ?? null,
+      };
+    });
+    res.json({ success: true, configs });
+  } catch (err) {
+    console.error('[trading-imperium] ea-config error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/history?login=&firm=&symbol=&days= — daily balance evolution for charts
 router.get('/history', async (req, res) => {
   try {

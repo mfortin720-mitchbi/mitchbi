@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { apiFetch } from '../services/api';
 
 const GREEN = '#1D9E75';
@@ -155,6 +155,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [events, setEvents] = useState([]);
+  const [eaConfigs, setEaConfigs] = useState([]); // état/config EA par compte, voir loadEaConfigs
+  const [eaModalLogin, setEaModalLogin] = useState(null); // login affiché dans la popup [EA], null = fermée
 
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
@@ -190,6 +192,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       if (d.success) setAccounts(d.accounts);
     } catch (e) { console.error(e); }
     finally { setLoadingAccounts(false); }
+  };
+
+  const loadEaConfigs = async () => {
+    try {
+      const res = await apiFetch('/api/trading-imperium/ea-config');
+      const d = await res.json();
+      if (d.success) setEaConfigs(d.configs);
+    } catch (e) { console.error(e); }
   };
 
   const loadEvents = async () => {
@@ -242,7 +252,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { if (!silent) setLoadingChart(false); }
   };
 
-  useEffect(() => { loadAccounts(); loadEvents(); }, []);
+  useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
@@ -656,7 +666,28 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <div><div style={{ fontSize: 10, color: MUTED }}>P&amp;L</div><div style={{ fontSize: 12, color: acc.pnl >= 0 ? GREEN : RED }}>{fmtMoney(acc.pnl)} ({fmtPct(acc.pnl_pct)})</div></div>
                   <div><div style={{ fontSize: 10, color: MUTED }}>DRAWDOWN</div><div style={{ fontSize: 12, color: acc.drawdown_pct > 0 ? RED : '#ccc' }}>{fmtPct(acc.drawdown_pct)}</div></div>
                 </div>
-                <div style={{ fontSize: 10, color: MUTED }}>{acc.open_positions_count} position(s) · maj {fmtDateTime(acc.last_updated?.value || acc.last_updated)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <div style={{ fontSize: 10, color: MUTED }}>{acc.open_positions_count} position(s) · maj {fmtDateTime(acc.last_updated?.value || acc.last_updated)}</div>
+                  {(() => {
+                    const eaConfig = eaConfigs.find(c => c.login === acc.login);
+                    if (!eaConfig) return null;
+                    const detached = eaConfig.attached === false;
+                    return (
+                      <button
+                        onClick={e => { e.stopPropagation(); setEaModalLogin(acc.login); }}
+                        title={detached ? `EA détaché : ${eaConfig.reason || ''}` : 'Voir la config EA'}
+                        style={{
+                          flexShrink: 0, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                          cursor: 'pointer', color: detached ? RED : MUTED,
+                          background: detached ? `${RED}22` : 'transparent',
+                          border: `0.5px solid ${detached ? RED : MUTED}55`
+                        }}
+                      >
+                        {detached ? '⚠ EA' : '⚙ EA'}
+                      </button>
+                    );
+                  })()}
+                </div>
               </Card>
             );
           })}
@@ -1106,6 +1137,156 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
           )}
         </Card>
       )}
+
+      {/* ── Config EA (comparatif entre licenses) ──────────────────────── */}
+      {activeTab === 'config' && (
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          {eaConfigs.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>Aucune config EA disponible.</div>
+          ) : (() => {
+            // Regroupe par section (le préfixe avant le premier "." -- "Risk", "Strategy",
+            // "Minimum trading days") -- l'union de toutes les clés vues sur tous les comptes,
+            // au cas où des variantes d'EA différentes n'ont pas exactement les mêmes paramètres.
+            const sections = {};
+            eaConfigs.forEach(c => {
+              Object.keys(c.config || {}).forEach(key => {
+                const [section, ...rest] = key.split('.');
+                const label = rest.join('.');
+                (sections[section] ||= new Set()).add(label);
+              });
+            });
+            const sortedAccounts = [...accounts].sort((a, b) =>
+              (a.license_firm || '').localeCompare(b.license_firm || '') || a.login - b.login
+            );
+            const cellStyle = { padding: '7px 12px', borderBottom: '0.5px solid #1a1d27', color: '#ccc', fontSize: 12, whiteSpace: 'nowrap' };
+            const headStyle = { padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em', color: MUTED, textAlign: 'left', position: 'sticky', top: 0, background: '#13151f' };
+            return (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '0.5px solid #1e2130' }}>
+                      <th style={headStyle}>Paramètre</th>
+                      {sortedAccounts.map(acc => (
+                        <th key={acc.login} style={headStyle}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: firmColor(acc.license_firm), flexShrink: 0 }} />
+                            {acc.license_firm} — {acc.login}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ ...cellStyle, fontWeight: 600, color: '#fff' }}>Statut EA</td>
+                      {sortedAccounts.map(acc => {
+                        const cfg = eaConfigs.find(c => c.login === acc.login);
+                        const detached = cfg?.attached === false;
+                        return (
+                          <td key={acc.login} style={{ ...cellStyle, color: detached ? RED : GREEN, fontWeight: 600 }}
+                              title={detached ? cfg?.reason : ''}>
+                            {cfg ? (detached ? '⚠ Détaché' : '● Attaché') : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    <tr>
+                      <td style={{ ...cellStyle, fontWeight: 600, color: '#fff' }}>Version EA</td>
+                      {sortedAccounts.map(acc => {
+                        const cfg = eaConfigs.find(c => c.login === acc.login);
+                        return <td key={acc.login} style={cellStyle}>{cfg?.ea_version || '—'}</td>;
+                      })}
+                    </tr>
+                    {Object.entries(sections).map(([section, keys]) => (
+                      <Fragment key={section}>
+                        <tr>
+                          <td colSpan={sortedAccounts.length + 1} style={{
+                            padding: '8px 12px 4px', fontSize: 10, color: MUTED, textTransform: 'uppercase',
+                            letterSpacing: '0.05em', fontWeight: 600, borderTop: '1px solid #1e2130'
+                          }}>{section}</td>
+                        </tr>
+                        {[...keys].sort().map(label => {
+                          const isRR = label.toLowerCase().includes('risk : reward');
+                          return (
+                            <tr key={`${section}.${label}`}>
+                              <td style={{ ...cellStyle, color: isRR ? BLUE : '#ccc', fontWeight: isRR ? 700 : 400 }}>{label}</td>
+                              {sortedAccounts.map(acc => {
+                                const cfg = eaConfigs.find(c => c.login === acc.login);
+                                const val = cfg?.config?.[`${section}.${label}`];
+                                return (
+                                  <td key={acc.login} style={{ ...cellStyle, color: isRR ? BLUE : '#ccc', fontWeight: isRR ? 700 : 400 }}>
+                                    {val ?? '—'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </Card>
+      )}
+
+      {/* ── Popup config EA d'un compte (déclenchée par le badge [EA] des cases) ────────── */}
+      {eaModalLogin != null && (() => {
+        const cfg = eaConfigs.find(c => c.login === eaModalLogin);
+        const acc = accounts.find(a => a.login === eaModalLogin);
+        if (!cfg) return null;
+        const detached = cfg.attached === false;
+        return (
+          <div
+            onClick={() => setEaModalLogin(null)}
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+            }}
+          >
+            <div onClick={e => e.stopPropagation()} style={{
+              background: '#13151f', border: '0.5px solid #1e2130', borderRadius: 10,
+              padding: 20, maxWidth: 480, width: '100%', maxHeight: '80vh', overflowY: 'auto'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ fontWeight: 600, color: '#fff', fontSize: 14 }}>
+                  {acc ? `${acc.license_firm} — ${acc.login}` : eaModalLogin} · Config EA
+                </div>
+                <button onClick={() => setEaModalLogin(null)} style={{
+                  background: 'none', border: 'none', color: MUTED, fontSize: 16, cursor: 'pointer', padding: 4
+                }}>✕</button>
+              </div>
+              <div style={{ fontSize: 11, color: MUTED, marginBottom: 12 }}>{cfg.ea_version || '—'}</div>
+              <div style={{
+                fontSize: 12, fontWeight: 600, marginBottom: 12, padding: '6px 10px', borderRadius: 6,
+                color: detached ? RED : GREEN, background: detached ? `${RED}22` : `${GREEN}22`,
+                border: `0.5px solid ${detached ? RED : GREEN}55`
+              }}>
+                {detached ? '⚠ EA détaché' : '● EA attaché'} — {cfg.reason}
+              </div>
+              {Object.entries(
+                Object.entries(cfg.config || {}).reduce((acc2, [key, val]) => {
+                  const [section, ...rest] = key.split('.');
+                  (acc2[section] ||= []).push([rest.join('.'), val]);
+                  return acc2;
+                }, {})
+              ).map(([section, entries]) => (
+                <div key={section} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{section}</div>
+                  {entries.map(([label, val]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, padding: '3px 0', borderBottom: '0.5px solid #1a1d27' }}>
+                      <span style={{ color: MUTED }}>{label}</span>
+                      <span style={{ color: '#ccc', textAlign: 'right' }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
