@@ -106,21 +106,25 @@ chaque compte MT5 via l'API officielle MetaTrader5 (lecture seule, jamais d'ordr
 equity, positions ouvertes, deals fermés. Tout est envoyé dans BigQuery (royaldistributing.trading), lu
 par ce backend Express (Railway) et affiché sur mitchbi.com (Vercel).
 
-COMPTES SUIVIS (6)
+COMPTES SUIVIS (8)
 - Hola Prime — 112119 (hola_1, 50K), 112109 (hola_2, 50K), 124582 (hola_3, 25K)
-- FundedNext — 14114959 (fundednext, 50K)
-- Alpha Capital — 2779521 (alpha_1, 50K), 2779506 (alpha_2, 50K)
+- FundedNext — 14169076 (fundednext, 50K, Phase 2 -- initial_login 14114959)
+- Alpha Capital — 2779521 (alpha_1, 50K), 2779506 (alpha_2, 50K), 2860198 (alpha_3, 50K)
+- The5ers — 26571576 (the5ers_1, High Stakes V, 100K)
 account_id est la clé stable (ex. hola_3), login est le numéro MT5 réel qui change à chaque nouvelle phase
 de challenge, initial_login conserve le tout premier login pour la traçabilité.
 
 NOTIFICATIONS TELEGRAM AUTOMATIQUES
 Nouveau trade ouvert, trade fermé (P&L), suivi de challenge initié, nouvelle phase démarrée, challenge
-complété/breach/statut mis à jour.
+complété/breach/statut mis à jour, EA détaché (plus aucun nouveau trade tant qu'il n'est pas rattaché) et
+changement de config EA détecté (Risk:reward, min trading days...).
 
 COMMANDES TELEGRAM ENTRANTES
-/completed <login>, /breached <login>, /funded <login>, /ongoing <login> — login = numéro MT5 ou account_id.
-Applique un override de challenge_status pris en compte au prochain cycle (5 min), jusqu'à ce que
-config.py soit édité pour ce compte (l'édition du fichier l'emporte alors automatiquement).
+Lecture instantanée (traitées par un processus toujours actif, telegram_listener.py, pas besoin d'attendre
+le cycle de 5 min) : /listing [filtre], /status <login>, /positions, /refresh, /all.
+Override de statut (pris en compte au prochain cycle de 5 min) : /completed <login>, /breached <login>,
+/funded <login>, /ongoing <login> — login = numéro MT5 ou account_id. Reste actif jusqu'à ce que config.py
+soit édité pour ce compte (l'édition du fichier l'emporte alors automatiquement).
 
 CONFIG.PY (sur le VPS, C:\\TradingMonitor\\config.py)
 Liste MT5_ACCOUNTS, champs ajustables par compte: challenge_phase, challenge_target, challenge_status
@@ -136,10 +140,12 @@ PIÈGES CONNUS
 
 // Condensé de README_TABLES.md (repo trading-monitor) -- lineage complet des tables/vues BigQuery.
 const SCHEMA_CONTEXT = `
-LINEAGE -- 4 tables BRUTES écrites directement par trading_monitor.py (cycle de 5 min sur le VPS), tout le
+LINEAGE -- 5 tables BRUTES écrites directement par trading_monitor.py (cycle de 5 min sur le VPS), tout le
 reste est des VUES SQL calculées par-dessus (rien n'écrit dedans directement) :
   accounts_snapshot_v2 ← mt5.account_info()+positions_get()   trade_deals ← mt5.history_deals_get()
   price_bars ← mt5.copy_rates_range(symbol, M1)                challenge_phases ← config.py
+  ea_config ← logs Print() propres à l'EA (MQL5\\Logs\\, pas l'API MT5) -- config (Risk:reward, min
+  trading days...) et statut attaché/détaché
 
 DEUX IDENTIFIANTS, sens différent : account_id = étiquette interne stable (ex. 'hola_3'), ne change jamais,
 sert à tracer une license à travers ses phases. login = vrai numéro de compte MT5, CHANGE à chaque nouvelle
@@ -166,6 +172,8 @@ TABLES/VUES DISPONIBLES (accessibles via l'outil query_bigquery) :
   initial_login, firm, challenge_phase, challenge_target, deposit, challenge_status, phase_start_date,
   phase_end_date, change_reason).
 - latest_challenge_view : dernier état de challenge par account_id (le plus récent de challenge_phases).
+- ea_config : historique append-only de la config EA + statut attaché/détaché, une ligne par changement détecté.
+- latest_ea_config_view : dernier état connu de la config EA + statut attaché/détaché par account_id.
 
 PIÈGES : utilise STARTS_WITH(symbol, 'X') plutôt que = (suffixe broker .raw chez Alpha Capital). Si un trade
 semble manquer malgré une fermeture confirmée par le solde, c'est un problème MT5 connu où

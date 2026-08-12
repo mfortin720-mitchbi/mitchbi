@@ -64,9 +64,11 @@ export default function Readme() {
         <AccountRow firm="Hola Prime — 112119" login="hola_1 · 50K" color={BLUE} />
         <AccountRow firm="Hola Prime — 112109" login="hola_2 · 50K" color={BLUE} />
         <AccountRow firm="Hola Prime — 124582" login="hola_3 · 25K" color={BLUE} />
-        <AccountRow firm="FundedNext — 14114959" login="fundednext · 50K" color={GOLD} />
+        <AccountRow firm="FundedNext — 14169076 (Phase 2)" login="fundednext · 50K" color={GOLD} />
         <AccountRow firm="Alpha Capital — 2779521" login="alpha_1 · 50K" color={GREEN} />
         <AccountRow firm="Alpha Capital — 2779506" login="alpha_2 · 50K" color={GREEN} />
+        <AccountRow firm="Alpha Capital — 2860198" login="alpha_3 · 50K" color={GREEN} />
+        <AccountRow firm="The5ers — 26571576" login="the5ers_1 · 100K" color={RED} />
         <p style={{ marginTop: 10 }}>
           Chaque compte a un <Code>account_id</Code> stable (ex. <Code>hola_3</Code>) qui ne change jamais —
           c'est la clé de traçabilité. Le <Code>login</Code> (le vrai numéro de compte MT5), lui, change à
@@ -83,13 +85,25 @@ export default function Readme() {
           <li>📋 Suivi de challenge initié (première fois qu'un compte est vu)</li>
           <li>🚀 Nouvelle phase démarrée (le login a changé dans <Code>config.py</Code>)</li>
           <li>🎉 Challenge complété / ❌ Breach / 🔄 Statut mis à jour</li>
+          <li>🚨 EA détaché (l'EA d'un compte a été retiré de son graphique — plus aucun nouveau trade tant qu'il n'est pas rattaché) et ⚙️ changement de config EA détecté (ex. Risk:reward, min trading days) — lu directement dans les logs <Code>Print()</Code> de l'EA, pas dans MT5 lui-même.</li>
         </ul>
       </Section>
 
       <Section title="⌨️ Commandes Telegram (vous → le bot)">
         <p>
-          Envoyez une commande directement au bot pour changer le statut d'un compte sans passer par le VPS.
-          Le bot répond immédiatement avec une confirmation.
+          Deux familles de commandes. Les commandes de lecture répondent instantanément (un processus dédié,{' '}
+          <Code>telegram_listener.py</Code>, tourne en continu sur le VPS et n'attend pas le cycle de 5 min) :
+        </p>
+        <div style={{ margin: '10px 0' }}>
+          <CmdRow cmd="/listing [filtre]" desc="statut de tous les comptes (ou filtré) — solde, phase, win% 7j, boutons cliquables → /status" />
+          <CmdRow cmd="/status <login>" desc="détail d'un compte : solde/drawdown, phase, EA (attaché + R:R), jours de trading, positions ouvertes" />
+          <CmdRow cmd="/positions" desc="un petit graphique par position ouverte (toutes licences), prix depuis l'entrée" />
+          <CmdRow cmd="/refresh" desc="déclenche un cycle complet de monitoring immédiatement, sans attendre le prochain cycle de 5 min" />
+          <CmdRow cmd="/all" desc="liste toutes les commandes disponibles" />
+        </div>
+        <p>
+          Les commandes de changement de statut, elles, passent par le cycle normal (prise en compte au
+          prochain passage, max 5 min) :
         </p>
         <div style={{ margin: '10px 0' }}>
           <CmdRow cmd="/completed <login>" desc="marque le challenge comme réussi" />
@@ -99,14 +113,14 @@ export default function Readme() {
         </div>
         <p>
           <Code>&lt;login&gt;</Code> peut être le numéro MT5 (ex. <Code>124582</Code>) ou l'<Code>account_id</Code>{' '}
-          (ex. <Code>hola_3</Code>). La commande est prise en compte au prochain cycle (max 5 min), log dans
-          l'historique <Code>challenge_phases</Code> et déclenche la notification appropriée.
+          (ex. <Code>hola_3</Code>). Une commande de statut log dans l'historique <Code>challenge_phases</Code>{' '}
+          et déclenche la notification appropriée.
         </p>
         <p style={{
           background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 6,
           padding: '8px 12px', marginTop: 8, color: MUTED, fontSize: 12
         }}>
-          ⚠️ La commande reste active jusqu'à ce que vous éditiez vous-même le statut dans{' '}
+          ⚠️ Une commande de statut reste active jusqu'à ce que vous éditiez vous-même le statut dans{' '}
           <Code>config.py</Code> pour ce compte — à ce moment-là, l'édition du fichier l'emporte
           automatiquement et l'ancienne commande Telegram est ignorée. Seuls les messages envoyés depuis
           votre propre conversation avec le bot sont acceptés.
@@ -115,7 +129,7 @@ export default function Readme() {
 
       <Section title="🛠️ Éditer une license (config.py)">
         <p>
-          Toute la configuration des 6 comptes vit dans <Code>C:\TradingMonitor\config.py</Code> sur le VPS,
+          Toute la configuration des comptes vit dans <Code>C:\TradingMonitor\config.py</Code> sur le VPS,
           dans la liste <Code>MT5_ACCOUNTS</Code>. Champs à ajuster au fil d'un challenge :
         </p>
         <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
@@ -124,6 +138,7 @@ export default function Readme() {
           <li><Code>challenge_status</Code> — <Code>ongoing</Code> / <Code>completed</Code> / <Code>breached</Code> / <Code>funded</Code></li>
           <li><Code>phase_start_date</Code> / <Code>phase_end_date</Code></li>
           <li><Code>login</Code> — à changer quand la phase suivante donne un nouveau numéro de compte MT5 (le terminal doit aussi être re-loggé avec les nouveaux identifiants)</li>
+          <li><Code>min_trading_days</Code> — le minimum de jours de trading exigé par la firme pour cette phase. À ajuster manuellement si la cible de profit est atteinte avant d'avoir fait ce minimum (ex. mettre 5 si seulement 3-4 jours ont été tradés) — le badge de conformité sur mitchbi se base sur cette valeur.</li>
         </ul>
         <p>
           Aucun redémarrage nécessaire : la tâche planifiée relance <Code>trading_monitor.py</Code> à zéro
@@ -135,7 +150,7 @@ export default function Readme() {
 
       <Section title="🗄️ Schéma BigQuery (tables & lineage)">
         <p>
-          Tout vit dans <Code>royaldistributing.trading</Code>. Seulement <b>4 tables</b> sont écrites
+          Tout vit dans <Code>royaldistributing.trading</Code>. Seulement <b>5 tables</b> sont écrites
           directement par <Code>trading_monitor.py</Code> — tout le reste est des <b>vues SQL</b> calculées
           par-dessus, jamais écrites directement. Référence complète (avec le SQL de chaque vue) dans{' '}
           <Code>README_TABLES.md</Code> du repo <Code>trading-monitor</Code>.
@@ -159,6 +174,12 @@ export default function Readme() {
         <TableRow name="challenge_phases" kind="raw">
           Historique append-only des changements de phase/statut. Source : <Code>config.py</Code> (ou une
           commande Telegram), pas MT5.
+        </TableRow>
+        <TableRow name="ea_config" kind="raw">
+          Historique append-only de la config de l'EA (Risk:reward, min trading days, etc.) et de son statut
+          attaché/détaché, une ligne par changement détecté. Source : les logs <Code>Print()</Code> propres à
+          l'EA (<Code>MQL5\Logs\</Code> dans le dossier de données du terminal — différent du journal MT5
+          standard), pas l'API MT5. Alimente le badge <Code>[EA]</Code> et l'onglet Config.
         </TableRow>
 
         <div style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '14px 0 4px' }}>
@@ -185,6 +206,10 @@ export default function Readme() {
         </TableRow>
         <TableRow name="latest_challenge_view">
           Dernier état de challenge par compte — source du badge de phase sur les cases de compte.
+        </TableRow>
+        <TableRow name="latest_ea_config_view">
+          Dernier état connu de la config EA + statut attaché/détaché par compte — source du badge{' '}
+          <Code>[EA]</Code>, de son popup, et de l'onglet Config.
         </TableRow>
       </Section>
 
