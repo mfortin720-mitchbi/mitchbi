@@ -84,6 +84,7 @@ export default function Assistant({ session }) {
   };
 
   const suggestions = [
+    'Analyse mes trades perdants : combien auraient atteint +1R, +1.5R et +2R AVANT de toucher le SL (vérifié chronologiquement avec les bougies M1), et montre-moi l\'impact sur mon winrate pour chaque scénario de TP.',
     'Fais-moi un forecast pour cette semaine. Combien de licences peuvent atteindre leur target ?',
     'Résume la performance de mes 6 comptes cette semaine, en tableau',
     'Quel compte a le meilleur win rate ce mois-ci ?',

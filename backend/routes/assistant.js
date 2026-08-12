@@ -1,6 +1,7 @@
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const { BigQuery } = require('@google-cloud/bigquery');
+const { createClient } = require('@supabase/supabase-js');
 const router = express.Router();
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -27,6 +28,72 @@ async function queryBigQuery(sql) {
   }
   const [rows] = await getBigQuery().query({ query: trimmed, location: LOCATION, maxResults: 200 });
   return rows;
+}
+
+// Memoire de NexusIQ, sur Supabase (meme instance que le module Epicerie --
+// SUPABASE_URL / SUPABASE_SERVICE_KEY sont deja configures sur Railway, voir
+// routes/epicerie.js). Deux tables, deux roles distincts :
+//   assistant_memory            -- curee: l'assistant y ecrit lui-meme (outil
+//                                  save_memory) uniquement ce qui merite d'etre
+//                                  retenu (preference, correction, fait de
+//                                  projet). Relue au debut de chaque conversation
+//                                  et injectee dans le system prompt.
+//   assistant_conversation_log  -- transcript brut, une ligne par message
+//                                  (user et assistant), pour audit/relecture
+//                                  seulement -- jamais relue comme contexte.
+// RLS activee sans policy sur les deux (deny-by-default), meme convention que
+// grocery_agent_log -- seule la service key (utilisee ici) peut y ecrire/lire.
+let supabase = null;
+const getSupabase = () => {
+  if (supabase) return supabase;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_KEY env vars are not set');
+  supabase = createClient(url, key);
+  return supabase;
+};
+
+async function loadMemoryContext(email) {
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('assistant_memory')
+      .select('memory_type, summary, content, created_at')
+      .or(`user_email.eq.${email},user_email.is.null`)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
+    // Chronologique dans le prompt (plus lisible), plus recent en dernier.
+    return data.reverse()
+      .map(m => `[${m.memory_type}] ${m.summary}\n${m.content}`)
+      .join('\n\n');
+  } catch (e) {
+    console.error('[assistant] loadMemoryContext failed:', e.message);
+    return null;
+  }
+}
+
+async function saveMemory(email, { memory_type, summary, content }) {
+  const sb = getSupabase();
+  const { error } = await sb
+    .from('assistant_memory')
+    .insert({ user_email: email || null, memory_type, summary, content });
+  if (error) throw error;
+}
+
+async function logConversation(email, role, content) {
+  try {
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('assistant_conversation_log')
+      .insert({ user_email: email || null, role, content: (content || '').slice(0, 20000) });
+    if (error) throw error;
+  } catch (e) {
+    // Le transcript est un journal d'audit, pas un chemin critique -- une
+    // panne d'ecriture ne doit jamais faire echouer la conversation.
+    console.error('[assistant] logConversation failed:', e.message);
+  }
 }
 
 // Condensed copy of the README tab (frontend/src/pages/Readme.jsx) so the
@@ -109,7 +176,7 @@ sécurité (sync_missed_closures) qui le recherche directement par ticket de pos
 const TOOLS = [
   {
     name: 'query_bigquery',
-    description: `Exécute une requête SQL SELECT en lecture seule sur le dataset royaldistributing.trading (données de trading MT5 des 6 comptes prop firm). ${SCHEMA_CONTEXT}`,
+    description: `Exécute une requête SQL SELECT en lecture seule sur le dataset royaldistributing.trading (données de trading MT5 des comptes prop firm). ${SCHEMA_CONTEXT}`,
     input_schema: {
       type: 'object',
       properties: {
@@ -117,16 +184,34 @@ const TOOLS = [
       },
       required: ['sql']
     }
+  },
+  {
+    name: 'save_memory',
+    description: `Enregistre une information à retenir pour les prochaines conversations (mémoire persistante). Utilise-la PROACTIVEMENT, sans attendre qu'on te le demande, dès qu'une information mérite d'être retenue :
+- 'user' : qui est l'utilisateur, ses préférences, son style de trading, son niveau de connaissance.
+- 'feedback' : une correction ou une confirmation sur ta façon de répondre ou d'analyser (ex: "ne me donne pas de chiffres sans les vérifier chronologiquement", "cette façon de simuler le P&L était la bonne approche").
+- 'project' : un fait ou une décision sur un compte/challenge/stratégie en cours (ex: un changement de RR décidé, un compte qui approche d'un seuil, pourquoi une décision a été prise).
+- 'reference' : un pointeur vers une info ou un outil externe utile pour plus tard.
+N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actuel d'un compte) -- ces données sont toujours interrogeables en direct et n'ont pas besoin d'être mémorisées. Une mémoire doit rester utile après coup : inclus le "pourquoi" si pertinent, pas juste le "quoi".`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        memory_type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
+        summary: { type: 'string', description: 'Résumé en une ligne (~100 caractères).' },
+        content: { type: 'string', description: 'Contenu complet à retenir, avec le contexte/pourquoi si pertinent.' }
+      },
+      required: ['memory_type', 'summary', 'content']
+    }
   }
 ];
 
-function buildSystemPrompt(email) {
+function buildSystemPrompt(email, memoryContext) {
   return `Tu es NexusIQ, l'assistant AI personnel de ${email} pour MitchBI.
 
 MitchBI est actuellement composé de deux modules actifs : Trader Desk (scan d'instruments futures/DCA) et
-Trading Imperium (suivi en direct de 6 comptes MT5 en challenge prop firm). Les autres modules visibles
-dans le code (Invoices, Analytics, Scripts, Scraper, Connections génériques) sont soit désactivés soit non
-utilisés actuellement — ne prétends pas y avoir accès.
+Trading Imperium (suivi en direct de plusieurs comptes MT5 en challenge prop firm). Les autres modules
+visibles dans le code (Invoices, Analytics, Scripts, Scraper, Connections génériques) sont soit désactivés
+soit non utilisés actuellement — ne prétends pas y avoir accès.
 
 Tu as accès à l'outil query_bigquery pour répondre avec des vraies données de trading (balances, trades,
 phases de challenge, événements). Utilise-le dès qu'une question porte sur des chiffres réels plutôt que
@@ -134,6 +219,12 @@ de deviner. Tu n'as PAS accès à GitHub ni au code source du projet.
 
 Voici tout ce qu'il faut savoir sur le pipeline et les processus (extrait du README de l'app) :
 ${README_CONTEXT}
+
+${memoryContext ? `MÉMOIRE -- ce que tu as retenu de vos échanges précédents (le plus récent en dernier), utilise-la pour rester cohérent d'une conversation à l'autre sans qu'on ait à tout te répéter :\n${memoryContext}\n` : ''}
+Tu as l'obligation d'utiliser l'outil save_memory pour enregistrer ce qui mérite d'être retenu de CETTE
+conversation -- ne te limite pas aux cas où on te le demande explicitement. Fais-le dès qu'une préférence,
+une correction, une décision ou un fait de projet important apparaît, même en plein milieu de l'échange,
+pas seulement à la toute fin.
 
 Tu es direct, précis et professionnel. Tu réponds en français sauf si on te parle en anglais. Cite les
 chiffres exacts retournés par query_bigquery, n'invente jamais de valeur.
@@ -143,10 +234,10 @@ query_bigquery avec plusieurs lignes/colonnes, comparaisons, sommaires), utilise
 (| Colonne | ... |) plutôt qu'une liste ou du texte aligné manuellement -- il s'affichera comme un vrai
 tableau, pas comme du texte brut.
 
-Il y a un nombre limité d'appels à query_bigquery par message. Pour une analyse portant sur les 6 comptes
-(ex. un forecast, une comparaison), regroupe les comptes dans UNE requête (WHERE login IN (...) ou pas de
-filtre + GROUP BY login) plutôt que d'interroger chaque compte séparément -- ça évite d'épuiser tes appels
-avant d'avoir toutes les données.`;
+Il y a un nombre limité d'appels à query_bigquery par message. Pour une analyse portant sur plusieurs
+comptes (ex. un forecast, une comparaison), regroupe les comptes dans UNE requête (WHERE login IN (...) ou
+pas de filtre + GROUP BY login) plutôt que d'interroger chaque compte séparément -- ça évite d'épuiser tes
+appels avant d'avoir toutes les données.`;
 }
 
 router.post('/', async (req, res) => {
@@ -156,7 +247,16 @@ router.post('/', async (req, res) => {
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content }));
 
-    const system = buildSystemPrompt(email || 'utilisateur');
+    // Le dernier message de la liste est le tour utilisateur qu'on vient de recevoir
+    // (le frontend renvoie tout l'historique à chaque appel) -- transcript brut, audit only.
+    const lastUserMsg = messages[messages.length - 1];
+    if (lastUserMsg?.role === 'user') {
+      const text = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
+      await logConversation(email, 'user', text);
+    }
+
+    const memoryContext = await loadMemoryContext(email || null);
+    const system = buildSystemPrompt(email || 'utilisateur', memoryContext);
     let finalText = null;
 
     for (let i = 0; i < 8 && finalText === null; i++) {
@@ -179,8 +279,15 @@ router.post('/', async (req, res) => {
       for (const block of response.content) {
         if (block.type !== 'tool_use') continue;
         try {
-          const rows = await queryBigQuery(block.input.sql);
-          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(rows).slice(0, 8000) });
+          if (block.name === 'query_bigquery') {
+            const rows = await queryBigQuery(block.input.sql);
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(rows).slice(0, 8000) });
+          } else if (block.name === 'save_memory') {
+            await saveMemory(email, block.input);
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: 'Mémorisé.' });
+          } else {
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: `Outil inconnu: ${block.name}`, is_error: true });
+          }
         } catch (e) {
           toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: `Erreur: ${e.message}`, is_error: true });
         }
@@ -188,7 +295,9 @@ router.post('/', async (req, res) => {
       conversation.push({ role: 'user', content: toolResults });
     }
 
-    res.json({ response: finalText || "Désolé, je n'ai pas pu générer de réponse." });
+    const reply = finalText || "Désolé, je n'ai pas pu générer de réponse.";
+    await logConversation(email, 'assistant', reply);
+    res.json({ response: reply });
   } catch (err) {
     console.error('Assistant error:', err);
     res.status(500).json({ error: err.message });
