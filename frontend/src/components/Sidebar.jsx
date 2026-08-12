@@ -43,8 +43,12 @@ const NavButton = ({ item, active, onNavigate, collapsed, indent }) => (
     border: 'none',
     borderLeft: active ? '2px solid #378ADD' : '2px solid transparent',
     cursor: 'pointer',
-    color: active ? '#fff' : (indent ? '#666' : '#555'),
-    fontSize: indent ? 12 : 13,
+    // H1 (items de premier niveau) : bleu gras, bien visible. H2 (sous-items) : légèrement plus
+    // petit, sans gras -- distinction de hiérarchie demandée en plus d'agrandir le tout (trop
+    // petit à l'origine, "tire les yeux").
+    color: indent ? (active ? '#fff' : '#777') : (active ? '#fff' : '#378ADD'),
+    fontSize: indent ? 13 : 15,
+    fontWeight: indent ? 400 : 700,
     textAlign: 'left',
     transition: 'all 0.15s',
     whiteSpace: 'nowrap',
