@@ -1140,7 +1140,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
       {/* ── Config EA (comparatif entre licenses) ──────────────────────── */}
       {activeTab === 'config' && (
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
+        <Card style={{ padding: 0 }}>
           {eaConfigs.length === 0 ? (
             <div style={{ color: MUTED, fontSize: 13, padding: 40, textAlign: 'center' }}>Aucune config EA disponible.</div>
           ) : (() => {
@@ -1158,16 +1158,19 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             const sortedAccounts = [...accounts].sort((a, b) =>
               (a.license_firm || '').localeCompare(b.license_firm || '') || a.login - b.login
             );
-            const cellStyle = { padding: '7px 12px', borderBottom: '0.5px solid #1a1d27', color: '#ccc', fontSize: 12, whiteSpace: 'nowrap' };
-            const headStyle = { padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em', color: MUTED, textAlign: 'left', position: 'sticky', top: 0, background: '#13151f' };
+            // Colonnes de valeurs volontairement étroites avec retour à la ligne (maxWidth + wrap)
+            // plutôt que nowrap -- sinon le tableau devient illisiblement large avec 7 comptes.
+            const cellStyle = { padding: '7px 10px', borderBottom: '0.5px solid #1a1d27', color: '#ccc', fontSize: 12, textAlign: 'left', maxWidth: 110, whiteSpace: 'normal', wordBreak: 'break-word' };
+            const labelCellStyle = { ...cellStyle, maxWidth: 220, whiteSpace: 'normal', textAlign: 'left' };
+            const headStyle = { padding: '8px 10px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em', color: MUTED, textAlign: 'left', position: 'sticky', top: 0, background: '#13151f', zIndex: 1 };
             return (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflow: 'auto', maxHeight: '72vh' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                   <thead>
                     <tr style={{ borderBottom: '0.5px solid #1e2130' }}>
-                      <th style={headStyle}>Paramètre</th>
+                      <th style={{ ...headStyle, width: 220 }}>Paramètre</th>
                       {sortedAccounts.map(acc => (
-                        <th key={acc.login} style={headStyle}>
+                        <th key={acc.login} style={{ ...headStyle, width: 110 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: firmColor(acc.license_firm), flexShrink: 0 }} />
                             {acc.license_firm} — {acc.login}
@@ -1178,7 +1181,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={{ ...cellStyle, fontWeight: 600, color: '#fff' }}>Statut EA</td>
+                      <td style={{ ...labelCellStyle, fontWeight: 600, color: '#fff' }}>Statut EA</td>
                       {sortedAccounts.map(acc => {
                         const cfg = eaConfigs.find(c => c.login === acc.login);
                         const detached = cfg?.attached === false;
@@ -1191,7 +1194,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       })}
                     </tr>
                     <tr>
-                      <td style={{ ...cellStyle, fontWeight: 600, color: '#fff' }}>Version EA</td>
+                      <td style={{ ...labelCellStyle, fontWeight: 600, color: '#fff' }}>Version EA</td>
                       {sortedAccounts.map(acc => {
                         const cfg = eaConfigs.find(c => c.login === acc.login);
                         return <td key={acc.login} style={cellStyle}>{cfg?.ea_version || '—'}</td>;
@@ -1201,15 +1204,15 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       <Fragment key={section}>
                         <tr>
                           <td colSpan={sortedAccounts.length + 1} style={{
-                            padding: '8px 12px 4px', fontSize: 10, color: MUTED, textTransform: 'uppercase',
-                            letterSpacing: '0.05em', fontWeight: 600, borderTop: '1px solid #1e2130'
+                            padding: '8px 10px 4px', fontSize: 10, color: MUTED, textTransform: 'uppercase',
+                            letterSpacing: '0.05em', fontWeight: 600, borderTop: '1px solid #1e2130', textAlign: 'left'
                           }}>{section}</td>
                         </tr>
                         {[...keys].sort().map(label => {
                           const isRR = label.toLowerCase().includes('risk : reward');
                           return (
                             <tr key={`${section}.${label}`}>
-                              <td style={{ ...cellStyle, color: isRR ? BLUE : '#ccc', fontWeight: isRR ? 700 : 400 }}>{label}</td>
+                              <td style={{ ...labelCellStyle, color: isRR ? BLUE : '#ccc', fontWeight: isRR ? 700 : 400 }}>{label}</td>
                               {sortedAccounts.map(acc => {
                                 const cfg = eaConfigs.find(c => c.login === acc.login);
                                 const val = cfg?.config?.[`${section}.${label}`];
