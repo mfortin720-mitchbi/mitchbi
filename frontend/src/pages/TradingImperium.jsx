@@ -157,6 +157,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [events, setEvents] = useState([]);
   const [eaConfigs, setEaConfigs] = useState([]); // état/config EA par compte, voir loadEaConfigs
   const [eaModalLogin, setEaModalLogin] = useState(null); // login affiché dans la popup [EA], null = fermée
+  const [phaseHistory, setPhaseHistory] = useState([]); // phases/logins passés (superseded), voir loadPhaseHistory
 
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
@@ -210,6 +211,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     } catch (e) { console.error(e); }
   };
 
+  const loadPhaseHistory = async () => {
+    try {
+      const res = await apiFetch('/api/trading-imperium/phase-history');
+      const d = await res.json();
+      if (d.success) setPhaseHistory(d.phases);
+    } catch (e) { console.error(e); }
+  };
+
   const loadHistory = async () => {
     setLoadingHistory(true);
     try {
@@ -252,7 +261,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { if (!silent) setLoadingChart(false); }
   };
 
-  useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); }, []);
+  useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
 
@@ -788,6 +797,62 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
               deps={[history.length, resetEvents.length, dailyTradeCounts.length]}
             />
           )}
+        </Card>
+      )}
+
+      {/* ── Historique : phases/logins passés (superseded) ─────────────── */}
+      {activeTab === 'overview' && phaseHistory.length > 0 && (
+        <Card style={{ padding: 0, overflow: 'hidden', marginTop: 14 }}>
+          <div style={{ padding: '12px 16px 0', fontSize: 13, fontWeight: 600, color: '#fff' }}>Historique</div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
+                  {['Compte', 'Étape', 'Statut', 'Balance', 'Balance max.', 'P&L', 'Drawdown', 'Mise à jour'].map(h => (
+                    <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {phaseHistory.map((p, i) => {
+                  // Le statut brut d'une phase passée reste souvent "ongoing" (jamais explicitement
+                  // marqué "completed" avant le passage au login suivant) -- une phase superseded qui
+                  // n'est ni breached ni funded a nécessairement été réussie (sinon pas de nouveau
+                  // login pour ce même account_id), donc affichée comme complétée quel que soit le
+                  // statut brut stocké.
+                  const display = p.challenge_status === 'breached'
+                    ? { label: 'Breached', color: RED }
+                    : p.challenge_status === 'funded'
+                      ? { label: 'Funded', color: '#9B59B6' }
+                      : { label: 'Complété', color: GREEN };
+                  const pnl = p.last_balance != null && p.deposit != null ? p.last_balance - p.deposit : null;
+                  const pnlPct = pnl != null && p.deposit ? (pnl / p.deposit) * 100 : null;
+                  return (
+                    <tr key={`${p.account_id}-${p.login}-${i}`} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                      <td style={{ padding: '8px 12px', color: '#ccc' }}>
+                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: firmColor(p.firm), marginRight: 6 }} />
+                        {p.firm} — {p.login}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: '#ccc' }}>{p.challenge_phase || '—'}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                          color: display.color, background: `${display.color}22`, border: `0.5px solid ${display.color}55`
+                        }}>{display.label}</span>
+                      </td>
+                      <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>{fmtMoney(p.last_balance)}</td>
+                      <td style={{ padding: '8px 12px', color: MUTED }}>{fmtMoney(p.max_balance)}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600, color: pnl >= 0 ? GREEN : RED }}>
+                        {fmtMoney(pnl)} {pnlPct != null && `(${fmtPct(pnlPct)})`}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: GOLD }}>{p.last_drawdown != null ? `${Number(p.last_drawdown).toFixed(2)}%` : '—'}</td>
+                      <td style={{ padding: '8px 12px', color: MUTED }}>{fmtDateTime(p.last_seen?.value || p.last_seen)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 

@@ -122,6 +122,65 @@ router.get('/history', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/phase-history — one row per PAST (superseded) login/phase per
+// account, i.e. every challenge_phases login that is no longer the current one for its
+// account_id. Balance/balance_max/drawdown come from accounts_snapshot_v2 (that old login's
+// last-ever snapshot / peak balance while it was active) since challenge_phases itself doesn't
+// carry live balance data. challenge_status on the historical row is often stale ("ongoing" --
+// the old login's last row rarely gets flipped to "completed" before the switch to the new
+// login happens) so the frontend derives a display status instead of trusting it literally: any
+// non-terminal ("ongoing") historical row implicitly means the phase was passed (a newer login
+// exists for the same account_id), only "breached"/"funded" are shown as their literal status.
+router.get('/phase-history', async (req, res) => {
+  try {
+    const rows = await run(`
+      WITH ranked_phases AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY recorded_at DESC) AS rn
+        FROM \`${PROJECT_ID}.${DATASET_ID}.challenge_phases\`
+      ),
+      current_logins AS (
+        SELECT account_id, login FROM ranked_phases WHERE rn = 1
+      ),
+      phase_per_login AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY account_id, login ORDER BY recorded_at DESC) AS rn2
+        FROM \`${PROJECT_ID}.${DATASET_ID}.challenge_phases\`
+      ),
+      past_phases AS (
+        SELECT p.account_id, p.login, p.initial_login, p.firm, p.challenge_phase, p.challenge_target,
+               p.deposit, p.challenge_status, p.phase_start_date, p.phase_end_date, p.recorded_at
+        FROM phase_per_login p
+        JOIN current_logins c ON c.account_id = p.account_id
+        WHERE p.rn2 = 1 AND p.login != c.login
+      ),
+      snap_ranked AS (
+        SELECT account_id, login, balance, drawdown_pct, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY account_id, login ORDER BY timestamp DESC) AS rn3
+        FROM \`${PROJECT_ID}.${DATASET_ID}.accounts_snapshot_v2\`
+      ),
+      last_snap AS (
+        SELECT account_id, login, balance AS last_balance, drawdown_pct AS last_drawdown, timestamp AS last_seen
+        FROM snap_ranked WHERE rn3 = 1
+      ),
+      max_balance AS (
+        SELECT account_id, login, MAX(balance) AS max_balance
+        FROM \`${PROJECT_ID}.${DATASET_ID}.accounts_snapshot_v2\`
+        GROUP BY account_id, login
+      )
+      SELECT pp.account_id, pp.login, pp.initial_login, pp.firm, pp.challenge_phase, pp.challenge_target,
+        pp.deposit, pp.challenge_status, pp.phase_start_date, pp.phase_end_date, pp.recorded_at,
+        ls.last_balance, ls.last_drawdown, ls.last_seen, mb.max_balance
+      FROM past_phases pp
+      LEFT JOIN last_snap ls ON ls.account_id = pp.account_id AND ls.login = pp.login
+      LEFT JOIN max_balance mb ON mb.account_id = pp.account_id AND mb.login = pp.login
+      ORDER BY pp.recorded_at DESC
+    `);
+    res.json({ success: true, phases: rows });
+  } catch (err) {
+    console.error('[trading-imperium] phase-history error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/trades?login=&symbol=&limit= — completed round-trip trades
 router.get('/trades', async (req, res) => {
   try {
