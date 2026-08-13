@@ -10,6 +10,7 @@ const MENU_ITEMS = [
       { id: 'trading-imperium-trades', label: 'Trades' },
       { id: 'trading-imperium-events', label: 'Événements' },
       { id: 'trading-imperium-config', label: 'Config' },
+      { id: 'trading-imperium-analyse', label: 'Analyse' },
     ]
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },

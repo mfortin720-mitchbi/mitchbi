@@ -222,17 +222,21 @@ N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actu
   }
 };
 
-async function maybeExtractMemories(email, userText, assistantText) {
+// recentTurns: the last N clean {role, content} messages (frontend history + the just-generated
+// reply), NOT the internal `conversation` array used by the main loop -- that one is polluted
+// with tool_use/tool_result blocks from query_bigquery calls, which would bloat this call for no
+// benefit. A single-turn window (just the latest user+assistant pair) was tried first and missed
+// requests like "remember the method we discussed a few messages ago" -- the content being asked
+// about wasn't in that pair, so nothing meaningful could be extracted. Several turns of real
+// context fixes that at the cost of a slightly larger extraction call.
+async function maybeExtractMemories(email, recentTurns) {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 1024,
-      system: `Tu relis un échange entre l'utilisateur et NexusIQ (l'assistant AI de MitchBI) pour décider ce qui mérite d'être retenu pour les prochaines conversations. Appelle save_memory pour chaque élément distinct qui vaut la peine d'être mémorisé (préférence exprimée, correction/confirmation sur une façon de faire, décision ou fait de projet important). S'il n'y a rien à retenir de cet échange précis (ex: une simple question factuelle déjà répondue via les données), n'appelle aucun outil. Ne produis aucun texte, uniquement des appels d'outil ou rien.`,
+      system: `Tu relis les derniers échanges entre l'utilisateur et NexusIQ (l'assistant AI de MitchBI) pour décider ce qui mérite d'être retenu pour les prochaines conversations. Appelle save_memory pour chaque élément distinct qui vaut la peine d'être mémorisé : préférence exprimée, correction/confirmation sur une façon de faire, décision ou fait de projet important -- ET si l'utilisateur demande explicitement de retenir quelque chose (une méthode, un script, une analyse) qui a été décrit plus tôt dans les messages fournis, capture le CONTENU COMPLET dans 'content' (pas juste un résumé vague qui perdrait l'info). S'il n'y a rien à retenir de ces échanges (ex: une simple question factuelle déjà répondue via les données), n'appelle aucun outil. Ne produis aucun texte, uniquement des appels d'outil ou rien.`,
       tools: [SAVE_MEMORY_TOOL],
-      messages: [
-        { role: 'user', content: userText },
-        { role: 'assistant', content: assistantText },
-      ]
+      messages: recentTurns
     });
     for (const block of response.content) {
       if (block.type === 'tool_use' && block.name === 'save_memory') {
@@ -333,9 +337,14 @@ router.post('/', async (req, res) => {
     // Fire-and-forget: décide après coup si quelque chose de cet échange mérite
     // d'être mémorisé. Ne bloque pas la réponse et ne partage pas le budget
     // d'itérations de la boucle principale (voir commentaire sur SAVE_MEMORY_TOOL).
-    if (finalText && lastUserMsg?.role === 'user') {
-      const userText = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : JSON.stringify(lastUserMsg.content);
-      maybeExtractMemories(email, userText, reply).catch(e => console.error('[assistant] memory extraction error:', e.message));
+    if (finalText) {
+      const recentTurns = [
+        ...messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) })),
+        { role: 'assistant', content: reply },
+      ].slice(-12);
+      maybeExtractMemories(email, recentTurns).catch(e => console.error('[assistant] memory extraction error:', e.message));
     }
   } catch (err) {
     console.error('Assistant error:', err);

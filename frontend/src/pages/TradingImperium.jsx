@@ -159,6 +159,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [eaModalLogin, setEaModalLogin] = useState(null); // login affiché dans la popup [EA], null = fermée
   const [phaseHistory, setPhaseHistory] = useState([]); // phases/logins passés (superseded), voir loadPhaseHistory
 
+  // Onglet Analyse -- scénarios TP alternatifs sur les trades perdants d'une plage de dates
+  const [tpStart, setTpStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 90);
+    return d.toISOString().slice(0, 10);
+  });
+  const [tpEnd, setTpEnd] = useState(() => new Date().toISOString().slice(0, 10));
+  const [tpLoading, setTpLoading] = useState(false);
+  const [tpError, setTpError] = useState(null);
+  const [tpResult, setTpResult] = useState(null);
+
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
   const [filterSymbol, setFilterSymbol] = useState('all');
@@ -219,6 +229,19 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     } catch (e) { console.error(e); }
   };
 
+  const loadTpScenarios = async () => {
+    setTpLoading(true);
+    setTpError(null);
+    try {
+      const params = new URLSearchParams({ start: tpStart, end: `${tpEnd}T23:59:59` });
+      const res = await apiFetch(`/api/trading-imperium/tp-scenarios?${params}`);
+      const d = await res.json();
+      if (d.success) setTpResult(d);
+      else setTpError(d.error || 'Erreur inconnue');
+    } catch (e) { setTpError(e.message); }
+    finally { setTpLoading(false); }
+  };
+
   const loadHistory = async () => {
     setLoadingHistory(true);
     try {
@@ -264,6 +287,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
+  useEffect(() => { if (activeTab === 'analyse' && !tpResult && !tpLoading) loadTpScenarios(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
@@ -1355,6 +1379,78 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
           </div>
         );
       })()}
+
+      {/* ── Analyse : scénarios TP alternatifs sur les trades perdants ──── */}
+      {activeTab === 'analyse' && (
+        <div>
+          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Du</div>
+              <input type="date" value={tpStart} onChange={e => setTpStart(e.target.value)} style={{
+                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                color: '#fff', fontSize: 12, padding: '5px 8px'
+              }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Au</div>
+              <input type="date" value={tpEnd} onChange={e => setTpEnd(e.target.value)} style={{
+                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                color: '#fff', fontSize: 12, padding: '5px 8px'
+              }} />
+            </div>
+            <button onClick={loadTpScenarios} disabled={tpLoading} style={{
+              padding: '6px 14px', borderRadius: 6, border: 'none', cursor: tpLoading ? 'default' : 'pointer',
+              background: tpLoading ? '#1e2130' : BLUE, color: '#fff', fontSize: 12, fontWeight: 600
+            }}>
+              {tpLoading ? '⏳ Analyse...' : 'Analyser'}
+            </button>
+          </Card>
+
+          {tpError && (
+            <Card style={{ padding: 16, marginBottom: 14, color: RED, fontSize: 13 }}>❌ {tpError}</Card>
+          )}
+
+          {tpResult && (
+            <>
+              <Card style={{ padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#ccc', lineHeight: 1.7 }}>
+                <b style={{ color: '#fff' }}>{tpResult.totals.total_trades}</b> trades fermés dans cette plage ·{' '}
+                <b style={{ color: '#fff' }}>{tpResult.totals.total_losers}</b> perdants, dont{' '}
+                <b style={{ color: '#fff' }}>{tpResult.totals.analyzable_losers}</b> analysables (fermés au SL, prix récupéré) ·{' '}
+                <span style={{ color: MUTED }}>{tpResult.totals.excluded_losers} exclus (fermeture manuelle -- SL non enregistré)</span>
+                <br />
+                Winrate actuel : <b style={{ color: '#fff' }}>{fmtPct(tpResult.totals.current_winrate)}</b>
+              </Card>
+
+              <Card style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
+                        {['Scénario TP', 'Récupérés', '% des analysables', 'Nouveau total winners', 'Nouveau winrate', 'Seuil breakeven', 'Verdict'].map(h => (
+                          <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tpResult.scenarios.map(s => (
+                        <tr key={s.r_multiple} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                          <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>{s.r_multiple}R</td>
+                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{s.recovered_count}</td>
+                          <td style={{ padding: '8px 12px', color: MUTED }}>{fmtPct(s.recovered_pct)}</td>
+                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{s.new_total_winners}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 600, color: s.above_breakeven ? GREEN : RED }}>{fmtPct(s.new_winrate)}</td>
+                          <td style={{ padding: '8px 12px', color: MUTED }}>{fmtPct(s.breakeven_winrate)}</td>
+                          <td style={{ padding: '8px 12px' }}>{s.above_breakeven ? '✅' : '❌'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

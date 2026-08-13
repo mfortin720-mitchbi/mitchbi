@@ -98,6 +98,130 @@ router.get('/ea-config', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/tp-scenarios?start=&end= — "what if I'd taken profit at +1R/+1.5R/+2R..."
+// analysis over losing trades closed in [start, end]. Method (validated earlier against real data,
+// see RR_ANALYSIS.md in the trading-monitor repo): only trades closed by SL (close_reason='SL') can
+// be analyzed -- the SL price is recovered from the exit deal's own comment ("[sl X.XXXXX]", written
+// by the broker at close time), which is the only place that price is preserved after the fact.
+// Trades closed manually (CLIENT/EXPERT) have no recorded SL and are excluded (reported as
+// excluded_losers, not silently dropped). For each analyzable losing trade, walk its M1 price_bars
+// chronologically and check whether a hypothetical TP at each R-multiple would have been hit before
+// the real SL -- same-bar ties count as SL hit (conservative: intra-bar order isn't knowable from
+// OHLC alone).
+const TP_SCENARIO_R_MULTIPLES = [1.0, 1.2, 1.5, 2.0, 2.5, 3.0];
+
+router.get('/tp-scenarios', async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    if (!start || !end) return res.status(400).json({ success: false, error: 'start et end (dates) requis' });
+
+    const [totals] = await run(`
+      SELECT
+        COUNT(*) AS total_trades,
+        COUNTIF(net_pnl >= 0) AS total_winners,
+        COUNTIF(net_pnl < 0) AS total_losers,
+        COUNTIF(net_pnl < 0 AND close_reason = 'SL') AS analyzable_losers
+      FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\`
+      WHERE is_closed = TRUE AND closed_at BETWEEN TIMESTAMP(@start) AND TIMESTAMP(@end)
+    `, { start, end });
+
+    const slTrades = await run(`
+      SELECT
+        t.account_id, t.login, t.position_id, t.symbol, t.direction,
+        t.entry_price, t.exit_price, t.opened_at, t.closed_at, t.net_pnl,
+        CAST(REGEXP_EXTRACT(d.comment, r'\\[sl ([0-9.]+)\\]') AS FLOAT64) AS sl_price
+      FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\` t
+      JOIN \`${PROJECT_ID}.${DATASET_ID}.trade_deals\` d
+        ON d.position_id = t.position_id AND d.login = t.login AND d.entry_name != 'IN'
+      WHERE t.is_closed = TRUE AND t.net_pnl < 0 AND t.close_reason = 'SL'
+        AND t.closed_at BETWEEN TIMESTAMP(@start) AND TIMESTAMP(@end)
+    `, { start, end });
+
+    const usableTrades = slTrades.filter(t => t.sl_price != null);
+
+    // One price_bars query per distinct (account_id, symbol), covering the full span needed for
+    // every trade on that pair -- instead of one query per trade (which for ~80 trades would be
+    // ~80 round-trips just to re-fetch overlapping bar ranges on the same handful of symbols).
+    const pairs = {};
+    for (const t of usableTrades) {
+      const key = `${t.account_id}|${t.symbol}`;
+      if (!pairs[key]) pairs[key] = { account_id: t.account_id, symbol: t.symbol, min: t.opened_at, max: t.closed_at };
+      else {
+        if (t.opened_at.value < pairs[key].min.value) pairs[key].min = t.opened_at;
+        if (t.closed_at.value > pairs[key].max.value) pairs[key].max = t.closed_at;
+      }
+    }
+
+    const barsByPair = {};
+    for (const key of Object.keys(pairs)) {
+      const { account_id, symbol, min, max } = pairs[key];
+      const bars = await run(`
+        SELECT time, high, low
+        FROM \`${PROJECT_ID}.${DATASET_ID}.price_bars\`
+        WHERE account_id = @account_id AND symbol = @symbol AND time BETWEEN TIMESTAMP(@min) AND TIMESTAMP(@max)
+        ORDER BY time ASC
+      `, { account_id, symbol, min: min.value || min, max: max.value || max });
+      barsByPair[key] = bars.map(b => ({ t: (b.time.value || b.time), high: b.high, low: b.low }));
+    }
+
+    // Per trade: R = |entry - sl|. For each requested multiple, walk that trade's own bar window
+    // (opened_at..closed_at) chronologically -- first of {TP, SL} touched wins, same-bar = SL wins.
+    const recoveredByR = Object.fromEntries(TP_SCENARIO_R_MULTIPLES.map(r => [r, 0]));
+    for (const t of usableTrades) {
+      const key = `${t.account_id}|${t.symbol}`;
+      const bars = (barsByPair[key] || []).filter(b => b.t >= (t.opened_at.value || t.opened_at) && b.t <= (t.closed_at.value || t.closed_at));
+      const risk = Math.abs(t.entry_price - t.sl_price);
+      if (!risk) continue;
+      const isBuy = t.direction === 'BUY';
+      for (const r of TP_SCENARIO_R_MULTIPLES) {
+        const tp = isBuy ? t.entry_price + risk * r : t.entry_price - risk * r;
+        let recovered = false;
+        for (const bar of bars) {
+          const tpHit = isBuy ? bar.high >= tp : bar.low <= tp;
+          const slHit = isBuy ? bar.low <= t.sl_price : bar.high >= t.sl_price;
+          if (tpHit && !slHit) { recovered = true; break; }
+          if (slHit) break;
+        }
+        if (recovered) recoveredByR[r] += 1;
+      }
+    }
+
+    const totalTrades = Number(totals.total_trades);
+    const totalWinners = Number(totals.total_winners);
+    const scenarios = TP_SCENARIO_R_MULTIPLES.map(r => {
+      const recovered = recoveredByR[r];
+      const newWinners = totalWinners + recovered;
+      const newWinrate = totalTrades ? (newWinners / totalTrades) * 100 : null;
+      const breakeven = (100 / (1 + r));
+      return {
+        r_multiple: r,
+        recovered_count: recovered,
+        recovered_pct: usableTrades.length ? (recovered / usableTrades.length) * 100 : null,
+        new_total_winners: newWinners,
+        new_winrate: newWinrate,
+        breakeven_winrate: breakeven,
+        above_breakeven: newWinrate != null ? newWinrate > breakeven : null,
+      };
+    });
+
+    res.json({
+      success: true,
+      totals: {
+        total_trades: totalTrades,
+        total_winners: totalWinners,
+        total_losers: Number(totals.total_losers),
+        analyzable_losers: usableTrades.length,
+        excluded_losers: Number(totals.total_losers) - usableTrades.length,
+        current_winrate: totalTrades ? (totalWinners / totalTrades) * 100 : null,
+      },
+      scenarios,
+    });
+  } catch (err) {
+    console.error('[trading-imperium] tp-scenarios error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/history?login=&firm=&symbol=&days= — daily balance evolution for charts
 router.get('/history', async (req, res) => {
   try {
