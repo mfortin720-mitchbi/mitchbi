@@ -56,17 +56,35 @@ const getSupabase = () => {
 async function loadMemoryContext(email) {
   try {
     const sb = getSupabase();
+    // Fetch a generous window, then apply importance/type-aware retention in JS below --
+    // Supabase's query builder can't express "N per group" without a raw RPC call.
     const { data, error } = await sb
       .from('assistant_memory')
-      .select('memory_type, summary, content, created_at')
+      .select('memory_type, importance, summary, content, created_at')
       .or(`user_email.eq.${email},user_email.is.null`)
       .order('created_at', { ascending: false })
-      .limit(40);
+      .limit(300);
     if (error) throw error;
     if (!data || data.length === 0) return null;
+
+    // 'high' importance never ages out, regardless of how much accumulates after it.
+    // Everything else is capped per memory_type (not a flat total) so one prolific type
+    // (e.g. 'reference') can't crowd out another (e.g. 'feedback') -- the previous "last 40
+    // total" cut was blind to both type and importance.
+    const PER_TYPE_LIMIT = 10;
+    const perTypeCounts = {};
+    const selected = data.filter(m => {
+      if (m.importance === 'high') return true;
+      const count = perTypeCounts[m.memory_type] || 0;
+      if (count >= PER_TYPE_LIMIT) return false;
+      perTypeCounts[m.memory_type] = count + 1;
+      return true;
+    });
+
     // Chronologique dans le prompt (plus lisible), plus recent en dernier.
-    return data.reverse()
-      .map(m => `[${m.memory_type}] ${m.summary}\n${m.content}`)
+    return selected
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .map(m => `[${m.memory_type}${m.importance === 'high' ? '/prioritaire' : ''}] ${m.summary}\n${m.content}`)
       .join('\n\n');
   } catch (e) {
     console.error('[assistant] loadMemoryContext failed:', e.message);
@@ -74,11 +92,11 @@ async function loadMemoryContext(email) {
   }
 }
 
-async function saveMemory(email, { memory_type, summary, content }) {
+async function saveMemory(email, { memory_type, importance, summary, content }) {
   const sb = getSupabase();
   const { error } = await sb
     .from('assistant_memory')
-    .insert({ user_email: email || null, memory_type, summary, content });
+    .insert({ user_email: email || null, memory_type, importance: importance || 'normal', summary, content });
   if (error) throw error;
 }
 
@@ -210,11 +228,17 @@ const SAVE_MEMORY_TOOL = {
 - 'feedback' : une correction ou une confirmation sur la façon de répondre ou d'analyser (ex: "ne pas donner de chiffres sans les vérifier chronologiquement", "cette façon de simuler le P&L était la bonne approche").
 - 'project' : un fait ou une décision sur un compte/challenge/stratégie en cours (ex: un changement de RR décidé, un compte qui approche d'un seuil, pourquoi une décision a été prise).
 - 'reference' : un pointeur vers une info ou un outil externe utile pour plus tard.
-N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actuel d'un compte) -- ces données sont toujours interrogeables en direct et n'ont pas besoin d'être mémorisées. Une mémoire doit rester utile après coup : inclus le "pourquoi" si pertinent, pas juste le "quoi". Appelle l'outil une fois par élément distinct à retenir (0, 1 ou plusieurs appels).`,
+N'enregistre PAS un fait déjà disponible via query_bigquery (ex: le solde actuel d'un compte) -- ces données sont toujours interrogeables en direct et n'ont pas besoin d'être mémorisées. Une mémoire doit rester utile après coup : inclus le "pourquoi" si pertinent, pas juste le "quoi". Appelle l'outil une fois par élément distinct à retenir (0, 1 ou plusieurs appels).
+
+Précise aussi 'importance' :
+- 'high' : reste TOUJOURS visible dans les prochaines conversations, peu importe combien de nouvelles mémoires s'accumulent après -- réserve-la à ce qui justifie vraiment de ne jamais disparaître (une règle de sécurité/conformité, une préférence fondamentale et durable, un fait qui changerait une décision majeure).
+- 'normal' (défaut si omis) : reste visible parmi les 10 mémoires les plus récentes de son type -- suffisant pour la grande majorité des cas.
+- 'low' : contexte mineur, peut disparaître de la fenêtre sans conséquence une fois dépassé par des mémoires plus récentes du même type.`,
   input_schema: {
     type: 'object',
     properties: {
       memory_type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
+      importance: { type: 'string', enum: ['low', 'normal', 'high'], description: "Par défaut 'normal' si omis." },
       summary: { type: 'string', description: 'Résumé en une ligne (~100 caractères).' },
       content: { type: 'string', description: 'Contenu complet à retenir, avec le contexte/pourquoi si pertinent.' }
     },
@@ -234,7 +258,7 @@ async function maybeExtractMemories(email, recentTurns) {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 1024,
-      system: `Tu relis les derniers échanges entre l'utilisateur et NexusIQ (l'assistant AI de MitchBI) pour décider ce qui mérite d'être retenu pour les prochaines conversations. Appelle save_memory pour chaque élément distinct qui vaut la peine d'être mémorisé : préférence exprimée, correction/confirmation sur une façon de faire, décision ou fait de projet important -- ET si l'utilisateur demande explicitement de retenir quelque chose (une méthode, un script, une analyse) qui a été décrit plus tôt dans les messages fournis, capture le CONTENU COMPLET dans 'content' (pas juste un résumé vague qui perdrait l'info). S'il n'y a rien à retenir de ces échanges (ex: une simple question factuelle déjà répondue via les données), n'appelle aucun outil. Ne produis aucun texte, uniquement des appels d'outil ou rien.`,
+      system: `Tu relis les derniers échanges entre l'utilisateur et NexusIQ (l'assistant AI de MitchBI) pour décider ce qui mérite d'être retenu pour les prochaines conversations. Appelle save_memory pour chaque élément distinct qui vaut la peine d'être mémorisé : préférence exprimée, correction/confirmation sur une façon de faire, décision ou fait de projet important -- ET si l'utilisateur demande explicitement de retenir quelque chose (une méthode, un script, une analyse) qui a été décrit plus tôt dans les messages fournis, capture le CONTENU COMPLET dans 'content' (pas juste un résumé vague qui perdrait l'info). S'il n'y a rien à retenir de ces échanges (ex: une simple question factuelle déjà répondue via les données), n'appelle aucun outil. Fixe aussi 'importance' selon la description de l'outil -- 'normal' par défaut, 'high' seulement pour ce qui doit rester visible indéfiniment. Ne produis aucun texte, uniquement des appels d'outil ou rien.`,
       tools: [SAVE_MEMORY_TOOL],
       messages: recentTurns
     });
