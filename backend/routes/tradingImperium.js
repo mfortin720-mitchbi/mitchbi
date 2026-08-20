@@ -305,10 +305,10 @@ router.get('/phase-history', async (req, res) => {
   }
 });
 
-// GET /api/trading-imperium/trades?login=&symbol=&limit= — completed round-trip trades
+// GET /api/trading-imperium/trades?login=&symbol=&from=&to=&limit= — completed round-trip trades
 router.get('/trades', async (req, res) => {
   try {
-    const { login, symbol, limit } = req.query;
+    const { login, symbol, from, to, limit } = req.query;
     const conditions = ['is_closed = TRUE'];
     const params = {};
 
@@ -316,6 +316,11 @@ router.get('/trades', async (req, res) => {
     // STARTS_WITH not exact match: broker-suffixed symbols like "GBPUSD.raw" (Alpha Capital)
     // must still match the clean "GBPUSD" filter value derived from the algo filename.
     if (symbol) { conditions.push('STARTS_WITH(symbol, @symbol)'); params.symbol = symbol; }
+    // from/to are date (or date+time) strings from the frontend's date inputs -- cast in SQL
+    // rather than relying on the BigQuery client's JS-type inference, which would treat a bare
+    // string param as STRING and fail the TIMESTAMP comparison.
+    if (from) { conditions.push('closed_at >= TIMESTAMP(@from)'); params.from = from; }
+    if (to) { conditions.push('closed_at <= TIMESTAMP(@to)'); params.to = to; }
 
     const rowLimit = Math.min(parseInt(limit, 10) || 200, 1000);
     const rows = await run(

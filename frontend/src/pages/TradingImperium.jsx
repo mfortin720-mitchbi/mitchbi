@@ -172,6 +172,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
   const [filterSymbol, setFilterSymbol] = useState('all');
+  // Onglet Trades uniquement -- vide = pas de filtre de date (tous les trades), même convention
+  // que 'all' pour les autres filtres de cet onglet.
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
 
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -262,6 +266,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       const params = new URLSearchParams();
       if (filterLogin !== 'all') params.set('login', filterLogin);
       if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
+      if (filterDateFrom) params.set('from', filterDateFrom);
+      if (filterDateTo) params.set('to', `${filterDateTo}T23:59:59`);
       const res = await apiFetch(`/api/trading-imperium/trades?${params}`);
       const d = await res.json();
       if (d.success) setTrades(d.trades);
@@ -286,7 +292,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
-  useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol]);
+  useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol, filterDateFrom, filterDateTo]);
   useEffect(() => { if (activeTab === 'analyse' && !tpResult && !tpLoading) loadTpScenarios(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
@@ -771,6 +777,30 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
               ))}
             </div>
           </div>
+          {activeTab === 'trades' && (
+            <>
+              <div>
+                <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Du</div>
+                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{
+                  background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                  color: '#fff', fontSize: 12, padding: '5px 8px'
+                }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Au</div>
+                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{
+                  background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                  color: '#fff', fontSize: 12, padding: '5px 8px'
+                }} />
+              </div>
+              {(filterDateFrom || filterDateTo) && (
+                <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }} style={{
+                  padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12, alignSelf: 'flex-end',
+                  border: '0.5px solid #1e2130', background: 'transparent', color: MUTED
+                }}>Effacer les dates</button>
+              )}
+            </>
+          )}
         </Card>
       )}
 
