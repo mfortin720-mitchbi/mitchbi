@@ -183,7 +183,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [trades, setTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
   const [tradesViewMode, setTradesViewMode] = useState('list'); // 'list' | 'summary' | 'chart'
-  const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol'
+  const [summaryGroupBy, setSummaryGroupBy] = useState('login'); // 'login' | 'symbol' | 'date'
 
   // ── Trades › Graphique (prix réel du broker via price_bars + entrées/sorties par login) ────
   // chartSymbol/chartLogin sont dérivés de filterSymbol/filterLogin (pas un état séparé) : avant, il y
@@ -386,13 +386,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
   }, [history]);
 
-  // Sommaire Trades — groupe les trades filtrés par login ou par symbole
+  // Sommaire Trades — groupe les trades filtrés par login, symbole ou jour de fermeture (UTC).
   const tradesSummary = useMemo(() => {
     const map = {};
     for (const t of trades) {
-      // Normalise le symbole (retire le suffixe broker, ex: "GBPUSD.raw" -> "GBPUSD")
-      // pour que tous les firmes tradant le même instrument s'agrègent ensemble.
-      const key = summaryGroupBy === 'login' ? t.login : t.symbol.split('.')[0];
+      let key;
+      if (summaryGroupBy === 'login') key = t.login;
+      // Normalise le symbole (retire le suffixe broker, ex: "GBPUSD.raw" -> "GBPUSD") pour que
+      // toutes les firmes tradant le même instrument s'agrègent ensemble.
+      else if (summaryGroupBy === 'symbol') key = t.symbol.split('.')[0];
+      else key = toUtcIso(t.closed_at?.value || t.closed_at).slice(0, 10);
       if (!map[key]) map[key] = { key, total: 0, wins: 0, losses: 0, pnl: 0, logins: new Set() };
       map[key].total += 1;
       if (t.net_pnl >= 0) map[key].wins += 1; else map[key].losses += 1;
@@ -401,7 +404,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     }
     return Object.values(map)
       .map(row => ({ ...row, loginCount: row.logins.size }))
-      .sort((a, b) => b.total - a.total);
+      // Par date : chronologique (plus récent en premier). Par login/symbole : par volume de trades.
+      .sort((a, b) => summaryGroupBy === 'date' ? b.key.localeCompare(a.key) : b.total - a.total);
   }, [trades, summaryGroupBy]);
 
   // Graphique Trades — bougies Yahoo Finance + entrées/sorties de chaque login qui a tradé ce symbole,
@@ -589,6 +593,23 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     }
     return map;
   }, [events]);
+
+  // Totaux de la table Sommaire, tous groupes confondus -- recalculés depuis les sommes (pas une
+  // moyenne des taux par ligne, qui serait faussée si les groupes ont des volumes très différents).
+  const tradesSummaryTotals = useMemo(() => {
+    const total = tradesSummary.reduce((s, r) => s + r.total, 0);
+    const wins = tradesSummary.reduce((s, r) => s + r.wins, 0);
+    const losses = tradesSummary.reduce((s, r) => s + r.losses, 0);
+    const pnl = tradesSummary.reduce((s, r) => s + r.pnl, 0);
+    const loginCount = new Set(trades.map(t => t.login)).size;
+    const resetSum = summaryGroupBy === 'login'
+      ? tradesSummary.reduce((s, r) => s + (resetsByLogin[r.key] || 0), 0)
+      : null;
+    return { total, wins, losses, pnl, loginCount, resetSum };
+  }, [tradesSummary, trades, summaryGroupBy, resetsByLogin]);
+
+  // Totaux de la table Liste (P&L net seulement -- les autres colonnes ne s'agrègent pas).
+  const tradesListTotalPnl = useMemo(() => trades.reduce((s, t) => s + t.net_pnl, 0), [trades]);
 
   return (
     <div>
@@ -931,7 +952,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
               <div>
                 <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Grouper par</div>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  {[{ id: 'login', label: 'Login' }, { id: 'symbol', label: 'Symbole' }].map(g => (
+                  {[{ id: 'login', label: 'Login' }, { id: 'symbol', label: 'Symbole' }, { id: 'date', label: 'Date' }].map(g => (
                     <button key={g.id} onClick={() => setSummaryGroupBy(g.id)} style={{
                       padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
                       border: '0.5px solid', borderColor: summaryGroupBy === g.id ? GOLD : '#1e2130',
@@ -1170,6 +1191,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '1px solid #1e2130' }}>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>TOTAL ({trades.length})</td>
+                      <td colSpan={6} />
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: tradesListTotalPnl >= 0 ? GREEN : RED }}>{fmtMoney(tradesListTotalPnl)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
@@ -1180,7 +1209,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <thead>
                     <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
                       {[
-                        summaryGroupBy === 'login' ? 'Login' : 'Symbole', 'Total Trades', 'Gagnants', 'Perdants',
+                        summaryGroupBy === 'login' ? 'Login' : summaryGroupBy === 'symbol' ? 'Symbole' : 'Date',
+                        'Total Trades', 'Gagnants', 'Perdants',
                         'Win Rate', 'Loss Rate', 'P&L Net',
                         ...(summaryGroupBy === 'login' ? ['Reset'] : ['Logins actifs'])
                       ].map(h => (
@@ -1216,6 +1246,28 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '1px solid #1e2130' }}>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>TOTAL</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>{tradesSummaryTotals.total}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: GREEN }}>{tradesSummaryTotals.wins}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: RED }}>{tradesSummaryTotals.losses}</td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>
+                        {tradesSummaryTotals.total ? ((tradesSummaryTotals.wins / tradesSummaryTotals.total) * 100).toFixed(2) : '0.00'}%
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>
+                        {tradesSummaryTotals.total ? ((tradesSummaryTotals.losses / tradesSummaryTotals.total) * 100).toFixed(2) : '0.00'}%
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, color: tradesSummaryTotals.pnl >= 0 ? GREEN : RED }}>{fmtMoney(tradesSummaryTotals.pnl)}</td>
+                      {summaryGroupBy === 'login' ? (
+                        <td style={{ padding: '8px 12px', fontWeight: 700, color: GOLD }}>
+                          {tradesSummaryTotals.resetSum ? `+${fmtMoney(tradesSummaryTotals.resetSum)}` : '—'}
+                        </td>
+                      ) : (
+                        <td style={{ padding: '8px 12px', fontWeight: 700, color: '#fff' }}>{tradesSummaryTotals.loginCount}</td>
+                      )}
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
