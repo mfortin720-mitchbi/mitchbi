@@ -394,7 +394,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     { key: 'over16', label: '≥ 1.6R', test: r => r >= 1.6, color: '#bcd2ff' },
   ];
   const mfeGroupKey = t => {
-    if (mfeGroupBy === 'day') return toUtcIso(t.closed_at)?.slice(0, 10) ?? '?';
+    if (mfeGroupBy === 'day') return toUtcIso(t.closed_at?.value || t.closed_at)?.slice(0, 10) ?? '?';
     if (mfeGroupBy === 'symbol') return t.symbol ? t.symbol.split('.')[0] : '?';
     if (mfeGroupBy === 'build') return t.variant ? `Build ${t.variant}` : 'Build inconnu';
     if (mfeGroupBy === 'firm') return t.firm || '?';
@@ -406,7 +406,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const mfeFiltered = useMemo(() => {
     if (!mfeDateFrom && !mfeDateTo) return mfeLosers;
     return mfeLosers.filter(t => {
-      const day = toUtcIso(t.closed_at)?.slice(0, 10);
+      const day = toUtcIso(t.closed_at?.value || t.closed_at)?.slice(0, 10);
       if (!day) return false;
       if (mfeDateFrom && day < mfeDateFrom) return false;
       if (mfeDateTo && day > mfeDateTo) return false;
