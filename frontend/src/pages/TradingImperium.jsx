@@ -158,6 +158,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [eaConfigs, setEaConfigs] = useState([]); // état/config EA par compte, voir loadEaConfigs
   const [eaModalLogin, setEaModalLogin] = useState(null); // login affiché dans la popup [EA], null = fermée
   const [phaseHistory, setPhaseHistory] = useState([]); // phases/logins passés (superseded), voir loadPhaseHistory
+  const [signalPerf, setSignalPerf] = useState([]); // winrate réel vs seuil de rentabilité par signal EA, voir loadSignalPerformance
 
   // Onglet Analyse -- scénarios TP alternatifs sur les trades perdants d'une plage de dates
   const [tpStart, setTpStart] = useState(() => {
@@ -233,6 +234,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     } catch (e) { console.error(e); }
   };
 
+  const loadSignalPerformance = async () => {
+    try {
+      const res = await apiFetch('/api/trading-imperium/signal-performance');
+      const d = await res.json();
+      if (d.success) setSignalPerf(d.accounts);
+    } catch (e) { console.error(e); }
+  };
+
   const loadTpScenarios = async () => {
     setTpLoading(true);
     setTpError(null);
@@ -290,7 +299,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { if (!silent) setLoadingChart(false); }
   };
 
-  useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); }, []);
+  useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); loadSignalPerformance(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol, filterDateFrom, filterDateTo]);
   useEffect(() => { if (activeTab === 'analyse' && !tpResult && !tpLoading) loadTpScenarios(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -883,6 +892,76 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
           )}
         </Card>
       )}
+
+      {/* ── Signal scorecard : winrate réel vs seuil de rentabilité, par signal EA ────── */}
+      {activeTab === 'overview' && signalPerf.length > 0 && (() => {
+        const lossGroup = signalPerf.filter(a => a.bucket === 'loss');
+        const profitGroup = signalPerf.filter(a => a.bucket === 'profit');
+        const groupTotal = g => g.reduce((s, a) => s + (a.net_pnl || 0), 0);
+        const groupWinrateRange = g => {
+          if (!g.length) return '—';
+          const rates = g.map(a => a.winrate);
+          const lo = Math.min(...rates), hi = Math.max(...rates);
+          return lo === hi ? `${lo.toFixed(1)}%` : `${lo.toFixed(1)}–${hi.toFixed(1)}%`;
+        };
+        const fmtSigned = v => `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('fr-CA')} $`;
+        const sorted = [...signalPerf].sort((a, b) => a.winrate - a.threshold - (b.winrate - b.threshold));
+
+        return (
+          <Card style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 4 }}>Winrate réel vs seuil de rentabilité, par signal EA</div>
+            <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 14 }}>
+              Seuil calculé depuis les gains/pertes moyens réels de chaque compte (pas le R:R configuré de l'EA) — classement MACRO/SWEEP vs MICRO basé sur le nom du signal, à valider.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div style={{ background: 'rgba(216,90,48,0.08)', border: `0.5px solid rgba(216,90,48,0.3)`, borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontSize: 10.5, letterSpacing: '0.05em', textTransform: 'uppercase', color: RED, marginBottom: 6 }}>Signal MACRO / SWEEP</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: RED }}>{fmtSigned(groupTotal(lossGroup))}</div>
+                <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>{lossGroup.length} compte(s), winrate {groupWinrateRange(lossGroup)}</div>
+              </div>
+              <div style={{ background: 'rgba(29,158,117,0.08)', border: `0.5px solid rgba(29,158,117,0.3)`, borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontSize: 10.5, letterSpacing: '0.05em', textTransform: 'uppercase', color: GREEN, marginBottom: 6 }}>Signal MICRO (autres)</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: GREEN }}>{fmtSigned(groupTotal(profitGroup))}</div>
+                <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>{profitGroup.length} compte(s), winrate {groupWinrateRange(profitGroup)}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {sorted.map(a => {
+                const above = a.winrate >= (a.threshold ?? 0);
+                const barColor = above ? GREEN : RED;
+                const fillPct = Math.min(a.winrate, 100);
+                const threshPct = Math.min(a.threshold ?? 0, 100);
+                return (
+                  <div key={a.account_id} style={{ display: 'grid', gridTemplateColumns: '150px 1fr 90px', gap: 14, alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{labelForLogin(a.login)}</div>
+                      <div style={{ fontSize: 10, color: MUTED, marginTop: 2, wordBreak: 'break-word' }}>{a.symbol} · {a.signal || 'signal inconnu'}</div>
+                    </div>
+                    <div>
+                      <div style={{ position: 'relative', height: 8, background: '#1e2130', borderRadius: 5 }}>
+                        <div style={{ position: 'absolute', inset: 0, width: `${fillPct}%`, background: barColor, borderRadius: 5 }} />
+                        {a.threshold != null && (
+                          <div style={{ position: 'absolute', top: -2, bottom: -2, left: `${threshPct}%`, width: 2, background: '#fff', opacity: 0.6 }} />
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: MUTED, marginTop: 4 }}>
+                        <span>{a.winrate.toFixed(1)}% réel</span>
+                        <span>seuil {a.threshold != null ? `${a.threshold.toFixed(1)}%` : '—'}</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: a.net_pnl >= 0 ? GREEN : RED }}>{fmtSigned(a.net_pnl)}</div>
+                      <div style={{ fontSize: 10, color: MUTED }}>{a.trades} trades</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Historique : phases/logins passés (superseded) ─────────────── */}
       {activeTab === 'overview' && phaseHistory.length > 0 && (

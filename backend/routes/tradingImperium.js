@@ -98,6 +98,64 @@ router.get('/ea-config', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/signal-performance — real winrate vs the account's own breakeven
+// threshold, per account, all closed trades. threshold = avg_loss / (avg_win + avg_loss) --
+// derived from each account's ACTUAL average win/loss size, not the EA's nominal configured R:R
+// (which is 1.8 for almost every account here despite very different real thresholds).
+// bucket groups accounts by their current Strategy.Bias signal: "MACRO" or "SWEEP" anywhere in
+// the signal name -> 'loss' bucket, everything else (MICRO-prefixed or bare pattern name) ->
+// 'profit' bucket -- this classification is a judgment call (Michel's own reference example
+// grouped them this way), not a documented rule from the EA itself. Confirmed live 2026-08-26
+// against the EA's raw MQL5 log that "MACRO" does NOT correspond to a different chart timeframe
+// (Bias timeframe reads H2 either way) -- the actual signal-detection logic behind the label
+// isn't observable from here (compiled .ex5, no .mq5 source anywhere on the VPS).
+router.get('/signal-performance', async (req, res) => {
+  try {
+    const configRows = await run(`
+      SELECT account_id, config_json
+      FROM \`${PROJECT_ID}.${DATASET_ID}.latest_ea_config_view\`
+    `);
+    const signalByAccount = {};
+    for (const r of configRows) {
+      try {
+        const parsed = JSON.parse(r.config_json);
+        signalByAccount[r.account_id] = parsed?.config?.['Strategy.Bias signal'] || null;
+      } catch (e) { /* leave unset on malformed JSON */ }
+    }
+
+    const stats = await run(`
+      SELECT a.account_id, a.license_firm, a.login, a.algo_symbol,
+             COUNT(*) AS trades,
+             COUNTIF(t.net_pnl >= 0) AS wins,
+             ROUND(SUM(t.net_pnl), 2) AS net_pnl,
+             ROUND(AVG(IF(t.net_pnl >= 0, t.net_pnl, NULL)), 2) AS avg_win,
+             ROUND(AVG(IF(t.net_pnl < 0, t.net_pnl, NULL)), 2) AS avg_loss
+      FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\` t
+      JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a USING (account_id)
+      WHERE t.is_closed = TRUE
+      GROUP BY a.account_id, a.license_firm, a.login, a.algo_symbol
+    `);
+
+    const results = stats.map(r => {
+      const signal = signalByAccount[r.account_id] || '';
+      const avgWin = r.avg_win || 0;
+      const avgLoss = Math.abs(r.avg_loss || 0);
+      const winrate = r.trades ? (r.wins / r.trades) * 100 : 0;
+      const threshold = (avgWin + avgLoss) ? (avgLoss / (avgWin + avgLoss)) * 100 : null;
+      const bucket = /MACRO|SWEEP/i.test(signal) ? 'loss' : 'profit';
+      return {
+        account_id: r.account_id, firm: r.license_firm, login: r.login, symbol: r.algo_symbol,
+        signal, bucket, trades: r.trades, winrate, threshold, net_pnl: r.net_pnl,
+      };
+    });
+
+    res.json({ success: true, accounts: results });
+  } catch (err) {
+    console.error('[trading-imperium] signal-performance error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/tp-scenarios?start=&end= — "what if I'd taken profit at +1R/+1.5R/+2R..."
 // analysis over losing trades closed in [start, end]. Method (validated earlier against real data,
 // see RR_ANALYSIS.md in the trading-monitor repo): only trades closed by SL (close_reason='SL') can
