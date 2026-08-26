@@ -182,6 +182,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const historyRequestId = useRef(0);
 
   const [trades, setTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
@@ -267,6 +268,11 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   };
 
   const loadHistory = async () => {
+    // Cliquer un compte déclenche 2 fetch en rafale (le clic lui-même, puis l'effet qui aligne
+    // filterSymbol sur le symbole du compte) -- sans ce garde, celui qui répond en dernier gagne,
+    // même si c'est le premier (symbole pas encore à jour) qui a fini après coup. D'où le
+    // graphique qui s'affichait puis disparaissait.
+    const requestId = ++historyRequestId.current;
     setLoadingHistory(true);
     try {
       const params = new URLSearchParams();
@@ -275,9 +281,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       if (filterSymbol !== 'all') params.set('symbol', filterSymbol);
       const res = await apiFetch(`/api/trading-imperium/history?${params}`);
       const d = await res.json();
+      if (requestId !== historyRequestId.current) return; // une requête plus récente est déjà partie
       if (d.success) setHistory(d.history);
     } catch (e) { console.error(e); }
-    finally { setLoadingHistory(false); }
+    finally { if (requestId === historyRequestId.current) setLoadingHistory(false); }
   };
 
   const loadTrades = async () => {
