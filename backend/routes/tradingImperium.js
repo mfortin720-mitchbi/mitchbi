@@ -156,6 +156,42 @@ router.get('/signal-performance', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/mfe-losers — every SL-closed loser with its MFE (max R reached
+// before the SL hit), one row per trade, for the MFE Tracker tab. Returns raw per-trade rows
+// (day/symbol/firm/variant/mfe_r) rather than pre-aggregated buckets so the frontend can group
+// by any dimension (day, symbole, build, prop firm) instantly without a round-trip per view --
+// the dataset is small (one row per losing trade, not per cycle).
+router.get('/mfe-losers', async (req, res) => {
+  try {
+    const rows = await run(`
+      SELECT m.account_id, m.login, m.symbol, m.closed_at, m.mfe_r, m.net_pnl, a.license_firm
+      FROM \`${PROJECT_ID}.${DATASET_ID}.trade_mfe\` m
+      LEFT JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a USING (account_id)
+      ORDER BY m.closed_at ASC
+    `);
+    const configRows = await run(`
+      SELECT account_id, config_json FROM \`${PROJECT_ID}.${DATASET_ID}.latest_ea_config_view\`
+    `);
+    const variantByAccount = {};
+    for (const c of configRows) {
+      try {
+        const parsed = JSON.parse(c.config_json);
+        variantByAccount[c.account_id] = parsed?.config?.variant || null;
+      } catch (e) { /* leave unset on malformed JSON */ }
+    }
+
+    const trades = rows.map(r => ({
+      account_id: r.account_id, login: r.login, symbol: r.symbol,
+      firm: r.license_firm, variant: variantByAccount[r.account_id] || null,
+      closed_at: r.closed_at, mfe_r: r.mfe_r, net_pnl: r.net_pnl,
+    }));
+    res.json({ success: true, trades });
+  } catch (err) {
+    console.error('[trading-imperium] mfe-losers error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/tp-scenarios?start=&end= — "what if I'd taken profit at +1R/+1.5R/+2R..."
 // analysis over losing trades closed in [start, end]. Method (validated earlier against real data,
 // see RR_ANALYSIS.md in the trading-monitor repo): only trades closed by SL (close_reason='SL') can

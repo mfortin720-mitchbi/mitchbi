@@ -10,7 +10,7 @@ const MENU_ITEMS = [
       { id: 'trading-imperium-trades', label: 'Trades' },
       { id: 'trading-imperium-events', label: 'Événements' },
       { id: 'trading-imperium-config', label: 'Config' },
-      { id: 'trading-imperium-analyse', label: 'Analyse' },
+      { id: 'trading-imperium-analyse', label: 'MFE Tracker', title: 'Maximum Favorable Excursion' },
     ]
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },
@@ -34,7 +34,7 @@ const BOTTOM_ITEMS = [
 ];
 
 const NavButton = ({ item, active, onNavigate, collapsed, indent }) => (
-  <button onClick={() => onNavigate(item.id)} style={{
+  <button onClick={() => onNavigate(item.id)} title={item.title} style={{
     width: '100%',
     display: 'flex',
     alignItems: 'center',

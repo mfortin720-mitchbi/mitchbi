@@ -160,15 +160,13 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [phaseHistory, setPhaseHistory] = useState([]); // phases/logins passés (superseded), voir loadPhaseHistory
   const [signalPerf, setSignalPerf] = useState([]); // winrate réel vs seuil de rentabilité par signal EA, voir loadSignalPerformance
 
-  // Onglet Analyse -- scénarios TP alternatifs sur les trades perdants d'une plage de dates
-  const [tpStart, setTpStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 90);
-    return d.toISOString().slice(0, 10);
-  });
-  const [tpEnd, setTpEnd] = useState(() => new Date().toISOString().slice(0, 10));
-  const [tpLoading, setTpLoading] = useState(false);
-  const [tpError, setTpError] = useState(null);
-  const [tpResult, setTpResult] = useState(null);
+  // Onglet MFE Tracker -- Maximum Favorable Excursion des trades perdants (jusqu'où le prix est
+  // allé avant de retourner au SL), voir loadMfeLosers. Regroupable par jour/symbole/build/firme,
+  // tout côté client -- le dataset (un row par perte) est petit, pas besoin d'un aller-retour par vue.
+  const [mfeLosers, setMfeLosers] = useState([]);
+  const [mfeLoading, setMfeLoading] = useState(false);
+  const [mfeError, setMfeError] = useState(null);
+  const [mfeGroupBy, setMfeGroupBy] = useState('day'); // 'day' | 'symbol' | 'build' | 'firm'
 
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
@@ -242,17 +240,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     } catch (e) { console.error(e); }
   };
 
-  const loadTpScenarios = async () => {
-    setTpLoading(true);
-    setTpError(null);
+  const loadMfeLosers = async () => {
+    setMfeLoading(true);
+    setMfeError(null);
     try {
-      const params = new URLSearchParams({ start: tpStart, end: `${tpEnd}T23:59:59` });
-      const res = await apiFetch(`/api/trading-imperium/tp-scenarios?${params}`);
+      const res = await apiFetch('/api/trading-imperium/mfe-losers');
       const d = await res.json();
-      if (d.success) setTpResult(d);
-      else setTpError(d.error || 'Erreur inconnue');
-    } catch (e) { setTpError(e.message); }
-    finally { setTpLoading(false); }
+      if (d.success) setMfeLosers(d.trades);
+      else setMfeError(d.error || 'Erreur inconnue');
+    } catch (e) { setMfeError(e.message); }
+    finally { setMfeLoading(false); }
   };
 
   const loadHistory = async () => {
@@ -302,7 +299,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { loadAccounts(); loadEvents(); loadEaConfigs(); loadPhaseHistory(); loadSignalPerformance(); }, []);
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol, filterDateFrom, filterDateTo]);
-  useEffect(() => { if (activeTab === 'analyse' && !tpResult && !tpLoading) loadTpScenarios(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'analyse' && !mfeLosers.length && !mfeLoading) loadMfeLosers(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
@@ -384,6 +381,43 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     () => events.filter(e => e.event_type === 'reset' && (filterLogin === 'all' || e.login === filterLogin)),
     [events, filterLogin]
   );
+
+  // MFE Tracker -- 4 paliers de "combien le prix s'est approché d'un TP avant de retourner au SL",
+  // mêmes seuils que trading-monitor's MAXIMUM_FAVORABLE_EXCURSION.MD. Regroupé côté client par la
+  // dimension choisie (mfeGroupBy) -- petit dataset (un row par perte), pas besoin de re-fetch par vue.
+  const MFE_BUCKETS = [
+    { key: 'under12', label: '< 1.2R (jamais rescapable)', test: r => r < 1.2, color: '#3a4256' },
+    { key: 'b1214', label: '1.2 – 1.4R', test: r => r >= 1.2 && r < 1.4, color: '#5a76b8' },
+    { key: 'b1416', label: '1.4 – 1.6R', test: r => r >= 1.4 && r < 1.6, color: '#7b9de0' },
+    { key: 'over16', label: '≥ 1.6R', test: r => r >= 1.6, color: '#bcd2ff' },
+  ];
+  const mfeGroupKey = t => {
+    if (mfeGroupBy === 'day') return toUtcIso(t.closed_at)?.slice(0, 10) ?? '?';
+    if (mfeGroupBy === 'symbol') return t.symbol ? t.symbol.split('.')[0] : '?';
+    if (mfeGroupBy === 'build') return t.variant ? `Build ${t.variant}` : 'Build inconnu';
+    if (mfeGroupBy === 'firm') return t.firm || '?';
+    return '?';
+  };
+  const mfeGrouped = useMemo(() => {
+    const map = {};
+    for (const t of mfeLosers) {
+      if (t.mfe_r == null) continue;
+      const key = mfeGroupKey(t);
+      if (!map[key]) map[key] = { key, under12: 0, b1214: 0, b1416: 0, over16: 0, total: 0, net_pnl: 0 };
+      const bucket = MFE_BUCKETS.find(b => b.test(t.mfe_r)) || MFE_BUCKETS[0];
+      map[key][bucket.key] += 1;
+      map[key].total += 1;
+      map[key].net_pnl += t.net_pnl || 0;
+    }
+    const arr = Object.values(map);
+    arr.sort(mfeGroupBy === 'day' ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.total - a.total);
+    return arr;
+  }, [mfeLosers, mfeGroupBy]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mfeTotals = useMemo(() => {
+    const t = { under12: 0, b1214: 0, b1416: 0, over16: 0, total: 0 };
+    for (const g of mfeGrouped) { t.under12 += g.under12; t.b1214 += g.b1214; t.b1416 += g.b1416; t.over16 += g.over16; t.total += g.total; }
+    return t;
+  }, [mfeGrouped]);
 
   // Nombre de trades fermés par jour, tous comptes filtrés confondus (barres, axe droit)
   const dailyTradeCounts = useMemo(() => {
@@ -1550,45 +1584,62 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
         );
       })()}
 
-      {/* ── Analyse : scénarios TP alternatifs sur les trades perdants ──── */}
+      {/* ── MFE Tracker (Maximum Favorable Excursion) : jusqu'où le prix est allé avant le SL ── */}
       {activeTab === 'analyse' && (
         <div>
-          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Du</div>
-              <input type="date" value={tpStart} onChange={e => setTpStart(e.target.value)} style={{
-                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
-                color: '#fff', fontSize: 12, padding: '5px 8px'
-              }} />
+          <Card style={{ padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2 }}>MFE Tracker — Maximum Favorable Excursion</div>
+            <div style={{ fontSize: 11.5, color: MUTED }}>
+              Pour chaque perte fermée au SL, le meilleur R atteint avant le retour au SL — calculé en direct par trading-monitor (<code>trade_mfe</code>), pas un R:R hypothétique.
             </div>
-            <div>
-              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Au</div>
-              <input type="date" value={tpEnd} onChange={e => setTpEnd(e.target.value)} style={{
-                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
-                color: '#fff', fontSize: 12, padding: '5px 8px'
-              }} />
-            </div>
-            <button onClick={loadTpScenarios} disabled={tpLoading} style={{
-              padding: '6px 14px', borderRadius: 6, border: 'none', cursor: tpLoading ? 'default' : 'pointer',
-              background: tpLoading ? '#1e2130' : BLUE, color: '#fff', fontSize: 12, fontWeight: 600
-            }}>
-              {tpLoading ? '⏳ Analyse...' : 'Analyser'}
-            </button>
           </Card>
 
-          {tpError && (
-            <Card style={{ padding: 16, marginBottom: 14, color: RED, fontSize: 13 }}>❌ {tpError}</Card>
+          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: MUTED, marginRight: 4 }}>Regrouper par :</span>
+            {[
+              { id: 'day', label: 'Jour' },
+              { id: 'symbol', label: 'Symbole' },
+              { id: 'build', label: 'Build' },
+              { id: 'firm', label: 'Prop firm' },
+            ].map(opt => (
+              <button key={opt.id} onClick={() => setMfeGroupBy(opt.id)} style={{
+                padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                border: '0.5px solid', borderColor: mfeGroupBy === opt.id ? BLUE : '#1e2130',
+                background: mfeGroupBy === opt.id ? '#0d1f35' : 'transparent',
+                color: mfeGroupBy === opt.id ? BLUE : MUTED, fontWeight: mfeGroupBy === opt.id ? 600 : 400
+              }}>{opt.label}</button>
+            ))}
+            {mfeLoading && <span style={{ fontSize: 12, color: MUTED, marginLeft: 8 }}>⏳ Chargement...</span>}
+          </Card>
+
+          {mfeError && (
+            <Card style={{ padding: 16, marginBottom: 14, color: RED, fontSize: 13 }}>❌ {mfeError}</Card>
           )}
 
-          {tpResult && (
+          {!mfeLoading && mfeLosers.length > 0 && (
             <>
               <Card style={{ padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#ccc', lineHeight: 1.7 }}>
-                <b style={{ color: '#fff' }}>{tpResult.totals.total_trades}</b> trades fermés dans cette plage ·{' '}
-                <b style={{ color: '#fff' }}>{tpResult.totals.total_losers}</b> perdants, dont{' '}
-                <b style={{ color: '#fff' }}>{tpResult.totals.analyzable_losers}</b> analysables (fermés au SL, prix récupéré) ·{' '}
-                <span style={{ color: MUTED }}>{tpResult.totals.excluded_losers} exclus (fermeture manuelle -- SL non enregistré)</span>
-                <br />
-                Winrate actuel : <b style={{ color: '#fff' }}>{fmtPct(tpResult.totals.current_winrate)}</b>
+                <b style={{ color: '#fff' }}>{mfeTotals.total}</b> pertes SL analysées ·{' '}
+                <b style={{ color: '#fff' }}>{mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16}</b> ont atteint ≥ 1.2R avant le SL
+                (<span style={{ color: GREEN }}>{fmtPct((mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16) / mfeTotals.total * 100)}</span>) ·{' '}
+                <b style={{ color: '#fff' }}>{mfeTotals.over16}</b> ont atteint ≥ 1.6R
+                (<span style={{ color: GREEN }}>{fmtPct(mfeTotals.over16 / mfeTotals.total * 100)}</span>)
+              </Card>
+
+              <Card style={{ marginBottom: 14 }}>
+                <PlotDiv
+                  traces={MFE_BUCKETS.map(b => ({
+                    type: 'bar', x: mfeGrouped.map(g => g.key), y: mfeGrouped.map(g => g[b.key]),
+                    name: b.label, marker: { color: b.color }
+                  }))}
+                  layout={{
+                    title: 'Pertes SL par ' + ({ day: 'jour', symbol: 'symbole', build: 'build', firm: 'prop firm' }[mfeGroupBy]) + ' — palier de MFE atteint',
+                    barmode: 'stack', height: 380,
+                    xaxis: { tickangle: mfeGroupBy === 'day' ? -90 : 0 },
+                    yaxis: { title: 'Trades' },
+                  }}
+                  deps={[mfeGrouped]}
+                />
               </Card>
 
               <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -1596,21 +1647,28 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ borderBottom: '0.5px solid #1e2130', color: MUTED, textAlign: 'left' }}>
-                        {['Scénario TP', 'Récupérés', '% des analysables', 'Nouveau total winners', 'Nouveau winrate', 'Seuil breakeven', 'Verdict'].map(h => (
-                          <th key={h} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h}</th>
+                        {[
+                          { id: 'day', label: 'Jour' }, { id: 'symbol', label: 'Symbole' },
+                          { id: 'build', label: 'Build' }, { id: 'firm', label: 'Prop firm' },
+                        ].filter(h => h.id === mfeGroupBy).map(h => (
+                          <th key={h.id} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{h.label}</th>
                         ))}
+                        <th style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>Total</th>
+                        {MFE_BUCKETS.map(b => (
+                          <th key={b.key} style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>{b.label}</th>
+                        ))}
+                        <th style={{ padding: '8px 12px', fontWeight: 500, textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>P&amp;L</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {tpResult.scenarios.map(s => (
-                        <tr key={s.r_multiple} style={{ borderBottom: '0.5px solid #1a1d27' }}>
-                          <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>{s.r_multiple}R</td>
-                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{s.recovered_count}</td>
-                          <td style={{ padding: '8px 12px', color: MUTED }}>{fmtPct(s.recovered_pct)}</td>
-                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{s.new_total_winners}</td>
-                          <td style={{ padding: '8px 12px', fontWeight: 600, color: s.above_breakeven ? GREEN : RED }}>{fmtPct(s.new_winrate)}</td>
-                          <td style={{ padding: '8px 12px', color: MUTED }}>{fmtPct(s.breakeven_winrate)}</td>
-                          <td style={{ padding: '8px 12px' }}>{s.above_breakeven ? '✅' : '❌'}</td>
+                      {mfeGrouped.map(g => (
+                        <tr key={g.key} style={{ borderBottom: '0.5px solid #1a1d27' }}>
+                          <td style={{ padding: '8px 12px', color: '#fff', fontWeight: 600 }}>{g.key}</td>
+                          <td style={{ padding: '8px 12px', color: '#ccc' }}>{g.total}</td>
+                          {MFE_BUCKETS.map(b => (
+                            <td key={b.key} style={{ padding: '8px 12px', color: g[b.key] ? '#ccc' : MUTED }}>{g[b.key] || '—'}</td>
+                          ))}
+                          <td style={{ padding: '8px 12px', fontWeight: 600, color: g.net_pnl >= 0 ? GREEN : RED }}>{fmtMoney(g.net_pnl)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1618,6 +1676,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 </div>
               </Card>
             </>
+          )}
+
+          {!mfeLoading && mfeLosers.length === 0 && !mfeError && (
+            <Card style={{ padding: 40, textAlign: 'center', color: MUTED, fontSize: 13 }}>Aucune perte SL analysée pour l'instant.</Card>
           )}
         </div>
       )}
