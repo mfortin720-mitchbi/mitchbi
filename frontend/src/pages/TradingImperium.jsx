@@ -167,6 +167,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [mfeLoading, setMfeLoading] = useState(false);
   const [mfeError, setMfeError] = useState(null);
   const [mfeGroupBy, setMfeGroupBy] = useState('day'); // 'day' | 'symbol' | 'build' | 'firm'
+  const [mfeDateFrom, setMfeDateFrom] = useState(''); // vide = pas de borne, plage complète par défaut
+  const [mfeDateTo, setMfeDateTo] = useState('');
 
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
@@ -398,9 +400,23 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     if (mfeGroupBy === 'firm') return t.firm || '?';
     return '?';
   };
+  // Filtre de dates -- vide des deux côtés par défaut (plage complète), appliqué avant le
+  // regroupement. Comparaison en chaînes "YYYY-MM-DD" (même convention que toUtcIso), pas besoin
+  // de parser des Date ici.
+  const mfeFiltered = useMemo(() => {
+    if (!mfeDateFrom && !mfeDateTo) return mfeLosers;
+    return mfeLosers.filter(t => {
+      const day = toUtcIso(t.closed_at)?.slice(0, 10);
+      if (!day) return false;
+      if (mfeDateFrom && day < mfeDateFrom) return false;
+      if (mfeDateTo && day > mfeDateTo) return false;
+      return true;
+    });
+  }, [mfeLosers, mfeDateFrom, mfeDateTo]);
+
   const mfeGrouped = useMemo(() => {
     const map = {};
-    for (const t of mfeLosers) {
+    for (const t of mfeFiltered) {
       if (t.mfe_r == null) continue;
       const key = mfeGroupKey(t);
       if (!map[key]) map[key] = { key, under12: 0, b1214: 0, b1416: 0, over16: 0, total: 0, net_pnl: 0 };
@@ -412,7 +428,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     const arr = Object.values(map);
     arr.sort(mfeGroupBy === 'day' ? (a, b) => a.key.localeCompare(b.key) : (a, b) => b.total - a.total);
     return arr;
-  }, [mfeLosers, mfeGroupBy]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mfeFiltered, mfeGroupBy]); // eslint-disable-line react-hooks/exhaustive-deps
   const mfeTotals = useMemo(() => {
     const t = { under12: 0, b1214: 0, b1416: 0, over16: 0, total: 0 };
     for (const g of mfeGrouped) { t.under12 += g.under12; t.b1214 += g.b1214; t.b1416 += g.b1416; t.over16 += g.over16; t.total += g.total; }
@@ -1594,37 +1610,74 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             </div>
           </Card>
 
-          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: MUTED, marginRight: 4 }}>Regrouper par :</span>
-            {[
-              { id: 'day', label: 'Jour' },
-              { id: 'symbol', label: 'Symbole' },
-              { id: 'build', label: 'Build' },
-              { id: 'firm', label: 'Prop firm' },
-            ].map(opt => (
-              <button key={opt.id} onClick={() => setMfeGroupBy(opt.id)} style={{
-                padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                border: '0.5px solid', borderColor: mfeGroupBy === opt.id ? BLUE : '#1e2130',
-                background: mfeGroupBy === opt.id ? '#0d1f35' : 'transparent',
-                color: mfeGroupBy === opt.id ? BLUE : MUTED, fontWeight: mfeGroupBy === opt.id ? 600 : 400
-              }}>{opt.label}</button>
-            ))}
-            {mfeLoading && <span style={{ fontSize: 12, color: MUTED, marginLeft: 8 }}>⏳ Chargement...</span>}
+          <Card style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Regrouper par</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { id: 'day', label: 'Jour' },
+                  { id: 'symbol', label: 'Symbole' },
+                  { id: 'build', label: 'Build' },
+                  { id: 'firm', label: 'Prop firm' },
+                ].map(opt => (
+                  <button key={opt.id} onClick={() => setMfeGroupBy(opt.id)} style={{
+                    padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                    border: '0.5px solid', borderColor: mfeGroupBy === opt.id ? BLUE : '#1e2130',
+                    background: mfeGroupBy === opt.id ? '#0d1f35' : 'transparent',
+                    color: mfeGroupBy === opt.id ? BLUE : MUTED, fontWeight: mfeGroupBy === opt.id ? 600 : 400
+                  }}>{opt.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Du</div>
+              <input type="date" value={mfeDateFrom} onChange={e => setMfeDateFrom(e.target.value)} style={{
+                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                color: '#fff', fontSize: 12, padding: '5px 8px'
+              }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Au</div>
+              <input type="date" value={mfeDateTo} onChange={e => setMfeDateTo(e.target.value)} style={{
+                background: '#0f1117', border: '0.5px solid #1e2130', borderRadius: 5,
+                color: '#fff', fontSize: 12, padding: '5px 8px'
+              }} />
+            </div>
+            {(mfeDateFrom || mfeDateTo) && (
+              <button onClick={() => { setMfeDateFrom(''); setMfeDateTo(''); }} style={{
+                padding: '5px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+                border: '0.5px solid #1e2130', background: 'transparent', color: MUTED
+              }}>Plage complète</button>
+            )}
+            {mfeLoading && <span style={{ fontSize: 12, color: MUTED }}>⏳ Chargement...</span>}
           </Card>
 
           {mfeError && (
             <Card style={{ padding: 16, marginBottom: 14, color: RED, fontSize: 13 }}>❌ {mfeError}</Card>
           )}
 
-          {!mfeLoading && mfeLosers.length > 0 && (
+          {!mfeLoading && mfeFiltered.length > 0 && (
             <>
-              <Card style={{ padding: '12px 16px', marginBottom: 14, fontSize: 13, color: '#ccc', lineHeight: 1.7 }}>
-                <b style={{ color: '#fff' }}>{mfeTotals.total}</b> pertes SL analysées ·{' '}
-                <b style={{ color: '#fff' }}>{mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16}</b> ont atteint ≥ 1.2R avant le SL
-                (<span style={{ color: GREEN }}>{fmtPct((mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16) / mfeTotals.total * 100)}</span>) ·{' '}
-                <b style={{ color: '#fff' }}>{mfeTotals.over16}</b> ont atteint ≥ 1.6R
-                (<span style={{ color: GREEN }}>{fmtPct(mfeTotals.over16 / mfeTotals.total * 100)}</span>)
-              </Card>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 14 }}>
+                <Card style={{ padding: '14px 16px' }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED, marginBottom: 6 }}>Pertes SL analysées</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>{mfeTotals.total}</div>
+                </Card>
+                <Card style={{ padding: '14px 16px', background: 'rgba(29,158,117,0.08)', border: `0.5px solid rgba(29,158,117,0.3)` }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: GREEN, marginBottom: 6 }}>Ont atteint ≥ 1.2R avant le SL</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: GREEN }}>
+                    {mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16}
+                    <span style={{ fontSize: 13, fontWeight: 400, marginLeft: 6 }}>({fmtPct((mfeTotals.b1214 + mfeTotals.b1416 + mfeTotals.over16) / mfeTotals.total * 100)})</span>
+                  </div>
+                </Card>
+                <Card style={{ padding: '14px 16px', background: 'rgba(55,138,221,0.08)', border: `0.5px solid rgba(55,138,221,0.3)` }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: BLUE, marginBottom: 6 }}>Ont atteint ≥ 1.6R avant le SL</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: BLUE }}>
+                    {mfeTotals.over16}
+                    <span style={{ fontSize: 13, fontWeight: 400, marginLeft: 6 }}>({fmtPct(mfeTotals.over16 / mfeTotals.total * 100)})</span>
+                  </div>
+                </Card>
+              </div>
 
               <Card style={{ marginBottom: 14 }}>
                 <PlotDiv
@@ -1678,8 +1731,10 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
             </>
           )}
 
-          {!mfeLoading && mfeLosers.length === 0 && !mfeError && (
-            <Card style={{ padding: 40, textAlign: 'center', color: MUTED, fontSize: 13 }}>Aucune perte SL analysée pour l'instant.</Card>
+          {!mfeLoading && mfeFiltered.length === 0 && !mfeError && (
+            <Card style={{ padding: 40, textAlign: 'center', color: MUTED, fontSize: 13 }}>
+              {mfeLosers.length === 0 ? "Aucune perte SL analysée pour l'instant." : 'Aucune perte SL dans cette plage de dates.'}
+            </Card>
           )}
         </div>
       )}
