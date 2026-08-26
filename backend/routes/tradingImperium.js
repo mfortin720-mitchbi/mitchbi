@@ -48,15 +48,25 @@ router.get('/accounts', async (req, res) => {
         JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_challenge_view\` c ON c.login = d.login
         WHERE d.trade_day >= c.phase_start_date
         GROUP BY d.login
+      ),
+      -- Total de trades TOUTES phases confondues (la license entière, pas juste le login actuel --
+      -- contrairement à /signal-performance qui veut volontairement la phase en cours seulement).
+      license_trade_counts AS (
+        SELECT account_id, COUNT(*) AS total_trades
+        FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\`
+        WHERE is_closed = TRUE
+        GROUP BY account_id
       )
       SELECT a.*,
         c.challenge_phase, c.challenge_target, c.challenge_status,
         c.phase_start_date, c.phase_end_date, c.initial_login,
         c.min_trading_days, c.trading_days_profitable_only,
-        IF(c.trading_days_profitable_only, counts.profitable_days, counts.all_days) AS trading_days_count
+        IF(c.trading_days_profitable_only, counts.profitable_days, counts.all_days) AS trading_days_count,
+        IFNULL(ltc.total_trades, 0) AS total_trades
       FROM \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a
       LEFT JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_challenge_view\` c USING (account_id)
       LEFT JOIN counts ON counts.login = a.login
+      LEFT JOIN license_trade_counts ltc USING (account_id)
       ORDER BY a.license_firm, a.login
     `);
     res.json({ success: true, accounts: rows });

@@ -810,29 +810,43 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                   <div><div style={{ fontSize: 10, color: MUTED }}>BALANCE</div><div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.balance)}</div></div>
-                  <div><div style={{ fontSize: 10, color: MUTED }}>EQUITY</div><div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.equity)}</div></div>
+                  <div>
+                    <div style={{ fontSize: 10, color: MUTED }}>EQUITY</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.equity)}</div>
+                      <div title="Total de trades depuis le début de la license (toutes phases)" style={{ fontSize: 10, color: MUTED }}>
+                        · {acc.total_trades ?? 0} trade{(acc.total_trades ?? 0) >= 2 ? 's' : ''}
+                      </div>
+                    </div>
+                  </div>
                   <div><div style={{ fontSize: 10, color: MUTED }}>P&amp;L</div><div style={{ fontSize: 12, color: acc.pnl >= 0 ? GREEN : RED }}>{fmtMoney(acc.pnl)} ({fmtPct(acc.pnl_pct)})</div></div>
                   <div><div style={{ fontSize: 10, color: MUTED }}>DRAWDOWN</div><div style={{ fontSize: 12, color: acc.drawdown_pct > 0 ? RED : '#ccc' }}>{fmtPct(acc.drawdown_pct)}</div></div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 6 }}>
                   <div style={{ fontSize: 10, color: MUTED }}>{acc.open_positions_count} position(s) · maj {fmtDateTime(acc.last_updated?.value || acc.last_updated)}</div>
                   {(() => {
                     const eaConfig = eaConfigs.find(c => c.login === acc.login);
                     if (!eaConfig) return null;
                     const detached = eaConfig.attached === false;
+                    const rr = eaConfig.config?.['Strategy.Risk : reward'];
                     return (
-                      <button
-                        onClick={e => { e.stopPropagation(); setEaModalLogin(acc.login); }}
-                        title={detached ? `EA détaché : ${eaConfig.reason || ''}` : 'Voir la config EA'}
-                        style={{
-                          flexShrink: 0, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-                          cursor: 'pointer', color: detached ? RED : MUTED,
-                          background: detached ? `${RED}22` : 'transparent',
-                          border: `0.5px solid ${detached ? RED : MUTED}55`
-                        }}
-                      >
-                        {detached ? '⚠ EA' : '⚙ EA'}
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                        {rr != null && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: BLUE }}>R:R {rr}</div>
+                        )}
+                        <button
+                          onClick={e => { e.stopPropagation(); setEaModalLogin(acc.login); }}
+                          title={detached ? `EA détaché : ${eaConfig.reason || ''}` : 'Voir la config EA'}
+                          style={{
+                            flexShrink: 0, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                            cursor: 'pointer', color: detached ? RED : MUTED,
+                            background: detached ? `${RED}22` : 'transparent',
+                            border: `0.5px solid ${detached ? RED : MUTED}55`
+                          }}
+                        >
+                          {detached ? '⚠ EA' : '⚙ EA'}
+                        </button>
+                      </div>
                     );
                   })()}
                 </div>
