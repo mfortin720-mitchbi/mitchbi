@@ -419,6 +419,7 @@ router.get('/history', async (req, res) => {
       `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.daily_balance_history_view\` ${where} ORDER BY login, day`,
       params
     );
+    console.log('[history debug] query=', JSON.stringify(req.query), 'params=', JSON.stringify(params), 'rowCount=', rows.length);
     res.json({ success: true, history: rows });
   } catch (err) {
     console.error('[trading-imperium] history error:', err.message);
