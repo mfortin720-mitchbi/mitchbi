@@ -814,7 +814,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                     <div style={{ fontSize: 10, color: MUTED }}>EQUITY</div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{fmtMoney(acc.equity)}</div>
-                      <div title="Total de trades depuis le début de la license (toutes phases)" style={{ fontSize: 10, color: MUTED }}>
+                      <div title="Nombre de trades du login actuel, dans sa phase en cours" style={{ fontSize: 10, color: MUTED }}>
                         · {acc.total_trades ?? 0} trade{(acc.total_trades ?? 0) >= 2 ? 's' : ''}
                       </div>
                     </div>
