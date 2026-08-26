@@ -462,8 +462,14 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     // Trois informations distinctes par marqueur : couleur de fond = compte, forme = sens (▲ achat /
     // ▼ vente à l'entrée, ● à la sortie), contour = résultat (vert = gain, rouge = perte). Le P&L
     // compact s'affiche aussi directement au point de sortie (label sur le graphique, pas juste au
-    // survol). Une ligne pointillée relie chaque entrée à sa sortie, dans la couleur du compte --
-    // séparée par un null entre chaque trade pour ne pas chaîner les trades entre eux.
+    // survol). Sur un perdant fermé au SL, une deuxième ligne affiche le MFE en R (Maximum
+    // Favorable Excursion -- le meilleur multiple de R atteint avant le retour au SL, calculé par
+    // trading_monitor.py's sync_trade_mfe() -- voir MAXIMUM_FAVORABLE_EXCURSION.MD dans le repo
+    // trading-monitor). Absent sur les gagnants : leur SL réel n'est jamais enregistré (seul un
+    // trade fermé AU SL laisse un commentaire de deal exploitable), donc leur vrai R:R n'est pas
+    // calculable ici -- ne pas l'inventer. Une ligne pointillée relie chaque entrée à sa sortie,
+    // dans la couleur du compte -- séparée par un null entre chaque trade pour ne pas chaîner les
+    // trades entre eux.
     const compactPnl = v => `${v >= 0 ? '+' : '-'}$${Math.round(Math.abs(v))}`;
     const tradeTraces = Object.entries(byLogin).map(([login, ts]) => {
       const loginColor = loginColors[login];
@@ -471,14 +477,17 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
       for (const t of ts) {
         const win = t.net_pnl >= 0;
         const resultColor = win ? GREEN : RED;
+        const hasMfe = !win && t.mfe_r !== null && t.mfe_r !== undefined;
+        const exitLabel = hasMfe ? `${compactPnl(t.net_pnl)}<br>MFE ${Number(t.mfe_r).toFixed(1)}R` : compactPnl(t.net_pnl);
         x.push(toUtcIso(t.opened_at?.value || t.opened_at), toUtcIso(t.closed_at?.value || t.closed_at), null);
         y.push(t.entry_price, t.exit_price, null);
         symbol.push(t.direction === 'BUY' ? 'triangle-up' : 'triangle-down', 'circle', 'circle');
         borderColor.push(resultColor, resultColor, 'rgba(0,0,0,0)');
-        dispText.push('', compactPnl(t.net_pnl), '');
+        dispText.push('', exitLabel, '');
         hovertext.push(
           `${labelForLogin(Number(login))} · ${t.direction} · Entrée ${t.entry_price}`,
-          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})`,
+          `${labelForLogin(Number(login))} · Sortie ${t.exit_price} · P&L ${fmtMoney(t.net_pnl)} (${win ? 'gain' : 'perte'})` +
+            (hasMfe ? ` · MFE ${Number(t.mfe_r).toFixed(2)}R avant le SL (${t.mfe_peak_count ?? '?'} sommets)` : ''),
           ''
         );
       }

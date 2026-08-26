@@ -309,22 +309,29 @@ router.get('/phase-history', async (req, res) => {
 router.get('/trades', async (req, res) => {
   try {
     const { login, symbol, from, to, limit } = req.query;
-    const conditions = ['is_closed = TRUE'];
+    const conditions = ['t.is_closed = TRUE'];
     const params = {};
 
-    if (login) { conditions.push('login = @login'); params.login = parseInt(login, 10); }
+    if (login) { conditions.push('t.login = @login'); params.login = parseInt(login, 10); }
     // STARTS_WITH not exact match: broker-suffixed symbols like "GBPUSD.raw" (Alpha Capital)
     // must still match the clean "GBPUSD" filter value derived from the algo filename.
-    if (symbol) { conditions.push('STARTS_WITH(symbol, @symbol)'); params.symbol = symbol; }
+    if (symbol) { conditions.push('STARTS_WITH(t.symbol, @symbol)'); params.symbol = symbol; }
     // from/to are date (or date+time) strings from the frontend's date inputs -- cast in SQL
     // rather than relying on the BigQuery client's JS-type inference, which would treat a bare
     // string param as STRING and fail the TIMESTAMP comparison.
-    if (from) { conditions.push('closed_at >= TIMESTAMP(@from)'); params.from = from; }
-    if (to) { conditions.push('closed_at <= TIMESTAMP(@to)'); params.to = to; }
+    if (from) { conditions.push('t.closed_at >= TIMESTAMP(@from)'); params.from = from; }
+    if (to) { conditions.push('t.closed_at <= TIMESTAMP(@to)'); params.to = to; }
 
     const rowLimit = Math.min(parseInt(limit, 10) || 200, 1000);
+    // mfe_r (from trade_mfe, computed by trading_monitor.py's sync_trade_mfe()) is only ever
+    // non-null for a losing trade closed at its own SL -- a manual/EA close or a winner has no
+    // row there, LEFT JOIN keeps those trades in the result with mfe_r = null.
     const rows = await run(
-      `SELECT * FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\` WHERE ${conditions.join(' AND ')} ORDER BY closed_at DESC LIMIT ${rowLimit}`,
+      `SELECT t.*, m.mfe_r, m.peak_count AS mfe_peak_count
+       FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\` t
+       LEFT JOIN \`${PROJECT_ID}.${DATASET_ID}.trade_mfe\` m
+         ON t.account_id = m.account_id AND t.position_id = m.position_id
+       WHERE ${conditions.join(' AND ')} ORDER BY t.closed_at DESC LIMIT ${rowLimit}`,
       params
     );
     res.json({ success: true, trades: rows });
