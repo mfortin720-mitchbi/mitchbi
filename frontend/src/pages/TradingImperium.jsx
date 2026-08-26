@@ -1688,8 +1688,12 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
                   layout={{
                     title: 'Pertes SL par ' + ({ day: 'jour', symbol: 'symbole', build: 'build', firm: 'prop firm' }[mfeGroupBy]) + ' — palier de MFE atteint',
                     barmode: 'stack', height: 380,
-                    xaxis: { tickangle: mfeGroupBy === 'day' ? -90 : 0 },
-                    yaxis: { title: 'Trades' },
+                    paper_bgcolor: '#13151f', plot_bgcolor: '#13151f',
+                    font: { color: MUTED, size: 11 },
+                    legend: { orientation: 'h', y: -0.25, font: { color: '#ccc', size: 11 } },
+                    xaxis: { tickangle: mfeGroupBy === 'day' ? -90 : 0, gridcolor: '#1e2130', linecolor: '#1e2130', color: MUTED },
+                    yaxis: { title: 'Trades', gridcolor: '#1e2130', linecolor: '#1e2130', color: MUTED, zerolinecolor: '#1e2130' },
+                    bargap: 0.25,
                   }}
                   deps={[mfeGrouped]}
                 />
