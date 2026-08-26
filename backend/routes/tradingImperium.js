@@ -123,6 +123,11 @@ router.get('/signal-performance', async (req, res) => {
       } catch (e) { /* leave unset on malformed JSON */ }
     }
 
+    // Jointe sur (account_id, login) -- pas juste account_id -- pour ne compter que les trades
+    // de la phase EN COURS. Un compte qui a changé de login (ex. FundedNext 14178484, dont le
+    // lineage a aussi tourné sous 14114959 puis 14169076) a pu tourner sous un tout autre
+    // "Strategy.Bias signal" durant ses phases précédentes -- leur P&L n'a rien à voir avec la
+    // config actuelle qu'on affiche ici, et les additionner gonfle le chiffre du signal courant.
     const stats = await run(`
       SELECT a.account_id, a.license_firm, a.login, a.algo_symbol,
              COUNT(*) AS trades,
@@ -131,7 +136,8 @@ router.get('/signal-performance', async (req, res) => {
              ROUND(AVG(IF(t.net_pnl >= 0, t.net_pnl, NULL)), 2) AS avg_win,
              ROUND(AVG(IF(t.net_pnl < 0, t.net_pnl, NULL)), 2) AS avg_loss
       FROM \`${PROJECT_ID}.${DATASET_ID}.trades_view\` t
-      JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a USING (account_id)
+      JOIN \`${PROJECT_ID}.${DATASET_ID}.latest_accounts_view\` a
+        ON a.account_id = t.account_id AND a.login = t.login
       WHERE t.is_closed = TRUE
       GROUP BY a.account_id, a.license_firm, a.login, a.algo_symbol
     `);
