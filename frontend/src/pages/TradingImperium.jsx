@@ -169,6 +169,8 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   const [mfeGroupBy, setMfeGroupBy] = useState('day'); // 'day' | 'symbol' | 'build' | 'firm'
   const [mfeDateFrom, setMfeDateFrom] = useState(''); // vide = pas de borne, plage complète par défaut
   const [mfeDateTo, setMfeDateTo] = useState('');
+  const [rrOptimal, setRrOptimal] = useState(null); // synthèse pertes+gagnants -> R:R optimal, voir loadRrOptimal
+  const [rrLoading, setRrLoading] = useState(false);
 
   const [filterFirm, setFilterFirm] = useState('all');
   const [filterLogin, setFilterLogin] = useState('all');
@@ -254,6 +256,16 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
     finally { setMfeLoading(false); }
   };
 
+  const loadRrOptimal = async () => {
+    setRrLoading(true);
+    try {
+      const res = await apiFetch('/api/trading-imperium/rr-optimal');
+      const d = await res.json();
+      if (d.success) setRrOptimal(d);
+    } catch (e) { console.error(e); }
+    finally { setRrLoading(false); }
+  };
+
   const loadHistory = async () => {
     setLoadingHistory(true);
     try {
@@ -302,6 +314,7 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { if (activeTab === 'overview') loadHistory(); }, [activeTab, filterFirm, filterLogin, filterSymbol]);
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol, filterDateFrom, filterDateTo]);
   useEffect(() => { if (activeTab === 'analyse' && !mfeLosers.length && !mfeLoading) loadMfeLosers(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (activeTab === 'analyse' && !rrOptimal && !rrLoading) loadRrOptimal(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
@@ -1740,6 +1753,101 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
               {mfeLosers.length === 0 ? "Aucune perte SL analysée pour l'instant." : 'Aucune perte SL dans cette plage de dates.'}
             </Card>
           )}
+
+          {/* ── Synthèse : où placer le R:R, combine trade_mfe + trade_mfe_win ──────── */}
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', margin: '28px 0 12px' }}>Où placer le R:R — synthèse perdants + gagnants</div>
+          {rrLoading && !rrOptimal && (
+            <Card style={{ padding: 40, textAlign: 'center', color: MUTED, fontSize: 13 }}>⏳ Calcul en cours...</Card>
+          )}
+          {rrOptimal && (() => {
+            const fmtD = v => `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('fr-CA')} $`;
+            const bestR = rrOptimal.best.r;
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
+                  <Card style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED, marginBottom: 6 }}>P&amp;L réel (R:R ~1.8)</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: rrOptimal.actual_total >= 0 ? GREEN : RED }}>{fmtD(rrOptimal.actual_total)}</div>
+                  </Card>
+                  <Card style={{ padding: '14px 16px', background: 'rgba(155,140,245,0.08)', border: '0.5px solid rgba(155,140,245,0.35)' }}>
+                    <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9B59B6', marginBottom: 6 }}>R:R optimal simulé</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: '#9B59B6' }}>{bestR.toFixed(2)}</div>
+                  </Card>
+                  <Card style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED, marginBottom: 6 }}>$ simulé à {bestR.toFixed(2)}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: GREEN }}>{fmtD(rrOptimal.best.total_dollars)}</div>
+                  </Card>
+                  <Card style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.05em', color: MUTED, marginBottom: 6 }}>Gain vs réel</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: GREEN }}>{fmtD(rrOptimal.best.total_dollars - rrOptimal.actual_total)}</div>
+                  </Card>
+                </div>
+
+                <Card style={{ marginBottom: 14 }}>
+                  <PlotDiv
+                    traces={[{
+                      type: 'bar',
+                      x: rrOptimal.sweep.map(s => s.r.toFixed(2)),
+                      y: rrOptimal.sweep.map(s => s.total_dollars),
+                      text: rrOptimal.sweep.map(s => `winrate ${s.winrate.toFixed(1)}%`),
+                      hovertemplate: '%{x}R : %{y:,.0f}$<br>%{text}<extra></extra>',
+                      marker: {
+                        color: rrOptimal.sweep.map(s => (s.total_dollars >= 0 ? GREEN : RED)),
+                        line: {
+                          color: rrOptimal.sweep.map(s => (s.r === bestR ? '#9B59B6' : 'rgba(0,0,0,0)')),
+                          width: rrOptimal.sweep.map(s => (s.r === bestR ? 2.5 : 0)),
+                        },
+                      },
+                    }]}
+                    layout={{
+                      title: '$ total simulé par R:R candidat',
+                      height: 340,
+                      paper_bgcolor: '#13151f', plot_bgcolor: '#13151f',
+                      font: { color: MUTED, size: 11 },
+                      showlegend: false,
+                      xaxis: { title: 'R:R', gridcolor: '#1e2130', linecolor: '#1e2130', color: MUTED },
+                      yaxis: { title: '$', gridcolor: '#1e2130', linecolor: '#1e2130', color: MUTED, zerolinecolor: '#3a4256' },
+                      bargap: 0.15,
+                    }}
+                    deps={[rrOptimal]}
+                  />
+                </Card>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Card style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 10 }}>Perdants — trade_mfe</div>
+                    {[
+                      ['Trades fermés au SL analysés', rrOptimal.losers.count],
+                      ['MFE moyen avant le SL', `${rrOptimal.losers.avg_mfe.toFixed(2)}R`],
+                      ['MFE médian', `${rrOptimal.losers.median_mfe.toFixed(2)}R`],
+                      [`Auraient touché ≥ ${bestR.toFixed(2)}R avant le SL`, `${rrOptimal.losers.at_best_r} (${fmtPct(rrOptimal.losers.at_best_r / rrOptimal.losers.count * 100)})`],
+                    ].map(([label, val]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '6px 0', borderBottom: '0.5px solid #1e2130', color: '#ccc' }}>
+                        <span style={{ color: MUTED }}>{label}</span><span>{val}</span>
+                      </div>
+                    ))}
+                  </Card>
+                  <Card style={{ padding: '14px 16px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 10 }}>Gagnants — fenêtre étendue post-TP</div>
+                    {[
+                      ['Trades fermés au TP analysés', rrOptimal.winners.count],
+                      ['R laissé sur la table — moyenne', `${rrOptimal.winners.avg_left_on_table.toFixed(2)}R`],
+                      ['R laissé sur la table — médian', `${rrOptimal.winners.median_left_on_table.toFixed(2)}R`],
+                      ['Auraient dépassé le TP réel (>0.1R)', `${rrOptimal.winners.beyond_tp} (${fmtPct(rrOptimal.winners.beyond_tp / rrOptimal.winners.count * 100)})`],
+                    ].map(([label, val]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '6px 0', borderBottom: '0.5px solid #1e2130', color: '#ccc' }}>
+                        <span style={{ color: MUTED }}>{label}</span><span>{val}</span>
+                      </div>
+                    ))}
+                  </Card>
+                </div>
+
+                <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.7, marginTop: 14 }}>
+                  « P&amp;L réel » ne couvre que les trades fermés au SL ou au TP (fermetures manuelles exclues des deux côtés). Le R candidat est appliqué uniformément aux 8 comptes, alors qu'en réalité hola_3 tourne à 1.7 et les autres à 1.8. Assume que les mêmes signaux d'entrée/prix se seraient produits avec un TP différent -- hypothèse standard pour ce type de backtest.
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

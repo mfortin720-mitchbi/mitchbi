@@ -192,6 +192,92 @@ router.get('/mfe-losers', async (req, res) => {
   }
 });
 
+// GET /api/trading-imperium/rr-optimal — combines trade_mfe (losers) and trade_mfe_win (winners)
+// into a single backtest: for each candidate R:R from 0.5 to 4.0, what would total $ across every
+// analyzable trade have been if the EA's TP had been set to that R instead of its real ~1.8?
+// Per-trade outcome curve as a function of a candidate R (see trading-monitor's
+// rr_optimization.py for the full reasoning -- this mirrors it exactly, now sourced live from
+// trade_mfe/trade_mfe_win instead of an ad-hoc script):
+//   Losers:  R <= mfe_r                              -> win at +R
+//            R >  mfe_r                               -> loss at -1R (same as what really happened)
+//   Winners: R <= r_at_close, or R <= mfe_r_extended  -> win at +R
+//            R >  mfe_r_extended, stopped_by_sl        -> loss at -1R
+//            R >  mfe_r_extended, not stopped_by_sl    -> marked to market at final_mark_r
+// Each trade's own $/R (net_pnl / r_at_close for winners, abs(net_pnl) for losers) converts the R
+// outcome to real dollars, since lot size/instrument differ per account/trade.
+const RR_CANDIDATES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0];
+
+router.get('/rr-optimal', async (req, res) => {
+  try {
+    const losers = await run(`
+      SELECT mfe_r, net_pnl FROM \`${PROJECT_ID}.${DATASET_ID}.trade_mfe\`
+    `);
+    const winners = await run(`
+      SELECT r_at_close, mfe_r_extended, stopped_by_sl, final_mark_r, net_pnl
+      FROM \`${PROJECT_ID}.${DATASET_ID}.trade_mfe_win\`
+    `);
+
+    const loserOutcomeR = (mfeR, r) => (r <= mfeR ? r : -1);
+    const winnerOutcomeR = (w, r) => {
+      if (r <= w.r_at_close || r <= w.mfe_r_extended) return r;
+      return w.stopped_by_sl ? -1 : w.final_mark_r;
+    };
+
+    const actualTotal = losers.reduce((s, l) => s + (l.net_pnl || 0), 0)
+      + winners.reduce((s, w) => s + (w.net_pnl || 0), 0);
+
+    const sweep = RR_CANDIDATES.map(r => {
+      let totalDollars = 0, wins = 0;
+      for (const l of losers) {
+        const outcome = loserOutcomeR(l.mfe_r, r);
+        totalDollars += outcome * Math.abs(l.net_pnl || 0);
+        if (outcome > 0) wins++;
+      }
+      for (const w of winners) {
+        const outcome = winnerOutcomeR(w, r);
+        const dollarsPerR = (w.net_pnl || 0) / w.r_at_close;
+        totalDollars += outcome * dollarsPerR;
+        if (outcome > 0) wins++;
+      }
+      const n = losers.length + winners.length;
+      return { r, total_dollars: totalDollars, winrate: n ? (wins / n) * 100 : 0, n };
+    });
+
+    const best = sweep.reduce((a, b) => (b.total_dollars > a.total_dollars ? b : a), sweep[0]);
+
+    const avg = arr => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
+    const median = arr => {
+      if (!arr.length) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    };
+    const loserMfes = losers.map(l => l.mfe_r).filter(v => v != null);
+    const winnerLeftOnTable = winners.map(w => Math.max(0, w.mfe_r_extended - w.r_at_close));
+
+    res.json({
+      success: true,
+      actual_total: actualTotal,
+      sweep,
+      best,
+      losers: {
+        count: losers.length,
+        avg_mfe: avg(loserMfes),
+        median_mfe: median(loserMfes),
+        at_best_r: loserMfes.filter(v => v >= best.r).length,
+      },
+      winners: {
+        count: winners.length,
+        avg_left_on_table: avg(winnerLeftOnTable),
+        median_left_on_table: median(winnerLeftOnTable),
+        beyond_tp: winnerLeftOnTable.filter(v => v > 0.1).length,
+      },
+    });
+  } catch (err) {
+    console.error('[trading-imperium] rr-optimal error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/trading-imperium/tp-scenarios?start=&end= — "what if I'd taken profit at +1R/+1.5R/+2R..."
 // analysis over losing trades closed in [start, end]. Method (validated earlier against real data,
 // see RR_ANALYSIS.md in the trading-monitor repo): only trades closed by SL (close_reason='SL') can
