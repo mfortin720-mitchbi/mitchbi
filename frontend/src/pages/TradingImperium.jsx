@@ -154,6 +154,13 @@ const phaseNumber = phaseText => {
 export default function TradingImperium({ activeTab = 'overview', onTabChange }) {
   const [accounts, setAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  // Cases à cocher au-dessus des cases de comptes -- masque les licences désactivées (breached)
+  // par défaut sans les faire disparaître de latest_accounts_view (qui garde toute licence déjà
+  // vue, même retirée de MT5_ACCOUNTS -- voir ADDING_ACCOUNTS.md). hiddenLogins n'est peuplé
+  // qu'une fois, à la première liste de comptes reçue -- décocher/recocher ensuite reste un choix
+  // manuel de session, jamais réécrasé par un refresh de /accounts.
+  const [hiddenLogins, setHiddenLogins] = useState(() => new Set());
+  const [visibilityInitialized, setVisibilityInitialized] = useState(false);
   const [events, setEvents] = useState([]);
   const [eaConfigs, setEaConfigs] = useState([]); // état/config EA par compte, voir loadEaConfigs
   const [eaModalLogin, setEaModalLogin] = useState(null); // login affiché dans la popup [EA], null = fermée
@@ -322,6 +329,13 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
   useEffect(() => { if (activeTab === 'trades') loadTrades(); }, [activeTab, filterLogin, filterSymbol, filterDateFrom, filterDateTo]);
   useEffect(() => { if (activeTab === 'analyse' && !mfeLosers.length && !mfeLoading) loadMfeLosers(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (activeTab === 'analyse' && !rrOptimal && !rrLoading) loadRrOptimal(); }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (visibilityInitialized || accounts.length === 0) return;
+    setHiddenLogins(new Set(accounts.filter(a => a.challenge_status === 'breached').map(a => a.login)));
+    setVisibilityInitialized(true);
+  }, [accounts, visibilityInitialized]);
+  const visibleAccounts = useMemo(() => accounts.filter(a => !hiddenLogins.has(a.login)), [accounts, hiddenLogins]);
 
   const firms = useMemo(() => [...new Set(accounts.map(a => a.license_firm))], [accounts]);
   const symbols = useMemo(() => [...new Set(accounts.map(a => a.algo_symbol).filter(Boolean))].sort(), [accounts]);
@@ -720,9 +734,44 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
 
       {loadingAccounts && <div style={{ color: MUTED, fontSize: 13, padding: 14, textAlign: 'center' }}>⏳ Chargement des comptes...</div>}
 
+      {/* ── Filtre de cases : tous les logins, désactivés (breached) décochés par défaut ── */}
+      {!loadingAccounts && accounts.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {accounts.map(a => {
+            const checked = !hiddenLogins.has(a.login);
+            const disabled = a.challenge_status === 'breached';
+            return (
+              <label key={a.login} title={disabled ? 'Licence désactivée (breached)' : ''} style={{
+                display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, cursor: 'pointer',
+                padding: '4px 9px', borderRadius: 5, border: '0.5px solid #1e2130',
+                background: checked ? 'transparent' : '#1a1d27',
+                color: checked ? '#ccc' : MUTED
+              }}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => setHiddenLogins(prev => {
+                    const next = new Set(prev);
+                    if (checked) next.add(a.login); else next.delete(a.login);
+                    return next;
+                  })}
+                  style={{ accentColor: BLUE, cursor: 'pointer' }}
+                />
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: firmColor(a.license_firm), flexShrink: 0 }} />
+                {a.license_firm} — {a.login}{disabled ? ' ⚠' : ''}
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {!loadingAccounts && visibleAccounts.length === 0 && (
+        <div style={{ color: MUTED, fontSize: 13, padding: 14, textAlign: 'center' }}>Tous les comptes sont masqués -- coche-en un ci-dessus.</div>
+      )}
+
       {!loadingAccounts && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px,1fr))', gap: 10, marginBottom: 14 }}>
-          {accounts.map(acc => {
+          {visibleAccounts.map(acc => {
             const status = AccountStatus(acc);
             const selected = filterLogin === acc.login;
             const hasPosition = acc.open_positions_count > 0;
