@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Performance SEM</title>
+</head>
+<body>
+<title>Performance SEM</title>
+<style>
+  :root {
+    --bg: #eef1ef;
+    --surface: #ffffff;
+    --surface-2: #e2e8e4;
+    --ink: #1a241f;
+    --ink-muted: #5c6b63;
+    --ink-faint: #8a978f;
+    --border: #c9d2cb;
+    --accent: #a97a33;
+    --roas-target: #a97a33;
+    --roas-fp: #5b6ea8;
+    --roas-lc: #7c4a6e;
+    --spend: #8a9686;
+    --spend-fill: rgba(138, 150, 134, 0.16);
+    --success: #3f7f56;
+    --success-bg: rgba(63, 127, 86, 0.12);
+    --danger: #a5433a;
+    --danger-bg: rgba(165, 67, 58, 0.10);
+    --live: #2f7a63;
+    --live-bg: rgba(47, 122, 99, 0.12);
+    --shadow: 0 1px 2px rgba(20, 30, 24, 0.06), 0 8px 24px -12px rgba(20, 30, 24, 0.18);
+    --radius: 10px;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12181a; --surface: #182126; --surface-2: #1e2830;
+      --ink: #e8ece9; --ink-muted: #93a29b; --ink-faint: #647069; --border: #2c3a3f;
+      --accent: #d3a45c; --roas-target: #d3a45c; --roas-fp: #8ba0e0; --roas-lc: #c987b8;
+      --spend: #7d8b83; --spend-fill: rgba(125, 139, 131, 0.16);
+      --success: #5cb37e; --success-bg: rgba(92, 179, 126, 0.14);
+      --danger: #d9776c; --danger-bg: rgba(217, 119, 108, 0.14);
+      --live: #5cc9a7; --live-bg: rgba(92, 201, 167, 0.14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px -12px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #12181a; --surface: #182126; --surface-2: #1e2830;
+    --ink: #e8ece9; --ink-muted: #93a29b; --ink-faint: #647069; --border: #2c3a3f;
+    --accent: #d3a45c; --roas-target: #d3a45c; --roas-fp: #8ba0e0; --roas-lc: #c987b8;
+    --spend: #7d8b83; --spend-fill: rgba(125, 139, 131, 0.16);
+    --success: #5cb37e; --success-bg: rgba(92, 179, 126, 0.14);
+    --danger: #d9776c; --danger-bg: rgba(217, 119, 108, 0.14);
+    --live: #5cc9a7; --live-bg: rgba(92, 201, 167, 0.14);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px -12px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px; line-height: 1.45; padding: 28px clamp(16px, 4vw, 40px) 64px;
+  }
+
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Roboto Mono", monospace; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  a { color: inherit; }
+
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  .wordmark { display: flex; align-items: baseline; gap: 10px; }
+  .wordmark .mark { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .wordmark .sub { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-faint); }
+
+  .account-switch { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px; box-shadow: var(--shadow); gap: 2px; }
+  .account-switch button { appearance: none; border: none; background: transparent; color: var(--ink-muted); font: inherit; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; white-space: nowrap; }
+  .account-switch button:hover { color: var(--ink); }
+  .account-switch button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+  .account-switch button:focus-visible, select:focus-visible, .camp-row:focus-visible, .day-row:focus-visible,
+  th[data-sort]:focus-visible, input:focus-visible, button:focus-visible {
+    outline: 2px solid var(--roas-fp); outline-offset: 2px;
+  }
+
+  .right-cluster { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .range-note { font-size: 12px; color: var(--ink-faint); }
+
+  .ghost-btn {
+    appearance: none; background: var(--surface); border: 1px solid var(--border); color: var(--ink-muted);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: 8px;
+    cursor: pointer; box-shadow: var(--shadow); display: inline-flex; align-items: center; gap: 6px;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .ghost-btn:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .ghost-btn:disabled { opacity: 0.55; cursor: default; }
+  .ghost-btn .spin { display: inline-block; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .live-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--live); background: var(--live-bg); border-radius: 999px; padding: 3px 8px; }
+  .live-badge[hidden] { display: none; }
+  td.is-live { position: relative; }
+  td.is-live::after { content: ''; position: absolute; top: 4px; right: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpi .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); margin-bottom: 6px; }
+  .kpi .value { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; }
+  .kpi .value.accent-target { color: var(--roas-target); }
+  .kpi .value.accent-fp { color: var(--roas-fp); }
+  .kpi .value.accent-lc { color: var(--roas-lc); }
+  .kpi .delta { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; margin-top: 5px; padding: 2px 7px; border-radius: 999px; }
+  .kpi .delta.up { color: var(--success); background: var(--success-bg); }
+  .kpi .delta.down { color: var(--danger); background: var(--danger-bg); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 20px; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 16px 10px; }
+  .panel-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .panel-title .hint { display: block; font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink-faint); margin-top: 2px; }
+  .panel-title .head-line { display: flex; flex-direction: column; }
+
+  .campaign-badge { font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: 0; background: var(--surface-2); color: var(--roas-lc); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; }
+  .campaign-badge[hidden] { display: none; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-muted); }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .legend .swatch.line { height: 2px; width: 14px; border-radius: 2px; }
+  .legend .swatch.dashed { height: 0; width: 14px; border-top: 2px dashed currentColor; background: none; }
+
+  select, input[type="text"], input[type="number"] {
+    appearance: none; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 12px; border-radius: 7px;
+  }
+  select { padding-right: 30px; cursor: pointer;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%), linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+    background-position: calc(100% - 15px) center, calc(100% - 10px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  input[type="text"] { font-weight: 400; min-width: 220px; }
+  input[type="number"].roas-input { width: 84px; font-weight: 600; }
+
+  .chart-wrap { padding: 4px 10px 14px; overflow-x: auto; }
+  svg.chart { display: block; min-width: 720px; width: 100%; height: auto; }
+  .axis-label { font-size: 10px; fill: var(--ink-faint); font-family: inherit; }
+  .grid-line { stroke: var(--border); stroke-width: 1; }
+  .hover-guide { stroke: var(--ink-faint); stroke-width: 1; opacity: 0; pointer-events: none; }
+  .hover-dot { opacity: 0; pointer-events: none; }
+
+  #tooltip, #toast {
+    position: fixed; pointer-events: none; background: var(--ink); color: var(--bg);
+    font-size: 11.5px; border-radius: 8px; padding: 9px 11px; box-shadow: var(--shadow);
+    opacity: 0; transition: opacity 0.15s ease; z-index: 30;
+  }
+  #tooltip { min-width: 150px; }
+  #tooltip .t-date { font-weight: 700; margin-bottom: 5px; letter-spacing: 0.02em; }
+  #tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; padding: 1px 0; }
+  #tooltip .t-row .k { opacity: 0.75; }
+  #toast { left: 50%; bottom: 28px; transform: translateX(-50%); max-width: min(460px, 80vw); font-size: 12.5px; padding: 12px 16px; text-align: center; }
+  #toast.show { opacity: 1; }
+
+  .tables-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 16px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 640px; }
+  .compact table { font-size: 11.1px; min-width: 620px; }
+  .compact thead th { padding: 7px 6px; font-size: 9.5px; }
+  .compact tbody td { padding: 5px 6px; }
+
+  thead th { position: sticky; top: 0; background: var(--surface-2); text-align: right; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); font-weight: 700; padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  thead th:first-child, tbody td:first-child { text-align: left; }
+  th[data-sort] { cursor: pointer; user-select: none; }
+  th[data-sort]:hover { color: var(--ink); }
+  .sort-ind { display: inline-block; width: 8px; font-size: 9px; }
+
+  tbody td { text-align: right; padding: 7px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 40%, transparent); }
+  tbody tr:hover { background: color-mix(in srgb, var(--roas-fp) 10%, transparent); }
+
+  td.roas-fp, th.roas-fp-h { color: var(--roas-fp); }
+  td.roas-lc, th.roas-lc-h { color: var(--roas-lc); }
+  td.target-roas, th.target-roas-h { color: var(--roas-target); }
+  td.est-lc { color: var(--roas-lc); opacity: 0.75; font-style: italic; }
+  td.roas-fp, td.roas-lc, td.target-roas { font-weight: 600; }
+  td.today-row { font-weight: 700; }
+
+  tr.camp-row, tr.day-row { cursor: pointer; }
+  tr.camp-row.active, tr.day-row.selected { background: color-mix(in srgb, var(--roas-lc) 14%, transparent); }
+  tr.camp-row td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  tr.total-row { font-weight: 700; background: var(--surface-2) !important; }
+  tr.total-row td { border-top: 2px solid var(--border); border-bottom: none; }
+
+  .camp-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px 14px; border-top: 1px solid var(--border); }
+  .camp-controls .hint-sm { font-size: 11px; color: var(--ink-faint); }
+
+  .publish-btn {
+    appearance: none; background: var(--roas-lc); color: var(--surface); border: none;
+    font: inherit; font-size: 11px; font-weight: 700; padding: 6px 11px; border-radius: 6px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .publish-btn:hover { filter: brightness(1.08); }
+  .publish-btn.cancel { background: var(--ink-faint); }
+  .publish-btn:disabled { opacity: 0.5; cursor: default; }
+  .confirm-box { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .confirm-box .arrow { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
+  .confirm-warn { color: var(--danger); font-size: 10px; font-weight: 700; width: 100%; }
+
+  footer { margin-top: 28px; font-size: 11.5px; color: var(--ink-faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .spin { animation: none !important; } }
+</style>
+
+<div class="topbar">
+  <div class="wordmark">
+    <span class="mark">Performance SEM</span>
+    <span class="sub">Ads &amp; GA4 — 28 jours</span>
+  </div>
+  <div class="account-switch" id="accountSwitch" role="tablist" aria-label="Compte"></div>
+  <div class="right-cluster">
+    <span class="live-badge" id="liveBadge" hidden>Live</span>
+    <button class="ghost-btn" id="refreshBtn" title="Rafraîchir Target ROAS / Budget en direct">⟳ Rafraîchir</button>
+    <div class="range-note" id="rangeNote"></div>
+  </div>
+</div>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="tables-row">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">
+        <span class="head-line">Détail quotidien<span class="hint">Cliquer une ligne pour filtrer "Par campagne" sur ce jour</span></span>
+        <span class="campaign-badge" id="dailyCampaignBadge" hidden></span>
+      </div>
+    </div>
+    <div class="table-wrap compact">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Clics</th><th>Sessions</th><th>C2S</th><th>Dépense</th><th>CPS</th>
+            <th class="target-roas-h">Target</th><th>Rev. FP</th><th class="roas-fp-h">ROAS_FP</th>
+            <th>Rev. GA4</th><th class="roas-lc-h">ROAS_LC</th><th>%SEM</th>
+          </tr>
+        </thead>
+        <tbody id="dailyBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">
+        <span class="head-line">Par campagne<span class="hint" id="campHint">27 jours (aujourd'hui exclu) · cliquer une ligne pour filtrer le graphique + le détail quotidien</span></span>
+      </div>
+    </div>
+    <div class="table-wrap compact">
+      <table id="campaignTable">
+        <thead>
+          <tr>
+            <th data-sort="name">Campagne <span class="sort-ind"></span></th>
+            <th data-sort="clicks">Clics <span class="sort-ind"></span></th>
+            <th data-sort="sessions">Sessions <span class="sort-ind"></span></th>
+            <th data-sort="c2s">C2S <span class="sort-ind"></span></th>
+            <th data-sort="cost">Dépense <span class="sort-ind"></span></th>
+            <th data-sort="cps">CPS <span class="sort-ind"></span></th>
+            <th data-sort="target_roas" class="target-roas-h">Target <span class="sort-ind"></span></th>
+            <th data-sort="fp_revenue">Rev. FP <span class="sort-ind"></span></th>
+            <th data-sort="roas_fp" class="roas-fp-h">ROAS_FP <span class="sort-ind"></span></th>
+            <th data-sort="ga4_revenue">Rev. GA4 <span class="sort-ind"></span></th>
+            <th data-sort="roas_lc" class="roas-lc-h">ROAS_LC <span class="sort-ind"></span></th>
+            <th data-sort="est_lc" class="roas-lc-h">ROAS_LC est. <span class="sort-ind"></span></th>
+            <th>%SEM</th>
+          </tr>
+        </thead>
+        <tbody id="campaignBody"></tbody>
+      </table>
+    </div>
+    <div class="camp-controls">
+      <input type="text" id="campSearch" placeholder="Filtrer par nom de campagne…" />
+      <select id="campDaySelect"></select>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="adjustPanel">
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="head-line">Ajuster budget / Target ROAS<span class="hint" id="adjustHint">ROAS_LC estimé = ROAS_FP × %SEM moyen des 7 derniers jours (aujourd'hui exclu) — vérifie cette hypothèse avant de publier</span></span>
+    </div>
+  </div>
+  <div class="table-wrap compact">
+    <table>
+      <thead>
+        <tr>
+          <th>Campagne</th><th id="adjustCostHead">Dépense</th><th>Budget</th>
+          <th class="target-roas-h">Target actuel</th><th class="roas-lc-h">ROAS_LC réel</th><th class="roas-lc-h">ROAS_LC estimé</th>
+          <th>Nouveau Target ROAS</th><th style="min-width:130px;"></th>
+        </tr>
+      </thead>
+      <tbody id="adjustBody"></tbody>
+    </table>
+  </div>
+  <div class="camp-controls">
+    <span class="hint-sm">"Publier" fait un dry-run live, affiche le changement pour confirmation, puis applique seulement après un second clic — aucune mutation n'est envoyée sans cette double étape.</span>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <div class="panel-title">
+      <span class="head-line">ROAS &amp; dépenses — 28 jours<span class="hint">Gauche : Target ROAS, ROAS_FP, ROAS_LC (même échelle) · Droite : dépenses</span></span>
+      <span class="campaign-badge" id="campaignBadge" hidden></span>
+    </div>
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div class="legend">
+        <span class="item"><span class="swatch dashed" style="color:var(--roas-target)"></span>Target ROAS</span>
+        <span class="item"><span class="swatch line" style="background:var(--roas-fp)"></span>ROAS_FP</span>
+        <span class="item"><span class="swatch line" style="background:var(--roas-lc)"></span>ROAS_LC</span>
+        <span class="item"><span class="swatch" style="background:var(--spend)"></span>Dépenses</span>
+      </div>
+      <select id="campaignFilter"></select>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <svg class="chart" id="chart" viewBox="0 0 920 340" preserveAspectRatio="xMinYMin meet"></svg>
+  </div>
+</div>
+
+<footer>
+  <span>Source : Google Ads API (segments.date) + GA4 Data API (campagnes + canaux), jointes sur campaign_name · <span class="mono">google-ads-mcp</span></span>
+  <span id="genNote"></span>
+</footer>
+
+<div id="tooltip"></div>
+<div id="toast"></div>
+<script>
+const DATA = {"royal-distributing":{"daily":[{"date":"2026-07-19","clicks":5841,"sessions":5089,"c2s":1.148,"cost":2311.86,"cps":0.45,"fp_revenue":42472.63,"ga4_revenue":18466.43,"roas_fp":18.37,"roas_lc":7.99,"avg_target_roas":16.781,"sem_paid":20178.35,"sem_total":55246.75},{"date":"2026-07-20","clicks":6288,"sessions":5752,"c2s":1.093,"cost":2541.69,"cps":0.44,"fp_revenue":49771.76,"ga4_revenue":25824.13,"roas_fp":19.58,"roas_lc":10.16,"avg_target_roas":16.625,"sem_paid":27188.32,"sem_total":71463.75},{"date":"2026-07-21","clicks":6175,"sessions":5671,"c2s":1.089,"cost":2663.88,"cps":0.47,"fp_revenue":48645.15,"ga4_revenue":24592.43,"roas_fp":18.26,"roas_lc":9.23,"avg_target_roas":16.625,"sem_paid":25562.48,"sem_total":72622.63},{"date":"2026-07-22","clicks":5825,"sessions":5242,"c2s":1.111,"cost":2546.42,"cps":0.49,"fp_revenue":38459.35,"ga4_revenue":15240.32,"roas_fp":15.1,"roas_lc":5.98,"avg_target_roas":16.406,"sem_paid":15680.17,"sem_total":49968.43},{"date":"2026-07-23","clicks":5076,"sessions":4788,"c2s":1.06,"cost":2360.59,"cps":0.49,"fp_revenue":32404.21,"ga4_revenue":19322.6,"roas_fp":13.73,"roas_lc":8.19,"avg_target_roas":16.406,"sem_paid":20078.46,"sem_total":44249.37},{"date":"2026-07-24","clicks":4621,"sessions":4286,"c2s":1.078,"cost":2047.14,"cps":0.48,"fp_revenue":32937.06,"ga4_revenue":15009.83,"roas_fp":16.09,"roas_lc":7.33,"avg_target_roas":16.406,"sem_paid":16395.68,"sem_total":43691.12},{"date":"2026-07-25","clicks":5181,"sessions":4515,"c2s":1.148,"cost":2307.27,"cps":0.51,"fp_revenue":40315.16,"ga4_revenue":14843.18,"roas_fp":17.47,"roas_lc":6.43,"avg_target_roas":16.406,"sem_paid":16227.55,"sem_total":41870.19},{"date":"2026-07-26","clicks":5886,"sessions":5178,"c2s":1.137,"cost":2480.39,"cps":0.48,"fp_revenue":57697.26,"ga4_revenue":27412.9,"roas_fp":23.26,"roas_lc":11.05,"avg_target_roas":16.406,"sem_paid":29271.1,"sem_total":61689.2},{"date":"2026-07-27","clicks":6119,"sessions":5492,"c2s":1.114,"cost":2657.04,"cps":0.48,"fp_revenue":57548.65,"ga4_revenue":32020.45,"roas_fp":21.66,"roas_lc":12.05,"avg_target_roas":16.469,"sem_paid":32964.09,"sem_total":72972.08},{"date":"2026-07-28","clicks":6578,"sessions":5844,"c2s":1.126,"cost":2944.57,"cps":0.5,"fp_revenue":54806.9,"ga4_revenue":28532.73,"roas_fp":18.61,"roas_lc":9.69,"avg_target_roas":16.469,"sem_paid":31156.86,"sem_total":65512.08},{"date":"2026-07-29","clicks":5633,"sessions":5035,"c2s":1.119,"cost":2523.49,"cps":0.5,"fp_revenue":34150.71,"ga4_revenue":14580.32,"roas_fp":13.53,"roas_lc":5.78,"avg_target_roas":16.469,"sem_paid":15475.98,"sem_total":45678.07},{"date":"2026-07-30","clicks":5741,"sessions":5184,"c2s":1.107,"cost":2603.1,"cps":0.5,"fp_revenue":44087.6,"ga4_revenue":19331.64,"roas_fp":16.94,"roas_lc":7.43,"avg_target_roas":16.5,"sem_paid":20713.56,"sem_total":57603.18},{"date":"2026-07-31","clicks":5440,"sessions":5014,"c2s":1.085,"cost":2452.03,"cps":0.49,"fp_revenue":38163.78,"ga4_revenue":16515.56,"roas_fp":15.56,"roas_lc":6.74,"avg_target_roas":16.5,"sem_paid":16383.3,"sem_total":47577.54},{"date":"2026-08-01","clicks":5592,"sessions":4849,"c2s":1.153,"cost":2440.95,"cps":0.5,"fp_revenue":48711.7,"ga4_revenue":22932.81,"roas_fp":19.96,"roas_lc":9.4,"avg_target_roas":16.5,"sem_paid":24408.88,"sem_total":53970.87},{"date":"2026-08-02","clicks":6197,"sessions":5328,"c2s":1.163,"cost":2699.6,"cps":0.51,"fp_revenue":48183.57,"ga4_revenue":19480.81,"roas_fp":17.85,"roas_lc":7.22,"avg_target_roas":16.5,"sem_paid":21105.0,"sem_total":53579.25},{"date":"2026-08-03","clicks":6726,"sessions":5601,"c2s":1.201,"cost":3043.71,"cps":0.54,"fp_revenue":61703.36,"ga4_revenue":30124.32,"roas_fp":20.27,"roas_lc":9.9,"avg_target_roas":16.375,"sem_paid":31942.69,"sem_total":71578.27},{"date":"2026-08-04","clicks":6162,"sessions":5562,"c2s":1.108,"cost":2796.19,"cps":0.5,"fp_revenue":41232.01,"ga4_revenue":21161.86,"roas_fp":14.75,"roas_lc":7.57,"avg_target_roas":16.375,"sem_paid":23313.22,"sem_total":57666.41},{"date":"2026-08-05","clicks":5344,"sessions":5076,"c2s":1.053,"cost":2343.04,"cps":0.46,"fp_revenue":40865.76,"ga4_revenue":18705.78,"roas_fp":17.44,"roas_lc":7.98,"avg_target_roas":16.375,"sem_paid":18949.29,"sem_total":51776.44},{"date":"2026-08-06","clicks":5358,"sessions":5030,"c2s":1.065,"cost":2338.5,"cps":0.46,"fp_revenue":36431.87,"ga4_revenue":16694.51,"roas_fp":15.58,"roas_lc":7.14,"avg_target_roas":16.219,"sem_paid":17756.5,"sem_total":46277.26},{"date":"2026-08-07","clicks":4738,"sessions":4499,"c2s":1.053,"cost":2040.84,"cps":0.45,"fp_revenue":33420.98,"ga4_revenue":14409.45,"roas_fp":16.38,"roas_lc":7.06,"avg_target_roas":16.219,"sem_paid":14735.37,"sem_total":39248.54},{"date":"2026-08-08","clicks":5341,"sessions":4651,"c2s":1.148,"cost":2331.81,"cps":0.5,"fp_revenue":35809.37,"ga4_revenue":16872.62,"roas_fp":15.36,"roas_lc":7.24,"avg_target_roas":16.219,"sem_paid":17862.91,"sem_total":39090.75},{"date":"2026-08-09","clicks":5833,"sessions":5128,"c2s":1.137,"cost":2463.84,"cps":0.48,"fp_revenue":51223.59,"ga4_revenue":23535.17,"roas_fp":20.79,"roas_lc":9.55,"avg_target_roas":16.219,"sem_paid":25591.65,"sem_total":56350.44},{"date":"2026-08-10","clicks":5943,"sessions":5505,"c2s":1.08,"cost":2488.88,"cps":0.45,"fp_revenue":45293.19,"ga4_revenue":22495.6,"roas_fp":18.2,"roas_lc":9.04,"avg_target_roas":16.062,"sem_paid":24126.44,"sem_total":61077.21},{"date":"2026-08-11","clicks":5750,"sessions":5175,"c2s":1.111,"cost":2478.3,"cps":0.48,"fp_revenue":45630.74,"ga4_revenue":25206.08,"roas_fp":18.41,"roas_lc":10.17,"avg_target_roas":16.0,"sem_paid":26204.8,"sem_total":59799.6},{"date":"2026-08-12","clicks":5489,"sessions":5061,"c2s":1.085,"cost":2334.36,"cps":0.46,"fp_revenue":33041.11,"ga4_revenue":18145.57,"roas_fp":14.15,"roas_lc":7.77,"avg_target_roas":16.094,"sem_paid":19481.73,"sem_total":50183.53},{"date":"2026-08-13","clicks":5444,"sessions":4940,"c2s":1.102,"cost":2227.75,"cps":0.45,"fp_revenue":32854.73,"ga4_revenue":16525.27,"roas_fp":14.75,"roas_lc":7.42,"avg_target_roas":16.25,"sem_paid":18048.09,"sem_total":47730.69},{"date":"2026-08-14","clicks":5179,"sessions":4775,"c2s":1.085,"cost":2096.91,"cps":0.44,"fp_revenue":28057.77,"ga4_revenue":22162.25,"roas_fp":13.38,"roas_lc":10.57,"avg_target_roas":16.25,"sem_paid":25026.04,"sem_total":59828.57},{"date":"2026-08-15","clicks":2448,"sessions":1100,"c2s":2.225,"cost":1085.31,"cps":0.99,"fp_revenue":10855.75,"ga4_revenue":349.98,"roas_fp":10.0,"roas_lc":0.32,"avg_target_roas":16.25,"sem_paid":376.97,"sem_total":16991.04}],"campaigns":["ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_all","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_sbv","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_all","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_manufacturers","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_ontario","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_roc","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_quebec","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_roc","ongoing_royal-distributing_paid-search_google_fr_dtp_performance-max_weak_canada"],"per_campaign_daily":{"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_all":[{"date":"2026-07-19","cost":24.59,"sessions":36,"clicks":28,"target_roas":11.5,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":25.77,"sessions":33,"clicks":32,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":20.68,"sessions":25,"clicks":24,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":16.66,"sessions":24,"clicks":20,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":269.98,"roas_fp":0.0,"roas_lc":16.21},{"date":"2026-07-23","cost":23.03,"sessions":34,"clicks":24,"target_roas":11,"fp_revenue":394.36,"ga4_revenue":511.97,"roas_fp":17.13,"roas_lc":22.23},{"date":"2026-07-24","cost":22.57,"sessions":28,"clicks":28,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":15.08,"sessions":22,"clicks":20,"target_roas":11,"fp_revenue":131.4,"ga4_revenue":239.97,"roas_fp":8.71,"roas_lc":15.91},{"date":"2026-07-26","cost":32.37,"sessions":37,"clicks":37,"target_roas":11,"fp_revenue":74.54,"ga4_revenue":99.29,"roas_fp":2.3,"roas_lc":3.07},{"date":"2026-07-27","cost":19.74,"sessions":33,"clicks":30,"target_roas":11.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":21.75,"sessions":38,"clicks":35,"target_roas":11.25,"fp_revenue":663.96,"ga4_revenue":383.39,"roas_fp":30.53,"roas_lc":17.63},{"date":"2026-07-29","cost":21.62,"sessions":25,"clicks":20,"target_roas":11.25,"fp_revenue":539.0,"ga4_revenue":476.99,"roas_fp":24.94,"roas_lc":22.07},{"date":"2026-07-30","cost":35.04,"sessions":34,"clicks":30,"target_roas":11.25,"fp_revenue":47.45,"ga4_revenue":0.0,"roas_fp":1.35,"roas_lc":0.0},{"date":"2026-07-31","cost":15.02,"sessions":21,"clicks":17,"target_roas":11.25,"fp_revenue":99.66,"ga4_revenue":0.0,"roas_fp":6.64,"roas_lc":0.0},{"date":"2026-08-01","cost":15.04,"sessions":24,"clicks":23,"target_roas":11.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":29.79,"sessions":34,"clicks":27,"target_roas":11.25,"fp_revenue":1198.0,"ga4_revenue":1060.16,"roas_fp":40.22,"roas_lc":35.59},{"date":"2026-08-03","cost":27.57,"sessions":20,"clicks":22,"target_roas":11.25,"fp_revenue":937.86,"ga4_revenue":1507.92,"roas_fp":34.01,"roas_lc":54.69},{"date":"2026-08-04","cost":35.17,"sessions":35,"clicks":30,"target_roas":11.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":19.16,"sessions":28,"clicks":23,"target_roas":11.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":25.2,"sessions":32,"clicks":23,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":1168.95,"roas_fp":0.0,"roas_lc":46.38},{"date":"2026-08-07","cost":10.75,"sessions":16,"clicks":15,"target_roas":11,"fp_revenue":292.08,"ga4_revenue":0.0,"roas_fp":27.17,"roas_lc":0.0},{"date":"2026-08-08","cost":11.16,"sessions":11,"clicks":16,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":31.99,"sessions":29,"clicks":30,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":17.67,"sessions":30,"clicks":25,"target_roas":10.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":36.04,"sessions":24,"clicks":25,"target_roas":10.75,"fp_revenue":2047.45,"ga4_revenue":0.0,"roas_fp":56.81,"roas_lc":0.0},{"date":"2026-08-12","cost":7.69,"sessions":21,"clicks":8,"target_roas":11,"fp_revenue":176.8,"ga4_revenue":153.77,"roas_fp":22.99,"roas_lc":19.99},{"date":"2026-08-13","cost":10.63,"sessions":19,"clicks":16,"target_roas":11,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":8.46,"sessions":17,"clicks":13,"target_roas":11,"fp_revenue":1875.7,"ga4_revenue":1659.92,"roas_fp":221.62,"roas_lc":196.12},{"date":"2026-08-15","cost":9.38,"sessions":8,"clicks":13,"target_roas":11,"fp_revenue":551.39,"ga4_revenue":0.0,"roas_fp":58.76,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_sbv":[{"date":"2026-07-19","cost":2.43,"sessions":1,"clicks":2,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":9.51,"sessions":2,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":3.9,"sessions":7,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":17.16,"sessions":7,"clicks":12,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":12.1,"sessions":8,"clicks":9,"target_roas":null,"fp_revenue":542.28,"ga4_revenue":0.0,"roas_fp":44.82,"roas_lc":0.0},{"date":"2026-07-24","cost":1.48,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":3.13,"sessions":2,"clicks":2,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":0.01,"sessions":0,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":5.83,"sessions":3,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":1.69,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":0.0,"sessions":1,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":5.17,"sessions":3,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":1.45,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":5.04,"sessions":5,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":3.83,"sessions":7,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":2.07,"sessions":3,"clicks":3,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":3.95,"sessions":4,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":0.98,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":1.0,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":5.94,"sessions":3,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":0.94,"sessions":0,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":1.0,"sessions":1,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":0.48,"sessions":0,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":4.84,"sessions":0,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":3.94,"sessions":2,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":5.15,"sessions":4,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":2.48,"sessions":0,"clicks":2,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_all":[{"date":"2026-07-19","cost":134.72,"sessions":477,"clicks":458,"target_roas":14,"fp_revenue":1150.99,"ga4_revenue":777.88,"roas_fp":8.54,"roas_lc":5.77},{"date":"2026-07-20","cost":161.42,"sessions":515,"clicks":464,"target_roas":13.5,"fp_revenue":2794.45,"ga4_revenue":1756.84,"roas_fp":17.31,"roas_lc":10.88},{"date":"2026-07-21","cost":101.93,"sessions":440,"clicks":376,"target_roas":13.5,"fp_revenue":879.53,"ga4_revenue":2149.71,"roas_fp":8.63,"roas_lc":21.09},{"date":"2026-07-22","cost":114.95,"sessions":406,"clicks":388,"target_roas":12.75,"fp_revenue":1316.57,"ga4_revenue":1278.31,"roas_fp":11.45,"roas_lc":11.12},{"date":"2026-07-23","cost":125.92,"sessions":432,"clicks":398,"target_roas":12.75,"fp_revenue":1632.79,"ga4_revenue":1729.71,"roas_fp":12.97,"roas_lc":13.74},{"date":"2026-07-24","cost":124.54,"sessions":427,"clicks":406,"target_roas":12.75,"fp_revenue":702.8,"ga4_revenue":0.0,"roas_fp":5.64,"roas_lc":0.0},{"date":"2026-07-25","cost":165.4,"sessions":478,"clicks":498,"target_roas":12.75,"fp_revenue":5692.32,"ga4_revenue":420.9,"roas_fp":34.41,"roas_lc":2.54},{"date":"2026-07-26","cost":206.57,"sessions":622,"clicks":619,"target_roas":12.75,"fp_revenue":1872.68,"ga4_revenue":4085.67,"roas_fp":9.07,"roas_lc":19.78},{"date":"2026-07-27","cost":177.22,"sessions":546,"clicks":504,"target_roas":13.25,"fp_revenue":633.38,"ga4_revenue":369.83,"roas_fp":3.57,"roas_lc":2.09},{"date":"2026-07-28","cost":129.67,"sessions":479,"clicks":447,"target_roas":13.25,"fp_revenue":3579.93,"ga4_revenue":788.49,"roas_fp":27.61,"roas_lc":6.08},{"date":"2026-07-29","cost":112.27,"sessions":411,"clicks":365,"target_roas":13.25,"fp_revenue":601.36,"ga4_revenue":0.0,"roas_fp":5.36,"roas_lc":0.0},{"date":"2026-07-30","cost":101.15,"sessions":426,"clicks":356,"target_roas":13.5,"fp_revenue":328.37,"ga4_revenue":1440.08,"roas_fp":3.25,"roas_lc":14.24},{"date":"2026-07-31","cost":115.13,"sessions":428,"clicks":404,"target_roas":13.5,"fp_revenue":2050.23,"ga4_revenue":1666.87,"roas_fp":17.81,"roas_lc":14.48},{"date":"2026-08-01","cost":147.95,"sessions":483,"clicks":440,"target_roas":13.5,"fp_revenue":2094.51,"ga4_revenue":1206.11,"roas_fp":14.16,"roas_lc":8.15},{"date":"2026-08-02","cost":138.35,"sessions":470,"clicks":437,"target_roas":13.5,"fp_revenue":2574.61,"ga4_revenue":1993.26,"roas_fp":18.61,"roas_lc":14.41},{"date":"2026-08-03","cost":217.56,"sessions":610,"clicks":598,"target_roas":13.25,"fp_revenue":2852.41,"ga4_revenue":2969.34,"roas_fp":13.11,"roas_lc":13.65},{"date":"2026-08-04","cost":169.94,"sessions":559,"clicks":531,"target_roas":13.25,"fp_revenue":1207.13,"ga4_revenue":1783.37,"roas_fp":7.1,"roas_lc":10.49},{"date":"2026-08-05","cost":168.69,"sessions":521,"clicks":504,"target_roas":13.25,"fp_revenue":2556.01,"ga4_revenue":1551.59,"roas_fp":15.15,"roas_lc":9.2},{"date":"2026-08-06","cost":110.71,"sessions":429,"clicks":371,"target_roas":13,"fp_revenue":1483.15,"ga4_revenue":863.33,"roas_fp":13.4,"roas_lc":7.8},{"date":"2026-08-07","cost":97.87,"sessions":404,"clicks":369,"target_roas":13,"fp_revenue":1269.18,"ga4_revenue":140.98,"roas_fp":12.97,"roas_lc":1.44},{"date":"2026-08-08","cost":146.38,"sessions":467,"clicks":459,"target_roas":13,"fp_revenue":1873.38,"ga4_revenue":1811.25,"roas_fp":12.8,"roas_lc":12.37},{"date":"2026-08-09","cost":208.57,"sessions":653,"clicks":629,"target_roas":13,"fp_revenue":3499.46,"ga4_revenue":2217.33,"roas_fp":16.78,"roas_lc":10.63},{"date":"2026-08-10","cost":200.18,"sessions":655,"clicks":634,"target_roas":12.5,"fp_revenue":1337.58,"ga4_revenue":990.64,"roas_fp":6.68,"roas_lc":4.95},{"date":"2026-08-11","cost":154.56,"sessions":568,"clicks":540,"target_roas":12.5,"fp_revenue":2217.09,"ga4_revenue":1771.13,"roas_fp":14.34,"roas_lc":11.46},{"date":"2026-08-12","cost":132.15,"sessions":543,"clicks":477,"target_roas":12.75,"fp_revenue":828.06,"ga4_revenue":2412.09,"roas_fp":6.27,"roas_lc":18.25},{"date":"2026-08-13","cost":139.92,"sessions":438,"clicks":436,"target_roas":12.75,"fp_revenue":1688.04,"ga4_revenue":988.69,"roas_fp":12.06,"roas_lc":7.07},{"date":"2026-08-14","cost":126.95,"sessions":454,"clicks":421,"target_roas":12.75,"fp_revenue":60.92,"ga4_revenue":3712.62,"roas_fp":0.48,"roas_lc":29.25},{"date":"2026-08-15","cost":60.33,"sessions":104,"clicks":193,"target_roas":12.75,"fp_revenue":199.99,"ga4_revenue":0.0,"roas_fp":3.31,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_manufacturers":[{"date":"2026-07-19","cost":22.97,"sessions":70,"clicks":69,"target_roas":16.25,"fp_revenue":192.04,"ga4_revenue":169.95,"roas_fp":8.36,"roas_lc":7.4},{"date":"2026-07-20","cost":25.21,"sessions":79,"clicks":67,"target_roas":15.75,"fp_revenue":698.34,"ga4_revenue":69.99,"roas_fp":27.7,"roas_lc":2.78},{"date":"2026-07-21","cost":26.62,"sessions":83,"clicks":74,"target_roas":15.75,"fp_revenue":299.87,"ga4_revenue":324.17,"roas_fp":11.27,"roas_lc":12.18},{"date":"2026-07-22","cost":28.44,"sessions":65,"clicks":60,"target_roas":15.75,"fp_revenue":241.13,"ga4_revenue":91.4,"roas_fp":8.48,"roas_lc":3.21},{"date":"2026-07-23","cost":29.38,"sessions":67,"clicks":64,"target_roas":15.75,"fp_revenue":206.82,"ga4_revenue":121.99,"roas_fp":7.04,"roas_lc":4.15},{"date":"2026-07-24","cost":26.9,"sessions":58,"clicks":59,"target_roas":15.75,"fp_revenue":390.89,"ga4_revenue":334.95,"roas_fp":14.53,"roas_lc":12.45},{"date":"2026-07-25","cost":24.25,"sessions":51,"clicks":49,"target_roas":15.75,"fp_revenue":71.81,"ga4_revenue":0.0,"roas_fp":2.96,"roas_lc":0.0},{"date":"2026-07-26","cost":17.28,"sessions":47,"clicks":60,"target_roas":15.75,"fp_revenue":57.4,"ga4_revenue":145.61,"roas_fp":3.32,"roas_lc":8.43},{"date":"2026-07-27","cost":32.85,"sessions":75,"clicks":79,"target_roas":15.75,"fp_revenue":143.69,"ga4_revenue":449.94,"roas_fp":4.37,"roas_lc":13.7},{"date":"2026-07-28","cost":27.27,"sessions":88,"clicks":69,"target_roas":15.75,"fp_revenue":2288.9,"ga4_revenue":0.0,"roas_fp":83.95,"roas_lc":0.0},{"date":"2026-07-29","cost":25.9,"sessions":58,"clicks":54,"target_roas":15.75,"fp_revenue":143.99,"ga4_revenue":2179.9,"roas_fp":5.56,"roas_lc":84.18},{"date":"2026-07-30","cost":19.13,"sessions":51,"clicks":46,"target_roas":15.75,"fp_revenue":0.0,"ga4_revenue":184.99,"roas_fp":0.0,"roas_lc":9.67},{"date":"2026-07-31","cost":13.09,"sessions":40,"clicks":37,"target_roas":15.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":23.18,"sessions":63,"clicks":57,"target_roas":15.75,"fp_revenue":144.94,"ga4_revenue":813.36,"roas_fp":6.25,"roas_lc":35.09},{"date":"2026-08-02","cost":29.5,"sessions":76,"clicks":75,"target_roas":15.75,"fp_revenue":240.0,"ga4_revenue":164.95,"roas_fp":8.14,"roas_lc":5.59},{"date":"2026-08-03","cost":34.09,"sessions":53,"clicks":61,"target_roas":15.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":34.48,"sessions":75,"clicks":80,"target_roas":15.25,"fp_revenue":120.95,"ga4_revenue":0.0,"roas_fp":3.51,"roas_lc":0.0},{"date":"2026-08-05","cost":27.11,"sessions":51,"clicks":52,"target_roas":15.25,"fp_revenue":440.54,"ga4_revenue":366.85,"roas_fp":16.25,"roas_lc":13.53},{"date":"2026-08-06","cost":24.77,"sessions":73,"clicks":57,"target_roas":15.25,"fp_revenue":598.45,"ga4_revenue":280.91,"roas_fp":24.16,"roas_lc":11.34},{"date":"2026-08-07","cost":19.65,"sessions":56,"clicks":54,"target_roas":15.25,"fp_revenue":446.84,"ga4_revenue":19.88,"roas_fp":22.74,"roas_lc":1.01},{"date":"2026-08-08","cost":19.63,"sessions":56,"clicks":55,"target_roas":15.25,"fp_revenue":229.36,"ga4_revenue":332.62,"roas_fp":11.68,"roas_lc":16.94},{"date":"2026-08-09","cost":34.83,"sessions":74,"clicks":67,"target_roas":15.25,"fp_revenue":225.94,"ga4_revenue":309.94,"roas_fp":6.49,"roas_lc":8.9},{"date":"2026-08-10","cost":32.05,"sessions":77,"clicks":73,"target_roas":14.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":34.42,"sessions":88,"clicks":80,"target_roas":14.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":23.39,"sessions":70,"clicks":68,"target_roas":15,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":24.43,"sessions":61,"clicks":54,"target_roas":15.25,"fp_revenue":250.58,"ga4_revenue":0.0,"roas_fp":10.26,"roas_lc":0.0},{"date":"2026-08-14","cost":30.58,"sessions":61,"clicks":60,"target_roas":15.25,"fp_revenue":594.98,"ga4_revenue":519.98,"roas_fp":19.46,"roas_lc":17.01},{"date":"2026-08-15","cost":8.9,"sessions":12,"clicks":25,"target_roas":15.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_ontario":[{"date":"2026-07-19","cost":1143.18,"sessions":2505,"clicks":3001,"target_roas":21,"fp_revenue":23860.1,"ga4_revenue":8561.15,"roas_fp":20.87,"roas_lc":7.49},{"date":"2026-07-20","cost":1215.61,"sessions":2928,"clicks":3222,"target_roas":21.25,"fp_revenue":24564.26,"ga4_revenue":10473.53,"roas_fp":20.21,"roas_lc":8.62},{"date":"2026-07-21","cost":1302.67,"sessions":2910,"clicks":3170,"target_roas":21.25,"fp_revenue":27914.08,"ga4_revenue":9792.42,"roas_fp":21.43,"roas_lc":7.52},{"date":"2026-07-22","cost":1115.42,"sessions":2510,"clicks":2778,"target_roas":21.25,"fp_revenue":23979.76,"ga4_revenue":8899.01,"roas_fp":21.5,"roas_lc":7.98},{"date":"2026-07-23","cost":1036.36,"sessions":2297,"clicks":2496,"target_roas":21.25,"fp_revenue":18346.4,"ga4_revenue":8595.13,"roas_fp":17.7,"roas_lc":8.29},{"date":"2026-07-24","cost":976.69,"sessions":2246,"clicks":2390,"target_roas":21.25,"fp_revenue":19489.95,"ga4_revenue":6410.73,"roas_fp":19.96,"roas_lc":6.56},{"date":"2026-07-25","cost":1102.17,"sessions":2302,"clicks":2704,"target_roas":21.25,"fp_revenue":19647.73,"ga4_revenue":5693.56,"roas_fp":17.83,"roas_lc":5.17},{"date":"2026-07-26","cost":1182.48,"sessions":2585,"clicks":2964,"target_roas":21.25,"fp_revenue":34226.56,"ga4_revenue":12624.29,"roas_fp":28.94,"roas_lc":10.68},{"date":"2026-07-27","cost":1181.38,"sessions":2708,"clicks":2986,"target_roas":21.5,"fp_revenue":35257.84,"ga4_revenue":19264.02,"roas_fp":29.84,"roas_lc":16.31},{"date":"2026-07-28","cost":1348.94,"sessions":2896,"clicks":3255,"target_roas":21.5,"fp_revenue":29007.17,"ga4_revenue":13871.39,"roas_fp":21.5,"roas_lc":10.28},{"date":"2026-07-29","cost":1176.75,"sessions":2479,"clicks":2803,"target_roas":21.5,"fp_revenue":18592.62,"ga4_revenue":4552.8,"roas_fp":15.8,"roas_lc":3.87},{"date":"2026-07-30","cost":1248.36,"sessions":2591,"clicks":2937,"target_roas":21.5,"fp_revenue":26904.8,"ga4_revenue":9150.37,"roas_fp":21.55,"roas_lc":7.33},{"date":"2026-07-31","cost":1168.96,"sessions":2572,"clicks":2777,"target_roas":21.5,"fp_revenue":19765.82,"ga4_revenue":6736.36,"roas_fp":16.91,"roas_lc":5.76},{"date":"2026-08-01","cost":1153.27,"sessions":2464,"clicks":2874,"target_roas":21.5,"fp_revenue":24490.67,"ga4_revenue":9613.89,"roas_fp":21.24,"roas_lc":8.34},{"date":"2026-08-02","cost":1346.68,"sessions":2685,"clicks":3196,"target_roas":21.5,"fp_revenue":25367.31,"ga4_revenue":8329.03,"roas_fp":18.84,"roas_lc":6.18},{"date":"2026-08-03","cost":1323.73,"sessions":2526,"clicks":3132,"target_roas":21.5,"fp_revenue":31897.11,"ga4_revenue":13664.8,"roas_fp":24.1,"roas_lc":10.32},{"date":"2026-08-04","cost":1279.73,"sessions":2663,"clicks":3055,"target_roas":21.5,"fp_revenue":26093.49,"ga4_revenue":9126.64,"roas_fp":20.39,"roas_lc":7.13},{"date":"2026-08-05","cost":1069.7,"sessions":2480,"clicks":2622,"target_roas":21.5,"fp_revenue":25252.89,"ga4_revenue":9527.51,"roas_fp":23.61,"roas_lc":8.91},{"date":"2026-08-06","cost":1046.03,"sessions":2522,"clicks":2631,"target_roas":21.5,"fp_revenue":19849.02,"ga4_revenue":8520.81,"roas_fp":18.98,"roas_lc":8.15},{"date":"2026-08-07","cost":937.51,"sessions":2270,"clicks":2382,"target_roas":21.5,"fp_revenue":21141.59,"ga4_revenue":8512.09,"roas_fp":22.55,"roas_lc":9.08},{"date":"2026-08-08","cost":1020.36,"sessions":2307,"clicks":2607,"target_roas":21.5,"fp_revenue":18335.18,"ga4_revenue":5808.13,"roas_fp":17.97,"roas_lc":5.69},{"date":"2026-08-09","cost":1081.59,"sessions":2403,"clicks":2784,"target_roas":21.5,"fp_revenue":31201.69,"ga4_revenue":13307.08,"roas_fp":28.85,"roas_lc":12.3},{"date":"2026-08-10","cost":1068.0,"sessions":2593,"clicks":2804,"target_roas":21.25,"fp_revenue":23050.62,"ga4_revenue":9566.93,"roas_fp":21.58,"roas_lc":8.96},{"date":"2026-08-11","cost":1125.46,"sessions":2431,"clicks":2747,"target_roas":21.25,"fp_revenue":20163.29,"ga4_revenue":9246.66,"roas_fp":17.92,"roas_lc":8.22},{"date":"2026-08-12","cost":1089.1,"sessions":2472,"clicks":2768,"target_roas":21.25,"fp_revenue":20224.18,"ga4_revenue":7740.23,"roas_fp":18.57,"roas_lc":7.11},{"date":"2026-08-13","cost":909.35,"sessions":2309,"clicks":2499,"target_roas":21.25,"fp_revenue":16493.55,"ga4_revenue":7363.77,"roas_fp":18.14,"roas_lc":8.1},{"date":"2026-08-14","cost":910.38,"sessions":2275,"clicks":2465,"target_roas":21.25,"fp_revenue":11478.34,"ga4_revenue":7592.97,"roas_fp":12.61,"roas_lc":8.34},{"date":"2026-08-15","cost":472.12,"sessions":552,"clicks":1187,"target_roas":21.25,"fp_revenue":6457.68,"ga4_revenue":9.98,"roas_fp":13.68,"roas_lc":0.02}],"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_roc":[{"date":"2026-07-19","cost":628.31,"sessions":1235,"clicks":1401,"target_roas":15,"fp_revenue":12358.46,"ga4_revenue":6074.47,"roas_fp":19.67,"roas_lc":9.67},{"date":"2026-07-20","cost":724.22,"sessions":1372,"clicks":1535,"target_roas":15,"fp_revenue":13206.31,"ga4_revenue":8572.7,"roas_fp":18.24,"roas_lc":11.84},{"date":"2026-07-21","cost":780.87,"sessions":1335,"clicks":1519,"target_roas":15,"fp_revenue":11181.65,"ga4_revenue":7846.38,"roas_fp":14.32,"roas_lc":10.05},{"date":"2026-07-22","cost":836.7,"sessions":1337,"clicks":1585,"target_roas":14.5,"fp_revenue":8126.45,"ga4_revenue":2819.64,"roas_fp":9.71,"roas_lc":3.37},{"date":"2026-07-23","cost":766.54,"sessions":1196,"clicks":1298,"target_roas":14.5,"fp_revenue":5795.79,"ga4_revenue":4107.86,"roas_fp":7.56,"roas_lc":5.36},{"date":"2026-07-24","cost":598.77,"sessions":946,"clicks":1085,"target_roas":14.5,"fp_revenue":6322.73,"ga4_revenue":5082.14,"roas_fp":10.56,"roas_lc":8.49},{"date":"2026-07-25","cost":681.55,"sessions":1046,"clicks":1200,"target_roas":14.5,"fp_revenue":10278.09,"ga4_revenue":5701.54,"roas_fp":15.08,"roas_lc":8.37},{"date":"2026-07-26","cost":656.1,"sessions":1142,"clicks":1313,"target_roas":14.5,"fp_revenue":13037.63,"ga4_revenue":5309.83,"roas_fp":19.87,"roas_lc":8.09},{"date":"2026-07-27","cost":722.79,"sessions":1269,"clicks":1418,"target_roas":14.25,"fp_revenue":10778.8,"ga4_revenue":6152.34,"roas_fp":14.91,"roas_lc":8.51},{"date":"2026-07-28","cost":845.36,"sessions":1339,"clicks":1512,"target_roas":14.25,"fp_revenue":7190.36,"ga4_revenue":6420.42,"roas_fp":8.51,"roas_lc":7.59},{"date":"2026-07-29","cost":639.06,"sessions":1104,"clicks":1259,"target_roas":14.25,"fp_revenue":6555.56,"ga4_revenue":2979.05,"roas_fp":10.26,"roas_lc":4.66},{"date":"2026-07-30","cost":667.72,"sessions":1185,"clicks":1308,"target_roas":14.25,"fp_revenue":10939.59,"ga4_revenue":5310.12,"roas_fp":16.38,"roas_lc":7.95},{"date":"2026-07-31","cost":698.08,"sessions":1153,"clicks":1282,"target_roas":14.25,"fp_revenue":8055.28,"ga4_revenue":5038.67,"roas_fp":11.54,"roas_lc":7.22},{"date":"2026-08-01","cost":654.67,"sessions":1034,"clicks":1254,"target_roas":14.25,"fp_revenue":11978.83,"ga4_revenue":8880.59,"roas_fp":18.3,"roas_lc":13.57},{"date":"2026-08-02","cost":634.74,"sessions":1071,"clicks":1254,"target_roas":14.25,"fp_revenue":11811.71,"ga4_revenue":5424.57,"roas_fp":18.61,"roas_lc":8.55},{"date":"2026-08-03","cost":791.28,"sessions":1291,"clicks":1527,"target_roas":14.25,"fp_revenue":12092.02,"ga4_revenue":6029.22,"roas_fp":15.28,"roas_lc":7.62},{"date":"2026-08-04","cost":877.41,"sessions":1411,"clicks":1535,"target_roas":14.25,"fp_revenue":11002.18,"ga4_revenue":6904.06,"roas_fp":12.54,"roas_lc":7.87},{"date":"2026-08-05","cost":671.84,"sessions":1165,"clicks":1266,"target_roas":14.25,"fp_revenue":7449.98,"ga4_revenue":4851.89,"roas_fp":11.09,"roas_lc":7.22},{"date":"2026-08-06","cost":675.78,"sessions":1159,"clicks":1347,"target_roas":14.25,"fp_revenue":10307.31,"ga4_revenue":4145.96,"roas_fp":15.25,"roas_lc":6.14},{"date":"2026-08-07","cost":592.41,"sessions":1029,"clicks":1124,"target_roas":14.25,"fp_revenue":6450.81,"ga4_revenue":3796.33,"roas_fp":10.89,"roas_lc":6.41},{"date":"2026-08-08","cost":691.81,"sessions":1075,"clicks":1300,"target_roas":14.25,"fp_revenue":7596.37,"ga4_revenue":4552.68,"roas_fp":10.98,"roas_lc":6.58},{"date":"2026-08-09","cost":706.46,"sessions":1197,"clicks":1418,"target_roas":14.25,"fp_revenue":10854.42,"ga4_revenue":5580.75,"roas_fp":15.36,"roas_lc":7.9},{"date":"2026-08-10","cost":744.41,"sessions":1320,"clicks":1480,"target_roas":14.5,"fp_revenue":12655.48,"ga4_revenue":7930.35,"roas_fp":17.0,"roas_lc":10.65},{"date":"2026-08-11","cost":747.1,"sessions":1313,"clicks":1497,"target_roas":14.5,"fp_revenue":14626.91,"ga4_revenue":8981.42,"roas_fp":19.58,"roas_lc":12.02},{"date":"2026-08-12","cost":749.01,"sessions":1249,"clicks":1404,"target_roas":14.25,"fp_revenue":7477.4,"ga4_revenue":5597.94,"roas_fp":9.98,"roas_lc":7.47},{"date":"2026-08-13","cost":696.64,"sessions":1302,"clicks":1467,"target_roas":14.25,"fp_revenue":9363.26,"ga4_revenue":5747.39,"roas_fp":13.44,"roas_lc":8.25},{"date":"2026-08-14","cost":657.25,"sessions":1265,"clicks":1429,"target_roas":14.25,"fp_revenue":7493.76,"ga4_revenue":5011.02,"roas_fp":11.4,"roas_lc":7.62},{"date":"2026-08-15","cost":363.01,"sessions":265,"clicks":633,"target_roas":14.25,"fp_revenue":2204.44,"ga4_revenue":340.0,"roas_fp":6.07,"roas_lc":0.94}],"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_quebec":[{"date":"2026-07-19","cost":347.14,"sessions":741,"clicks":859,"target_roas":16.25,"fp_revenue":4911.04,"ga4_revenue":2882.98,"roas_fp":14.15,"roas_lc":8.3},{"date":"2026-07-20","cost":373.26,"sessions":802,"clicks":933,"target_roas":16.25,"fp_revenue":8253.77,"ga4_revenue":4381.12,"roas_fp":22.11,"roas_lc":11.74},{"date":"2026-07-21","cost":418.11,"sessions":838,"clicks":966,"target_roas":16.25,"fp_revenue":8157.16,"ga4_revenue":4479.75,"roas_fp":19.51,"roas_lc":10.71},{"date":"2026-07-22","cost":410.66,"sessions":876,"clicks":963,"target_roas":15.75,"fp_revenue":4795.44,"ga4_revenue":1881.98,"roas_fp":11.68,"roas_lc":4.58},{"date":"2026-07-23","cost":355.56,"sessions":727,"clicks":753,"target_roas":15.75,"fp_revenue":5166.08,"ga4_revenue":4131.77,"roas_fp":14.53,"roas_lc":11.62},{"date":"2026-07-24","cost":283.75,"sessions":560,"clicks":628,"target_roas":15.75,"fp_revenue":5422.33,"ga4_revenue":2567.06,"roas_fp":19.11,"roas_lc":9.05},{"date":"2026-07-25","cost":300.38,"sessions":585,"clicks":679,"target_roas":15.75,"fp_revenue":4065.59,"ga4_revenue":2230.23,"roas_fp":13.53,"roas_lc":7.42},{"date":"2026-07-26","cost":358.55,"sessions":695,"clicks":836,"target_roas":15.75,"fp_revenue":8226.87,"ga4_revenue":4979.21,"roas_fp":22.94,"roas_lc":13.89},{"date":"2026-07-27","cost":496.23,"sessions":800,"clicks":1026,"target_roas":15.5,"fp_revenue":10449.98,"ga4_revenue":5784.32,"roas_fp":21.06,"roas_lc":11.66},{"date":"2026-07-28","cost":546.23,"sessions":933,"clicks":1193,"target_roas":15.5,"fp_revenue":11169.16,"ga4_revenue":6344.0,"roas_fp":20.45,"roas_lc":11.61},{"date":"2026-07-29","cost":493.58,"sessions":855,"clicks":1002,"target_roas":15.5,"fp_revenue":7211.2,"ga4_revenue":4195.71,"roas_fp":14.61,"roas_lc":8.5},{"date":"2026-07-30","cost":504.46,"sessions":830,"clicks":985,"target_roas":15.5,"fp_revenue":5245.73,"ga4_revenue":2154.14,"roas_fp":10.4,"roas_lc":4.27},{"date":"2026-07-31","cost":420.71,"sessions":777,"clicks":872,"target_roas":15.5,"fp_revenue":7443.95,"ga4_revenue":3073.66,"roas_fp":17.69,"roas_lc":7.31},{"date":"2026-08-01","cost":437.36,"sessions":750,"clicks":914,"target_roas":15.5,"fp_revenue":9403.41,"ga4_revenue":1937.9,"roas_fp":21.5,"roas_lc":4.43},{"date":"2026-08-02","cost":495.36,"sessions":952,"clicks":1160,"target_roas":15.5,"fp_revenue":6821.63,"ga4_revenue":2508.84,"roas_fp":13.77,"roas_lc":5.06},{"date":"2026-08-03","cost":618.18,"sessions":1051,"clicks":1312,"target_roas":15.75,"fp_revenue":13923.96,"ga4_revenue":5897.06,"roas_fp":22.52,"roas_lc":9.54},{"date":"2026-08-04","cost":375.07,"sessions":755,"clicks":851,"target_roas":15.75,"fp_revenue":2645.62,"ga4_revenue":2704.9,"roas_fp":7.05,"roas_lc":7.21},{"date":"2026-08-05","cost":361.57,"sessions":768,"clicks":810,"target_roas":15.75,"fp_revenue":4796.7,"ga4_revenue":2144.12,"roas_fp":13.27,"roas_lc":5.93},{"date":"2026-08-06","cost":426.49,"sessions":772,"clicks":869,"target_roas":15.75,"fp_revenue":4177.34,"ga4_revenue":1714.55,"roas_fp":9.79,"roas_lc":4.02},{"date":"2026-08-07","cost":345.88,"sessions":676,"clicks":729,"target_roas":15.75,"fp_revenue":3707.83,"ga4_revenue":1940.17,"roas_fp":10.72,"roas_lc":5.61},{"date":"2026-08-08","cost":403.59,"sessions":680,"clicks":822,"target_roas":15.75,"fp_revenue":7590.21,"ga4_revenue":4147.96,"roas_fp":18.81,"roas_lc":10.28},{"date":"2026-08-09","cost":362.63,"sessions":719,"clicks":826,"target_roas":15.75,"fp_revenue":4928.32,"ga4_revenue":2008.36,"roas_fp":13.59,"roas_lc":5.54},{"date":"2026-08-10","cost":387.33,"sessions":760,"clicks":837,"target_roas":16,"fp_revenue":6188.68,"ga4_revenue":3781.69,"roas_fp":15.98,"roas_lc":9.76},{"date":"2026-08-11","cost":355.42,"sessions":690,"clicks":780,"target_roas":16,"fp_revenue":6443.81,"ga4_revenue":5206.87,"roas_fp":18.13,"roas_lc":14.65},{"date":"2026-08-12","cost":301.32,"sessions":662,"clicks":703,"target_roas":15.75,"fp_revenue":3868.93,"ga4_revenue":2241.54,"roas_fp":12.84,"roas_lc":7.44},{"date":"2026-08-13","cost":412.09,"sessions":763,"clicks":907,"target_roas":15.75,"fp_revenue":4113.3,"ga4_revenue":2307.67,"roas_fp":9.98,"roas_lc":5.6},{"date":"2026-08-14","cost":312.99,"sessions":660,"clicks":718,"target_roas":15.75,"fp_revenue":4671.43,"ga4_revenue":3665.74,"roas_fp":14.93,"roas_lc":11.71},{"date":"2026-08-15","cost":144.94,"sessions":146,"clicks":363,"target_roas":15.75,"fp_revenue":1442.25,"ga4_revenue":0.0,"roas_fp":9.95,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_roc":[{"date":"2026-07-19","cost":5.92,"sessions":12,"clicks":11,"target_roas":21.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":1.52,"sessions":9,"clicks":8,"target_roas":21.25,"fp_revenue":142.76,"ga4_revenue":169.95,"roas_fp":93.96,"roas_lc":111.86},{"date":"2026-07-21","cost":4.57,"sessions":15,"clicks":18,"target_roas":21.25,"fp_revenue":212.86,"ga4_revenue":0.0,"roas_fp":46.54,"roas_lc":0.0},{"date":"2026-07-22","cost":3.81,"sessions":10,"clicks":9,"target_roas":21.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":8.71,"sessions":14,"clicks":16,"target_roas":21.25,"fp_revenue":176.92,"ga4_revenue":0.0,"roas_fp":20.32,"roas_lc":0.0},{"date":"2026-07-24","cost":10.73,"sessions":11,"clicks":12,"target_roas":21.25,"fp_revenue":608.36,"ga4_revenue":614.95,"roas_fp":56.71,"roas_lc":57.33},{"date":"2026-07-25","cost":13.58,"sessions":22,"clicks":22,"target_roas":21.25,"fp_revenue":117.8,"ga4_revenue":286.99,"roas_fp":8.67,"roas_lc":21.13},{"date":"2026-07-26","cost":25.05,"sessions":38,"clicks":45,"target_roas":21.25,"fp_revenue":201.58,"ga4_revenue":169.0,"roas_fp":8.05,"roas_lc":6.75},{"date":"2026-07-27","cost":11.52,"sessions":33,"clicks":36,"target_roas":21.25,"fp_revenue":202.24,"ga4_revenue":0.0,"roas_fp":17.56,"roas_lc":0.0},{"date":"2026-07-28","cost":17.33,"sessions":31,"clicks":33,"target_roas":21.25,"fp_revenue":891.78,"ga4_revenue":589.05,"roas_fp":51.46,"roas_lc":33.99},{"date":"2026-07-29","cost":44.18,"sessions":73,"clicks":101,"target_roas":21.25,"fp_revenue":216.59,"ga4_revenue":0.0,"roas_fp":4.9,"roas_lc":0.0},{"date":"2026-07-30","cost":24.52,"sessions":66,"clicks":64,"target_roas":21.25,"fp_revenue":621.66,"ga4_revenue":1091.94,"roas_fp":25.36,"roas_lc":44.54},{"date":"2026-07-31","cost":7.26,"sessions":0,"clicks":17,"target_roas":21.25,"fp_revenue":61.88,"ga4_revenue":0.0,"roas_fp":8.52,"roas_lc":0.0},{"date":"2026-08-01","cost":4.77,"sessions":12,"clicks":13,"target_roas":21.25,"fp_revenue":18.82,"ga4_revenue":0.0,"roas_fp":3.95,"roas_lc":0.0},{"date":"2026-08-02","cost":8.83,"sessions":8,"clicks":8,"target_roas":21.25,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":6.48,"sessions":0,"clicks":11,"target_roas":21,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":9.46,"sessions":14,"clicks":22,"target_roas":21,"fp_revenue":110.95,"ga4_revenue":0.0,"roas_fp":11.73,"roas_lc":0.0},{"date":"2026-08-05","cost":5.25,"sessions":11,"clicks":12,"target_roas":21,"fp_revenue":129.92,"ga4_revenue":0.0,"roas_fp":24.75,"roas_lc":0.0},{"date":"2026-08-06","cost":11.67,"sessions":7,"clicks":12,"target_roas":20.5,"fp_revenue":5.73,"ga4_revenue":0.0,"roas_fp":0.49,"roas_lc":0.0},{"date":"2026-08-07","cost":9.44,"sessions":5,"clicks":8,"target_roas":20.5,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":15.15,"sessions":10,"clicks":18,"target_roas":20.5,"fp_revenue":62.55,"ga4_revenue":0.0,"roas_fp":4.13,"roas_lc":0.0},{"date":"2026-08-09","cost":8.03,"sessions":8,"clicks":13,"target_roas":20.5,"fp_revenue":484.94,"ga4_revenue":0.0,"roas_fp":60.41,"roas_lc":0.0},{"date":"2026-08-10","cost":6.76,"sessions":10,"clicks":12,"target_roas":20.5,"fp_revenue":1597.18,"ga4_revenue":0.0,"roas_fp":236.23,"roas_lc":0.0},{"date":"2026-08-11","cost":5.89,"sessions":12,"clicks":12,"target_roas":20,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":17.63,"sessions":19,"clicks":29,"target_roas":20.5,"fp_revenue":363.3,"ga4_revenue":0.0,"roas_fp":20.6,"roas_lc":0.0},{"date":"2026-08-13","cost":23.06,"sessions":16,"clicks":25,"target_roas":21,"fp_revenue":946.0,"ga4_revenue":0.0,"roas_fp":41.03,"roas_lc":0.0},{"date":"2026-08-14","cost":38.06,"sessions":22,"clicks":40,"target_roas":21,"fp_revenue":1882.64,"ga4_revenue":0.0,"roas_fp":49.47,"roas_lc":0.0},{"date":"2026-08-15","cost":21.84,"sessions":8,"clicks":20,"target_roas":21,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"ongoing_royal-distributing_paid-search_google_fr_dtp_performance-max_weak_canada":[{"date":"2026-07-19","cost":2.6,"sessions":12,"clicks":12,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":5.17,"sessions":12,"clicks":20,"target_roas":19,"fp_revenue":111.87,"ga4_revenue":400.0,"roas_fp":21.64,"roas_lc":77.37},{"date":"2026-07-21","cost":4.53,"sessions":18,"clicks":22,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":2.62,"sessions":7,"clicks":10,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":2.99,"sessions":13,"clicks":18,"target_roas":19,"fp_revenue":142.77,"ga4_revenue":124.17,"roas_fp":47.8,"roas_lc":41.57},{"date":"2026-07-24","cost":1.71,"sessions":9,"clicks":12,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":1.73,"sessions":7,"clicks":7,"target_roas":19,"fp_revenue":310.42,"ga4_revenue":269.99,"roas_fp":179.26,"roas_lc":155.91},{"date":"2026-07-26","cost":1.98,"sessions":12,"clicks":11,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":9.48,"sessions":25,"clicks":36,"target_roas":19,"fp_revenue":82.72,"ga4_revenue":0.0,"roas_fp":8.72,"roas_lc":0.0},{"date":"2026-07-28","cost":8.02,"sessions":40,"clicks":34,"target_roas":19,"fp_revenue":15.64,"ga4_revenue":135.99,"roas_fp":1.95,"roas_lc":16.96},{"date":"2026-07-29","cost":8.44,"sessions":29,"clicks":28,"target_roas":19,"fp_revenue":290.39,"ga4_revenue":195.87,"roas_fp":34.42,"roas_lc":23.22},{"date":"2026-07-30","cost":2.72,"sessions":0,"clicks":15,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":8.61,"sessions":20,"clicks":30,"target_roas":19,"fp_revenue":686.96,"ga4_revenue":0.0,"roas_fp":79.82,"roas_lc":0.0},{"date":"2026-08-01","cost":3.26,"sessions":18,"clicks":16,"target_roas":19,"fp_revenue":580.52,"ga4_revenue":480.96,"roas_fp":178.16,"roas_lc":147.6},{"date":"2026-08-02","cost":11.31,"sessions":27,"clicks":34,"target_roas":19,"fp_revenue":170.31,"ga4_revenue":0.0,"roas_fp":15.06,"roas_lc":0.0},{"date":"2026-08-03","cost":20.99,"sessions":43,"clicks":59,"target_roas":18.75,"fp_revenue":0.0,"ga4_revenue":55.98,"roas_fp":0.0,"roas_lc":2.67},{"date":"2026-08-04","cost":12.86,"sessions":47,"clicks":55,"target_roas":18.75,"fp_revenue":51.69,"ga4_revenue":642.89,"roas_fp":4.02,"roas_lc":49.98},{"date":"2026-08-05","cost":15.77,"sessions":48,"clicks":51,"target_roas":18.75,"fp_revenue":239.72,"ga4_revenue":263.82,"roas_fp":15.2,"roas_lc":16.73},{"date":"2026-08-06","cost":16.87,"sessions":35,"clicks":47,"target_roas":18.5,"fp_revenue":10.87,"ga4_revenue":0.0,"roas_fp":0.64,"roas_lc":0.0},{"date":"2026-08-07","cost":26.33,"sessions":42,"clicks":56,"target_roas":18.5,"fp_revenue":112.65,"ga4_revenue":0.0,"roas_fp":4.28,"roas_lc":0.0},{"date":"2026-08-08","cost":17.79,"sessions":42,"clicks":57,"target_roas":18.5,"fp_revenue":122.32,"ga4_revenue":219.98,"roas_fp":6.88,"roas_lc":12.37},{"date":"2026-08-09","cost":28.8,"sessions":45,"clicks":65,"target_roas":18.5,"fp_revenue":28.82,"ga4_revenue":111.71,"roas_fp":1.0,"roas_lc":3.88},{"date":"2026-08-10","cost":31.48,"sessions":59,"clicks":77,"target_roas":18.25,"fp_revenue":463.65,"ga4_revenue":225.99,"roas_fp":14.73,"roas_lc":7.18},{"date":"2026-08-11","cost":18.93,"sessions":49,"clicks":68,"target_roas":18.25,"fp_revenue":132.19,"ga4_revenue":0.0,"roas_fp":6.98,"roas_lc":0.0},{"date":"2026-08-12","cost":9.23,"sessions":25,"clicks":28,"target_roas":18.25,"fp_revenue":102.44,"ga4_revenue":0.0,"roas_fp":11.1,"roas_lc":0.0},{"date":"2026-08-13","cost":7.69,"sessions":30,"clicks":36,"target_roas":18.75,"fp_revenue":0.0,"ga4_revenue":117.75,"roas_fp":0.0,"roas_lc":15.31},{"date":"2026-08-14","cost":7.09,"sessions":17,"clicks":29,"target_roas":18.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":2.31,"sessions":5,"clicks":12,"target_roas":18.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}]},"budgets":{"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_ontario":2500,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_roc":2500,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_quebec":1500,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_all":400,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_manufacturers":250,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_all":80,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_roc":300,"ongoing_royal-distributing_paid-search_google_fr_dtp_performance-max_weak_canada":300,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_sbv":20,"Max Conv Bid Experiment":400,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_snowmobile_all _broad":224},"current_target_roas":{"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_ontario":21.25,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_roc":14.25,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_quebec":15.75,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_all":12.75,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_manufacturers":15.25,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_all":11,"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_roc":21,"ongoing_royal-distributing_paid-search_google_fr_dtp_performance-max_weak_canada":18.75,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_sbv":null,"Max Conv Bid Experiment":null,"ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_snowmobile_all _broad":9},"campaign_ids":{"ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_ontario":"21825367657","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_strong_roc":"21825367660","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_quebec":"21825367663","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_all":"6467396349","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_manufacturers":"21061343901","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_all":"6459870478","ongoing_royal-distributing_paid-search_google_en_dtp_performance-max_weak_roc":"21825367666","ongoing_royal-distributing_paid-search_google_fr_dtp_performance-max_weak_canada":"21825367669","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_DSA_sbv":"23198008037","Max Conv Bid Experiment":"7880505832","ongoing_royal-distributing_paid-search_google_canada_within_en_dtp_generic_snowmobile_all _broad":"21064807195"}},"revco":{"daily":[{"date":"2026-07-19","clicks":4493,"sessions":3666,"c2s":1.226,"cost":2335.02,"cps":0.64,"fp_revenue":50254.55,"ga4_revenue":26582.03,"roas_fp":21.52,"roas_lc":11.38,"avg_target_roas":19.708,"sem_paid":26975.04,"sem_total":71933.33},{"date":"2026-07-20","clicks":4608,"sessions":3917,"c2s":1.176,"cost":2543.12,"cps":0.65,"fp_revenue":40896.3,"ga4_revenue":23267.62,"roas_fp":16.08,"roas_lc":9.15,"avg_target_roas":19.417,"sem_paid":22355.45,"sem_total":61092.47},{"date":"2026-07-21","clicks":4485,"sessions":3947,"c2s":1.136,"cost":2558.51,"cps":0.65,"fp_revenue":46541.36,"ga4_revenue":27539.62,"roas_fp":18.19,"roas_lc":10.76,"avg_target_roas":19.417,"sem_paid":28569.65,"sem_total":53880.23},{"date":"2026-07-22","clicks":4525,"sessions":3808,"c2s":1.188,"cost":2653.82,"cps":0.7,"fp_revenue":46818.12,"ga4_revenue":27143.34,"roas_fp":17.64,"roas_lc":10.23,"avg_target_roas":19.333,"sem_paid":27389.37,"sem_total":55774.19},{"date":"2026-07-23","clicks":3900,"sessions":3417,"c2s":1.141,"cost":2382.63,"cps":0.7,"fp_revenue":36759.15,"ga4_revenue":23772.36,"roas_fp":15.43,"roas_lc":9.98,"avg_target_roas":19.333,"sem_paid":32079.59,"sem_total":58258.25},{"date":"2026-07-24","clicks":3451,"sessions":3151,"c2s":1.095,"cost":2029.1,"cps":0.64,"fp_revenue":34069.74,"ga4_revenue":18414.66,"roas_fp":16.79,"roas_lc":9.08,"avg_target_roas":19.333,"sem_paid":18435.45,"sem_total":37899.14},{"date":"2026-07-25","clicks":3516,"sessions":2980,"c2s":1.18,"cost":2024.32,"cps":0.68,"fp_revenue":29053.98,"ga4_revenue":15042.41,"roas_fp":14.35,"roas_lc":7.43,"avg_target_roas":19.333,"sem_paid":15021.2,"sem_total":32468.44},{"date":"2026-07-26","clicks":4048,"sessions":3404,"c2s":1.189,"cost":2296.36,"cps":0.67,"fp_revenue":40478.86,"ga4_revenue":15755.0,"roas_fp":17.63,"roas_lc":6.86,"avg_target_roas":19.333,"sem_paid":17365.36,"sem_total":34145.01},{"date":"2026-07-27","clicks":3991,"sessions":3644,"c2s":1.095,"cost":2138.97,"cps":0.59,"fp_revenue":33774.58,"ga4_revenue":24750.72,"roas_fp":15.79,"roas_lc":11.57,"avg_target_roas":19.375,"sem_paid":26432.2,"sem_total":64190.39},{"date":"2026-07-28","clicks":4173,"sessions":3802,"c2s":1.098,"cost":2224.7,"cps":0.59,"fp_revenue":39308.33,"ga4_revenue":23779.95,"roas_fp":17.67,"roas_lc":10.69,"avg_target_roas":19.375,"sem_paid":26367.49,"sem_total":52942.37},{"date":"2026-07-29","clicks":3802,"sessions":3461,"c2s":1.099,"cost":2078.37,"cps":0.6,"fp_revenue":34952.96,"ga4_revenue":21923.04,"roas_fp":16.82,"roas_lc":10.55,"avg_target_roas":19.375,"sem_paid":22095.31,"sem_total":46114.27},{"date":"2026-07-30","clicks":3594,"sessions":3184,"c2s":1.129,"cost":2053.91,"cps":0.65,"fp_revenue":44433.46,"ga4_revenue":18019.55,"roas_fp":21.63,"roas_lc":8.77,"avg_target_roas":19.375,"sem_paid":19789.85,"sem_total":44151.84},{"date":"2026-07-31","clicks":3230,"sessions":2994,"c2s":1.079,"cost":1814.63,"cps":0.61,"fp_revenue":47335.81,"ga4_revenue":21963.0,"roas_fp":26.09,"roas_lc":12.1,"avg_target_roas":19.375,"sem_paid":23247.82,"sem_total":51327.83},{"date":"2026-08-01","clicks":3486,"sessions":2938,"c2s":1.187,"cost":1953.85,"cps":0.67,"fp_revenue":42743.67,"ga4_revenue":28842.2,"roas_fp":21.88,"roas_lc":14.76,"avg_target_roas":19.375,"sem_paid":23279.84,"sem_total":38359.3},{"date":"2026-08-02","clicks":4267,"sessions":3567,"c2s":1.196,"cost":2285.79,"cps":0.64,"fp_revenue":54328.63,"ga4_revenue":25712.86,"roas_fp":23.77,"roas_lc":11.25,"avg_target_roas":19.375,"sem_paid":26421.25,"sem_total":45688.84},{"date":"2026-08-03","clicks":4770,"sessions":4081,"c2s":1.169,"cost":2855.38,"cps":0.7,"fp_revenue":51964.87,"ga4_revenue":35996.5,"roas_fp":18.2,"roas_lc":12.61,"avg_target_roas":19.167,"sem_paid":38565.15,"sem_total":60767.64},{"date":"2026-08-04","clicks":4879,"sessions":4340,"c2s":1.124,"cost":3057.73,"cps":0.7,"fp_revenue":48614.6,"ga4_revenue":30707.66,"roas_fp":15.9,"roas_lc":10.04,"avg_target_roas":19.167,"sem_paid":30980.06,"sem_total":67055.29},{"date":"2026-08-05","clicks":4301,"sessions":3569,"c2s":1.205,"cost":2768.79,"cps":0.78,"fp_revenue":29673.23,"ga4_revenue":24714.69,"roas_fp":10.72,"roas_lc":8.93,"avg_target_roas":19.167,"sem_paid":27128.35,"sem_total":52596.95},{"date":"2026-08-06","clicks":4013,"sessions":3592,"c2s":1.117,"cost":2430.6,"cps":0.68,"fp_revenue":27185.33,"ga4_revenue":17160.04,"roas_fp":11.18,"roas_lc":7.06,"avg_target_roas":19.208,"sem_paid":20344.62,"sem_total":54465.72},{"date":"2026-08-07","clicks":3743,"sessions":3366,"c2s":1.112,"cost":2218.06,"cps":0.66,"fp_revenue":28774.29,"ga4_revenue":22735.89,"roas_fp":12.97,"roas_lc":10.25,"avg_target_roas":19.208,"sem_paid":26157.54,"sem_total":47140.46},{"date":"2026-08-08","clicks":4080,"sessions":3520,"c2s":1.159,"cost":2420.78,"cps":0.69,"fp_revenue":23273.15,"ga4_revenue":15545.51,"roas_fp":9.61,"roas_lc":6.42,"avg_target_roas":19.208,"sem_paid":16667.4,"sem_total":33708.21},{"date":"2026-08-09","clicks":4757,"sessions":4018,"c2s":1.184,"cost":2706.73,"cps":0.67,"fp_revenue":30132.95,"ga4_revenue":19579.86,"roas_fp":11.13,"roas_lc":7.23,"avg_target_roas":19.208,"sem_paid":20293.12,"sem_total":39708.32},{"date":"2026-08-10","clicks":4021,"sessions":3786,"c2s":1.062,"cost":2462.91,"cps":0.65,"fp_revenue":23288.69,"ga4_revenue":21724.13,"roas_fp":9.46,"roas_lc":8.82,"avg_target_roas":19.292,"sem_paid":22562.68,"sem_total":48183.86},{"date":"2026-08-11","clicks":2345,"sessions":2788,"c2s":0.841,"cost":1421.62,"cps":0.51,"fp_revenue":17445.09,"ga4_revenue":13276.3,"roas_fp":12.27,"roas_lc":9.34,"avg_target_roas":18.4,"sem_paid":15623.39,"sem_total":30466.19},{"date":"2026-08-12","clicks":2147,"sessions":2701,"c2s":0.795,"cost":1190.37,"cps":0.44,"fp_revenue":11496.45,"ga4_revenue":5988.77,"roas_fp":9.66,"roas_lc":5.03,"avg_target_roas":17.625,"sem_paid":6437.46,"sem_total":23287.53},{"date":"2026-08-13","clicks":1965,"sessions":2372,"c2s":0.828,"cost":1071.6,"cps":0.45,"fp_revenue":11585.76,"ga4_revenue":11788.01,"roas_fp":10.81,"roas_lc":11.0,"avg_target_roas":17.292,"sem_paid":13064.98,"sem_total":29885.57},{"date":"2026-08-14","clicks":1804,"sessions":1856,"c2s":0.972,"cost":1076.06,"cps":0.58,"fp_revenue":8533.48,"ga4_revenue":10375.76,"roas_fp":7.93,"roas_lc":9.64,"avg_target_roas":14.375,"sem_paid":10551.33,"sem_total":24590.52},{"date":"2026-08-15","clicks":970,"sessions":349,"c2s":2.779,"cost":641.68,"cps":1.84,"fp_revenue":3051.39,"ga4_revenue":1339.96,"roas_fp":4.76,"roas_lc":2.09,"avg_target_roas":11.042,"sem_paid":1630.95,"sem_total":4827.93}],"campaigns":["always-on_revco_search_google-ads_canada_en_dtp_DSA_all","always-on_revco_search_google-ads_canada_en_dtp_generic_all","always-on_revco_search_google-ads_canada_en_dtp_performancemax_ontario_weak","always-on_revco_search_google-ads_canada_en_dtp_performancemax_quebec_strong","always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_strong","always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_weak","always-on_revco_search_google-ads_canada_fr_dtp_performancemax_quebec_strong"],"per_campaign_daily":{"always-on_revco_search_google-ads_canada_en_dtp_DSA_all":[{"date":"2026-07-19","cost":3.21,"sessions":0,"clicks":5,"target_roas":null,"fp_revenue":112.5,"ga4_revenue":0.0,"roas_fp":35.05,"roas_lc":0.0},{"date":"2026-07-20","cost":16.96,"sessions":0,"clicks":21,"target_roas":null,"fp_revenue":93.22,"ga4_revenue":0.0,"roas_fp":5.5,"roas_lc":0.0},{"date":"2026-07-21","cost":9.94,"sessions":0,"clicks":14,"target_roas":null,"fp_revenue":158.9,"ga4_revenue":0.0,"roas_fp":15.99,"roas_lc":0.0},{"date":"2026-07-22","cost":4.22,"sessions":0,"clicks":8,"target_roas":null,"fp_revenue":72.57,"ga4_revenue":0.0,"roas_fp":17.21,"roas_lc":0.0},{"date":"2026-07-23","cost":5.43,"sessions":0,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":3.57,"sessions":0,"clicks":5,"target_roas":null,"fp_revenue":112.5,"ga4_revenue":0.0,"roas_fp":31.47,"roas_lc":0.0},{"date":"2026-07-25","cost":8.44,"sessions":0,"clicks":12,"target_roas":null,"fp_revenue":37.5,"ga4_revenue":0.0,"roas_fp":4.45,"roas_lc":0.0},{"date":"2026-07-26","cost":15.57,"sessions":0,"clicks":18,"target_roas":null,"fp_revenue":352.14,"ga4_revenue":0.0,"roas_fp":22.62,"roas_lc":0.0},{"date":"2026-07-27","cost":1.47,"sessions":0,"clicks":1,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"always-on_revco_search_google-ads_canada_en_dtp_generic_all":[{"date":"2026-07-19","cost":116.36,"sessions":203,"clicks":220,"target_roas":15.75,"fp_revenue":1823.78,"ga4_revenue":296.47,"roas_fp":15.67,"roas_lc":2.55},{"date":"2026-07-20","cost":114.02,"sessions":259,"clicks":221,"target_roas":15.25,"fp_revenue":530.23,"ga4_revenue":747.18,"roas_fp":4.65,"roas_lc":6.55},{"date":"2026-07-21","cost":117.63,"sessions":221,"clicks":200,"target_roas":15.25,"fp_revenue":3507.59,"ga4_revenue":3270.43,"roas_fp":29.82,"roas_lc":27.8},{"date":"2026-07-22","cost":113.53,"sessions":225,"clicks":217,"target_roas":15.25,"fp_revenue":1056.95,"ga4_revenue":1613.57,"roas_fp":9.31,"roas_lc":14.21},{"date":"2026-07-23","cost":97.01,"sessions":198,"clicks":192,"target_roas":15.25,"fp_revenue":3696.82,"ga4_revenue":3054.37,"roas_fp":38.11,"roas_lc":31.48},{"date":"2026-07-24","cost":99.66,"sessions":220,"clicks":185,"target_roas":15.25,"fp_revenue":1899.34,"ga4_revenue":741.31,"roas_fp":19.06,"roas_lc":7.44},{"date":"2026-07-25","cost":96.23,"sessions":207,"clicks":209,"target_roas":15.25,"fp_revenue":6598.47,"ga4_revenue":1067.44,"roas_fp":68.57,"roas_lc":11.09},{"date":"2026-07-26","cost":166.86,"sessions":271,"clicks":278,"target_roas":15.25,"fp_revenue":1882.57,"ga4_revenue":1834.1,"roas_fp":11.28,"roas_lc":10.99},{"date":"2026-07-27","cost":158.4,"sessions":266,"clicks":263,"target_roas":15,"fp_revenue":3656.02,"ga4_revenue":2156.7,"roas_fp":23.08,"roas_lc":13.62},{"date":"2026-07-28","cost":191.16,"sessions":327,"clicks":311,"target_roas":15,"fp_revenue":2265.56,"ga4_revenue":2839.13,"roas_fp":11.85,"roas_lc":14.85},{"date":"2026-07-29","cost":166.53,"sessions":269,"clicks":256,"target_roas":15,"fp_revenue":5537.24,"ga4_revenue":286.17,"roas_fp":33.25,"roas_lc":1.72},{"date":"2026-07-30","cost":144.7,"sessions":252,"clicks":254,"target_roas":14.75,"fp_revenue":357.98,"ga4_revenue":1241.93,"roas_fp":2.47,"roas_lc":8.58},{"date":"2026-07-31","cost":164.35,"sessions":274,"clicks":264,"target_roas":14.75,"fp_revenue":14405.68,"ga4_revenue":3077.69,"roas_fp":87.65,"roas_lc":18.73},{"date":"2026-08-01","cost":185.28,"sessions":295,"clicks":290,"target_roas":14.75,"fp_revenue":2604.92,"ga4_revenue":6995.53,"roas_fp":14.06,"roas_lc":37.76},{"date":"2026-08-02","cost":168.49,"sessions":288,"clicks":289,"target_roas":14.75,"fp_revenue":5523.5,"ga4_revenue":2304.7,"roas_fp":32.78,"roas_lc":13.68},{"date":"2026-08-03","cost":327.46,"sessions":418,"clicks":441,"target_roas":14.25,"fp_revenue":5346.88,"ga4_revenue":4428.69,"roas_fp":16.33,"roas_lc":13.52},{"date":"2026-08-04","cost":344.47,"sessions":464,"clicks":461,"target_roas":14.25,"fp_revenue":4726.99,"ga4_revenue":4655.23,"roas_fp":13.72,"roas_lc":13.51},{"date":"2026-08-05","cost":305.09,"sessions":387,"clicks":420,"target_roas":14.25,"fp_revenue":1770.37,"ga4_revenue":3125.16,"roas_fp":5.8,"roas_lc":10.24},{"date":"2026-08-06","cost":270.21,"sessions":379,"clicks":371,"target_roas":14,"fp_revenue":1944.15,"ga4_revenue":1903.97,"roas_fp":7.19,"roas_lc":7.05},{"date":"2026-08-07","cost":253.33,"sessions":383,"clicks":362,"target_roas":14,"fp_revenue":1095.92,"ga4_revenue":1611.32,"roas_fp":4.33,"roas_lc":6.36},{"date":"2026-08-08","cost":280.08,"sessions":416,"clicks":401,"target_roas":14,"fp_revenue":506.98,"ga4_revenue":2079.89,"roas_fp":1.81,"roas_lc":7.43},{"date":"2026-08-09","cost":323.42,"sessions":486,"clicks":492,"target_roas":14,"fp_revenue":4823.67,"ga4_revenue":3256.07,"roas_fp":14.91,"roas_lc":10.07},{"date":"2026-08-10","cost":273.63,"sessions":413,"clicks":394,"target_roas":14,"fp_revenue":557.71,"ga4_revenue":0.0,"roas_fp":2.04,"roas_lc":0.0},{"date":"2026-08-11","cost":206.89,"sessions":435,"clicks":275,"target_roas":13,"fp_revenue":2821.19,"ga4_revenue":1518.83,"roas_fp":13.64,"roas_lc":7.34},{"date":"2026-08-12","cost":223.62,"sessions":523,"clicks":308,"target_roas":13.75,"fp_revenue":1995.16,"ga4_revenue":1246.31,"roas_fp":8.92,"roas_lc":5.57},{"date":"2026-08-13","cost":203.53,"sessions":499,"clicks":302,"target_roas":13.75,"fp_revenue":1251.61,"ga4_revenue":4932.82,"roas_fp":6.15,"roas_lc":24.24},{"date":"2026-08-14","cost":179.62,"sessions":265,"clicks":256,"target_roas":13.75,"fp_revenue":769.69,"ga4_revenue":481.47,"roas_fp":4.28,"roas_lc":2.68},{"date":"2026-08-15","cost":69.49,"sessions":38,"clicks":100,"target_roas":13.75,"fp_revenue":0.0,"ga4_revenue":1339.96,"roas_fp":0.0,"roas_lc":19.28}],"always-on_revco_search_google-ads_canada_en_dtp_performancemax_ontario_weak":[{"date":"2026-07-19","cost":454.15,"sessions":722,"clicks":844,"target_roas":19.75,"fp_revenue":11109.38,"ga4_revenue":8302.52,"roas_fp":24.46,"roas_lc":18.28},{"date":"2026-07-20","cost":586.4,"sessions":873,"clicks":1066,"target_roas":19.5,"fp_revenue":11709.47,"ga4_revenue":6237.12,"roas_fp":19.97,"roas_lc":10.64},{"date":"2026-07-21","cost":636.04,"sessions":962,"clicks":1093,"target_roas":19.5,"fp_revenue":12492.68,"ga4_revenue":7521.91,"roas_fp":19.64,"roas_lc":11.83},{"date":"2026-07-22","cost":561.07,"sessions":817,"clicks":941,"target_roas":19,"fp_revenue":9846.48,"ga4_revenue":8200.32,"roas_fp":17.55,"roas_lc":14.62},{"date":"2026-07-23","cost":586.26,"sessions":804,"clicks":917,"target_roas":19,"fp_revenue":6554.99,"ga4_revenue":2901.3,"roas_fp":11.18,"roas_lc":4.95},{"date":"2026-07-24","cost":473.55,"sessions":725,"clicks":839,"target_roas":19,"fp_revenue":9397.24,"ga4_revenue":4712.28,"roas_fp":19.84,"roas_lc":9.95},{"date":"2026-07-25","cost":543.35,"sessions":700,"clicks":861,"target_roas":19,"fp_revenue":7125.19,"ga4_revenue":4877.43,"roas_fp":13.11,"roas_lc":8.98},{"date":"2026-07-26","cost":595.44,"sessions":813,"clicks":986,"target_roas":19,"fp_revenue":12481.02,"ga4_revenue":5623.74,"roas_fp":20.96,"roas_lc":9.44},{"date":"2026-07-27","cost":533.23,"sessions":830,"clicks":911,"target_roas":19,"fp_revenue":7199.29,"ga4_revenue":5890.66,"roas_fp":13.5,"roas_lc":11.05},{"date":"2026-07-28","cost":530.65,"sessions":871,"clicks":967,"target_roas":19,"fp_revenue":6145.06,"ga4_revenue":7052.2,"roas_fp":11.58,"roas_lc":13.29},{"date":"2026-07-29","cost":538.63,"sessions":748,"clicks":878,"target_roas":19,"fp_revenue":6030.03,"ga4_revenue":4426.21,"roas_fp":11.2,"roas_lc":8.22},{"date":"2026-07-30","cost":570.87,"sessions":659,"clicks":801,"target_roas":19.25,"fp_revenue":13692.95,"ga4_revenue":7371.37,"roas_fp":23.99,"roas_lc":12.91},{"date":"2026-07-31","cost":360.47,"sessions":620,"clicks":659,"target_roas":19.25,"fp_revenue":7936.12,"ga4_revenue":3253.38,"roas_fp":22.02,"roas_lc":9.03},{"date":"2026-08-01","cost":410.56,"sessions":621,"clicks":721,"target_roas":19.25,"fp_revenue":14968.58,"ga4_revenue":7560.43,"roas_fp":36.46,"roas_lc":18.41},{"date":"2026-08-02","cost":579.69,"sessions":801,"clicks":1006,"target_roas":19.25,"fp_revenue":16872.49,"ga4_revenue":2446.72,"roas_fp":29.11,"roas_lc":4.22},{"date":"2026-08-03","cost":576.32,"sessions":814,"clicks":955,"target_roas":19.25,"fp_revenue":12294.8,"ga4_revenue":5791.7,"roas_fp":21.33,"roas_lc":10.05},{"date":"2026-08-04","cost":627.85,"sessions":870,"clicks":998,"target_roas":19.25,"fp_revenue":10754.75,"ga4_revenue":5133.83,"roas_fp":17.13,"roas_lc":8.18},{"date":"2026-08-05","cost":662.68,"sessions":733,"clicks":915,"target_roas":19.25,"fp_revenue":7812.63,"ga4_revenue":5326.93,"roas_fp":11.79,"roas_lc":8.04},{"date":"2026-08-06","cost":520.94,"sessions":725,"clicks":874,"target_roas":19.5,"fp_revenue":4095.22,"ga4_revenue":1362.5,"roas_fp":7.86,"roas_lc":2.62},{"date":"2026-08-07","cost":539.78,"sessions":725,"clicks":844,"target_roas":19.5,"fp_revenue":11930.34,"ga4_revenue":6324.24,"roas_fp":22.1,"roas_lc":11.72},{"date":"2026-08-08","cost":565.7,"sessions":754,"clicks":918,"target_roas":19.5,"fp_revenue":6340.3,"ga4_revenue":2683.29,"roas_fp":11.21,"roas_lc":4.74},{"date":"2026-08-09","cost":588.08,"sessions":863,"clicks":1029,"target_roas":19.5,"fp_revenue":5229.11,"ga4_revenue":2703.02,"roas_fp":8.89,"roas_lc":4.6},{"date":"2026-08-10","cost":616.97,"sessions":832,"clicks":899,"target_roas":19.75,"fp_revenue":4798.47,"ga4_revenue":6844.44,"roas_fp":7.78,"roas_lc":11.09},{"date":"2026-08-11","cost":359.69,"sessions":578,"clicks":519,"target_roas":19,"fp_revenue":4118.48,"ga4_revenue":3932.59,"roas_fp":11.45,"roas_lc":10.93},{"date":"2026-08-12","cost":312.6,"sessions":604,"clicks":481,"target_roas":18,"fp_revenue":921.05,"ga4_revenue":502.24,"roas_fp":2.95,"roas_lc":1.61},{"date":"2026-08-13","cost":227.45,"sessions":448,"clicks":402,"target_roas":17.5,"fp_revenue":1779.72,"ga4_revenue":1224.19,"roas_fp":7.82,"roas_lc":5.38},{"date":"2026-08-14","cost":254.96,"sessions":417,"clicks":404,"target_roas":14,"fp_revenue":1559.84,"ga4_revenue":2301.61,"roas_fp":6.12,"roas_lc":9.03},{"date":"2026-08-15","cost":184.47,"sessions":74,"clicks":224,"target_roas":10.5,"fp_revenue":517.5,"ga4_revenue":0.0,"roas_fp":2.81,"roas_lc":0.0}],"always-on_revco_search_google-ads_canada_en_dtp_performancemax_quebec_strong":[{"date":"2026-07-19","cost":289.08,"sessions":565,"clicks":717,"target_roas":19,"fp_revenue":2808.51,"ga4_revenue":1790.0,"roas_fp":9.72,"roas_lc":6.19},{"date":"2026-07-20","cost":279.22,"sessions":554,"clicks":659,"target_roas":18.75,"fp_revenue":4651.08,"ga4_revenue":1905.66,"roas_fp":16.66,"roas_lc":6.83},{"date":"2026-07-21","cost":280.9,"sessions":552,"clicks":659,"target_roas":18.75,"fp_revenue":4751.79,"ga4_revenue":1773.11,"roas_fp":16.92,"roas_lc":6.31},{"date":"2026-07-22","cost":263.95,"sessions":524,"clicks":673,"target_roas":19,"fp_revenue":3853.46,"ga4_revenue":1522.25,"roas_fp":14.6,"roas_lc":5.77},{"date":"2026-07-23","cost":199.0,"sessions":426,"clicks":481,"target_roas":19,"fp_revenue":4984.21,"ga4_revenue":3455.43,"roas_fp":25.05,"roas_lc":17.36},{"date":"2026-07-24","cost":179.01,"sessions":389,"clicks":441,"target_roas":19,"fp_revenue":3878.69,"ga4_revenue":3764.04,"roas_fp":21.67,"roas_lc":21.03},{"date":"2026-07-25","cost":153.77,"sessions":320,"clicks":380,"target_roas":19,"fp_revenue":1433.79,"ga4_revenue":1068.35,"roas_fp":9.32,"roas_lc":6.95},{"date":"2026-07-26","cost":207.04,"sessions":412,"clicks":514,"target_roas":19,"fp_revenue":9729.66,"ga4_revenue":2545.62,"roas_fp":46.99,"roas_lc":12.3},{"date":"2026-07-27","cost":229.67,"sessions":478,"clicks":582,"target_roas":19.25,"fp_revenue":3646.25,"ga4_revenue":3503.84,"roas_fp":15.88,"roas_lc":15.26},{"date":"2026-07-28","cost":255.65,"sessions":570,"clicks":641,"target_roas":19.25,"fp_revenue":4124.84,"ga4_revenue":2305.06,"roas_fp":16.13,"roas_lc":9.02},{"date":"2026-07-29","cost":284.63,"sessions":566,"clicks":658,"target_roas":19.25,"fp_revenue":7056.17,"ga4_revenue":4297.26,"roas_fp":24.79,"roas_lc":15.1},{"date":"2026-07-30","cost":266.83,"sessions":480,"clicks":594,"target_roas":19.25,"fp_revenue":4964.57,"ga4_revenue":606.42,"roas_fp":18.61,"roas_lc":2.27},{"date":"2026-07-31","cost":244.94,"sessions":444,"clicks":531,"target_roas":19.25,"fp_revenue":3669.54,"ga4_revenue":1391.82,"roas_fp":14.98,"roas_lc":5.68},{"date":"2026-08-01","cost":239.77,"sessions":416,"clicks":528,"target_roas":19.25,"fp_revenue":3339.8,"ga4_revenue":1380.75,"roas_fp":13.93,"roas_lc":5.76},{"date":"2026-08-02","cost":259.99,"sessions":539,"clicks":634,"target_roas":19.25,"fp_revenue":7419.18,"ga4_revenue":6949.77,"roas_fp":28.54,"roas_lc":26.73},{"date":"2026-08-03","cost":300.9,"sessions":553,"clicks":654,"target_roas":19.25,"fp_revenue":4262.04,"ga4_revenue":3248.14,"roas_fp":14.16,"roas_lc":10.79},{"date":"2026-08-04","cost":264.94,"sessions":434,"clicks":497,"target_roas":19.25,"fp_revenue":5259.7,"ga4_revenue":2852.22,"roas_fp":19.85,"roas_lc":10.77},{"date":"2026-08-05","cost":228.96,"sessions":407,"clicks":492,"target_roas":19.25,"fp_revenue":2734.1,"ga4_revenue":3622.38,"roas_fp":11.94,"roas_lc":15.82},{"date":"2026-08-06","cost":219.71,"sessions":436,"clicks":504,"target_roas":19.25,"fp_revenue":2425.68,"ga4_revenue":3465.13,"roas_fp":11.04,"roas_lc":15.77},{"date":"2026-08-07","cost":216.13,"sessions":436,"clicks":488,"target_roas":19.25,"fp_revenue":4442.14,"ga4_revenue":2634.04,"roas_fp":20.55,"roas_lc":12.19},{"date":"2026-08-08","cost":243.54,"sessions":453,"clicks":520,"target_roas":19.25,"fp_revenue":3289.56,"ga4_revenue":2903.94,"roas_fp":13.51,"roas_lc":11.92},{"date":"2026-08-09","cost":285.32,"sessions":555,"clicks":666,"target_roas":19.25,"fp_revenue":2996.38,"ga4_revenue":4788.28,"roas_fp":10.5,"roas_lc":16.78},{"date":"2026-08-10","cost":251.13,"sessions":493,"clicks":561,"target_roas":19.5,"fp_revenue":1782.93,"ga4_revenue":933.8,"roas_fp":7.1,"roas_lc":3.72},{"date":"2026-08-11","cost":151.46,"sessions":332,"clicks":318,"target_roas":18.25,"fp_revenue":3055.08,"ga4_revenue":1948.61,"roas_fp":20.17,"roas_lc":12.87},{"date":"2026-08-12","cost":75.98,"sessions":239,"clicks":225,"target_roas":17.25,"fp_revenue":1521.79,"ga4_revenue":1592.74,"roas_fp":20.03,"roas_lc":20.96},{"date":"2026-08-13","cost":111.97,"sessions":273,"clicks":275,"target_roas":16.75,"fp_revenue":2582.93,"ga4_revenue":2959.03,"roas_fp":23.07,"roas_lc":26.43},{"date":"2026-08-14","cost":94.79,"sessions":214,"clicks":221,"target_roas":13.25,"fp_revenue":2288.23,"ga4_revenue":3016.77,"roas_fp":24.14,"roas_lc":31.83},{"date":"2026-08-15","cost":63.59,"sessions":39,"clicks":121,"target_roas":10.5,"fp_revenue":393.59,"ga4_revenue":0.0,"roas_fp":6.19,"roas_lc":0.0}],"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_strong":[{"date":"2026-07-19","cost":1371.3,"sessions":2098,"clicks":2595,"target_roas":19,"fp_revenue":33260.74,"ga4_revenue":16069.93,"roas_fp":24.25,"roas_lc":11.72},{"date":"2026-07-20","cost":1478.9,"sessions":2150,"clicks":2544,"target_roas":18.75,"fp_revenue":22799.11,"ga4_revenue":12977.61,"roas_fp":15.42,"roas_lc":8.78},{"date":"2026-07-21","cost":1469.44,"sessions":2125,"clicks":2425,"target_roas":18.75,"fp_revenue":24614.18,"ga4_revenue":14679.72,"roas_fp":16.75,"roas_lc":9.99},{"date":"2026-07-22","cost":1642.12,"sessions":2114,"clicks":2504,"target_roas":18.5,"fp_revenue":31699.45,"ga4_revenue":15167.28,"roas_fp":19.3,"roas_lc":9.24},{"date":"2026-07-23","cost":1387.68,"sessions":1852,"clicks":2119,"target_roas":18.5,"fp_revenue":21362.23,"ga4_revenue":14361.26,"roas_fp":15.39,"roas_lc":10.35},{"date":"2026-07-24","cost":1176.27,"sessions":1654,"clicks":1811,"target_roas":18.5,"fp_revenue":16038.19,"ga4_revenue":8967.14,"roas_fp":13.63,"roas_lc":7.62},{"date":"2026-07-25","cost":1177.11,"sessions":1657,"clicks":1952,"target_roas":18.5,"fp_revenue":12400.93,"ga4_revenue":7341.3,"roas_fp":10.54,"roas_lc":6.24},{"date":"2026-07-26","cost":1252.97,"sessions":1758,"clicks":2086,"target_roas":18.5,"fp_revenue":13383.69,"ga4_revenue":5605.08,"roas_fp":10.68,"roas_lc":4.47},{"date":"2026-07-27","cost":1147.01,"sessions":1911,"clicks":2058,"target_roas":18.75,"fp_revenue":17374.67,"ga4_revenue":10527.5,"roas_fp":15.15,"roas_lc":9.18},{"date":"2026-07-28","cost":1149.88,"sessions":1860,"clicks":2059,"target_roas":18.75,"fp_revenue":24476.15,"ga4_revenue":11583.56,"roas_fp":21.29,"roas_lc":10.07},{"date":"2026-07-29","cost":1011.26,"sessions":1699,"clicks":1817,"target_roas":18.75,"fp_revenue":15013.39,"ga4_revenue":11851.45,"roas_fp":14.85,"roas_lc":11.72},{"date":"2026-07-30","cost":1008.26,"sessions":1639,"clicks":1785,"target_roas":18.75,"fp_revenue":24766.18,"ga4_revenue":7161.04,"roas_fp":24.56,"roas_lc":7.1},{"date":"2026-07-31","cost":960.93,"sessions":1499,"clicks":1615,"target_roas":18.75,"fp_revenue":19511.98,"ga4_revenue":13746.43,"roas_fp":20.31,"roas_lc":14.31},{"date":"2026-08-01","cost":1035.83,"sessions":1458,"clicks":1769,"target_roas":18.75,"fp_revenue":20890.77,"ga4_revenue":12905.49,"roas_fp":20.17,"roas_lc":12.46},{"date":"2026-08-02","cost":1185.52,"sessions":1737,"clicks":2101,"target_roas":18.75,"fp_revenue":19502.33,"ga4_revenue":11487.96,"roas_fp":16.45,"roas_lc":9.69},{"date":"2026-08-03","cost":1535.95,"sessions":2089,"clicks":2468,"target_roas":18.5,"fp_revenue":26682.89,"ga4_revenue":21328.77,"roas_fp":17.37,"roas_lc":13.89},{"date":"2026-08-04","cost":1709.48,"sessions":2377,"clicks":2695,"target_roas":18.5,"fp_revenue":26482.8,"ga4_revenue":17630.97,"roas_fp":15.49,"roas_lc":10.31},{"date":"2026-08-05","cost":1448.2,"sessions":1890,"clicks":2267,"target_roas":18.5,"fp_revenue":16406.45,"ga4_revenue":11925.79,"roas_fp":11.33,"roas_lc":8.23},{"date":"2026-08-06","cost":1311.01,"sessions":1881,"clicks":2086,"target_roas":18.5,"fp_revenue":17835.94,"ga4_revenue":10382.47,"roas_fp":13.6,"roas_lc":7.92},{"date":"2026-08-07","cost":1124.37,"sessions":1681,"clicks":1892,"target_roas":18.5,"fp_revenue":10394.49,"ga4_revenue":9052.15,"roas_fp":9.24,"roas_lc":8.05},{"date":"2026-08-08","cost":1244.77,"sessions":1751,"clicks":2054,"target_roas":18.5,"fp_revenue":12400.78,"ga4_revenue":7541.47,"roas_fp":9.96,"roas_lc":6.06},{"date":"2026-08-09","cost":1415.77,"sessions":1968,"clicks":2380,"target_roas":18.5,"fp_revenue":14537.55,"ga4_revenue":7857.79,"roas_fp":10.27,"roas_lc":5.55},{"date":"2026-08-10","cost":1230.65,"sessions":1878,"clicks":1993,"target_roas":18.75,"fp_revenue":14932.05,"ga4_revenue":12574.92,"roas_fp":12.13,"roas_lc":10.22},{"date":"2026-08-11","cost":543.47,"sessions":1124,"clicks":895,"target_roas":18,"fp_revenue":4874.28,"ga4_revenue":5332.73,"roas_fp":8.97,"roas_lc":9.81},{"date":"2026-08-12","cost":460.97,"sessions":1053,"clicks":822,"target_roas":17,"fp_revenue":5782.94,"ga4_revenue":2464.09,"roas_fp":12.55,"roas_lc":5.35},{"date":"2026-08-13","cost":417.94,"sessions":868,"clicks":712,"target_roas":17,"fp_revenue":3689.74,"ga4_revenue":1627.38,"roas_fp":8.83,"roas_lc":3.89},{"date":"2026-08-14","cost":423.68,"sessions":701,"clicks":644,"target_roas":13.5,"fp_revenue":1031.74,"ga4_revenue":2953.95,"roas_fp":2.44,"roas_lc":6.97},{"date":"2026-08-15","cost":164.09,"sessions":132,"clicks":256,"target_roas":10.5,"fp_revenue":1500.76,"ga4_revenue":0.0,"roas_fp":9.15,"roas_lc":0.0}],"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_weak":[{"date":"2026-07-19","cost":85.48,"sessions":54,"clicks":80,"target_roas":24.75,"fp_revenue":1139.64,"ga4_revenue":123.11,"roas_fp":13.33,"roas_lc":1.44},{"date":"2026-07-20","cost":50.77,"sessions":36,"clicks":49,"target_roas":24.75,"fp_revenue":1113.19,"ga4_revenue":292.33,"roas_fp":21.93,"roas_lc":5.76},{"date":"2026-07-21","cost":33.83,"sessions":39,"clicks":44,"target_roas":24.75,"fp_revenue":1016.22,"ga4_revenue":294.45,"roas_fp":30.04,"roas_lc":8.7},{"date":"2026-07-22","cost":27.85,"sessions":33,"clicks":43,"target_roas":24.75,"fp_revenue":289.21,"ga4_revenue":365.72,"roas_fp":10.38,"roas_lc":13.13},{"date":"2026-07-23","cost":50.18,"sessions":43,"clicks":51,"target_roas":24.75,"fp_revenue":77.86,"ga4_revenue":0.0,"roas_fp":1.55,"roas_lc":0.0},{"date":"2026-07-24","cost":47.63,"sessions":63,"clicks":66,"target_roas":24.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":13.43,"sessions":28,"clicks":22,"target_roas":24.75,"fp_revenue":81.76,"ga4_revenue":85.99,"roas_fp":6.09,"roas_lc":6.4},{"date":"2026-07-26","cost":24.44,"sessions":31,"clicks":47,"target_roas":24.75,"fp_revenue":2323.05,"ga4_revenue":146.46,"roas_fp":95.05,"roas_lc":5.99},{"date":"2026-07-27","cost":25.88,"sessions":34,"clicks":38,"target_roas":24.75,"fp_revenue":982.47,"ga4_revenue":1632.01,"roas_fp":37.96,"roas_lc":63.05},{"date":"2026-07-28","cost":45.86,"sessions":52,"clicks":59,"target_roas":24.75,"fp_revenue":2249.23,"ga4_revenue":0.0,"roas_fp":49.04,"roas_lc":0.0},{"date":"2026-07-29","cost":21.22,"sessions":40,"clicks":34,"target_roas":24.75,"fp_revenue":444.93,"ga4_revenue":522.47,"roas_fp":20.97,"roas_lc":24.62},{"date":"2026-07-30","cost":18.21,"sessions":33,"clicks":29,"target_roas":24.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":44.76,"sessions":52,"clicks":54,"target_roas":24.75,"fp_revenue":341.03,"ga4_revenue":0.0,"roas_fp":7.62,"roas_lc":0.0},{"date":"2026-08-01","cost":33.89,"sessions":40,"clicks":42,"target_roas":24.75,"fp_revenue":111.65,"ga4_revenue":0.0,"roas_fp":3.29,"roas_lc":0.0},{"date":"2026-08-02","cost":24.12,"sessions":49,"clicks":51,"target_roas":24.75,"fp_revenue":2679.21,"ga4_revenue":368.38,"roas_fp":111.08,"roas_lc":15.27},{"date":"2026-08-03","cost":35.49,"sessions":49,"clicks":49,"target_roas":24.5,"fp_revenue":1388.22,"ga4_revenue":541.59,"roas_fp":39.12,"roas_lc":15.26},{"date":"2026-08-04","cost":39.3,"sessions":51,"clicks":46,"target_roas":24.5,"fp_revenue":980.92,"ga4_revenue":152.94,"roas_fp":24.96,"roas_lc":3.89},{"date":"2026-08-05","cost":64.12,"sessions":38,"clicks":59,"target_roas":24.5,"fp_revenue":150.97,"ga4_revenue":73.48,"roas_fp":2.35,"roas_lc":1.15},{"date":"2026-08-06","cost":48.33,"sessions":39,"clicks":46,"target_roas":24.75,"fp_revenue":784.61,"ga4_revenue":0.0,"roas_fp":16.23,"roas_lc":0.0},{"date":"2026-08-07","cost":23.63,"sessions":37,"clicks":38,"target_roas":24.75,"fp_revenue":473.97,"ga4_revenue":776.8,"roas_fp":20.06,"roas_lc":32.87},{"date":"2026-08-08","cost":33.04,"sessions":44,"clicks":50,"target_roas":24.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":43.78,"sessions":40,"clicks":55,"target_roas":24.75,"fp_revenue":347.5,"ga4_revenue":434.37,"roas_fp":7.94,"roas_lc":9.92},{"date":"2026-08-10","cost":37.21,"sessions":50,"clicks":36,"target_roas":24.75,"fp_revenue":904.51,"ga4_revenue":1009.11,"roas_fp":24.31,"roas_lc":27.12},{"date":"2026-08-11","cost":160.11,"sessions":316,"clicks":338,"target_roas":23.75,"fp_revenue":2576.06,"ga4_revenue":543.54,"roas_fp":16.09,"roas_lc":3.39},{"date":"2026-08-12","cost":92.31,"sessions":228,"clicks":254,"target_roas":22.75,"fp_revenue":1275.51,"ga4_revenue":183.39,"roas_fp":13.82,"roas_lc":1.99},{"date":"2026-08-13","cost":61.05,"sessions":195,"clicks":182,"target_roas":22.25,"fp_revenue":1851.85,"ga4_revenue":695.67,"roas_fp":30.33,"roas_lc":11.4},{"date":"2026-08-14","cost":80.69,"sessions":177,"clicks":188,"target_roas":18.75,"fp_revenue":2548.96,"ga4_revenue":1351.97,"roas_fp":31.59,"roas_lc":16.76},{"date":"2026-08-15","cost":139.95,"sessions":53,"clicks":227,"target_roas":10.5,"fp_revenue":639.54,"ga4_revenue":0.0,"roas_fp":4.57,"roas_lc":0.0}],"always-on_revco_search_google-ads_canada_fr_dtp_performancemax_quebec_strong":[{"date":"2026-07-19","cost":15.44,"sessions":24,"clicks":32,"target_roas":20,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":16.85,"sessions":45,"clicks":48,"target_roas":19.5,"fp_revenue":0.0,"ga4_revenue":1107.72,"roas_fp":0.0,"roas_lc":65.75},{"date":"2026-07-21","cost":10.73,"sessions":48,"clicks":50,"target_roas":19.5,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":41.08,"sessions":95,"clicks":139,"target_roas":19.5,"fp_revenue":0.0,"ga4_revenue":274.2,"roas_fp":0.0,"roas_lc":6.67},{"date":"2026-07-23","cost":57.07,"sessions":94,"clicks":133,"target_roas":19.5,"fp_revenue":83.04,"ga4_revenue":0.0,"roas_fp":1.46,"roas_lc":0.0},{"date":"2026-07-24","cost":49.41,"sessions":100,"clicks":104,"target_roas":19.5,"fp_revenue":2743.78,"ga4_revenue":229.89,"roas_fp":55.53,"roas_lc":4.65},{"date":"2026-07-25","cost":31.99,"sessions":68,"clicks":80,"target_roas":19.5,"fp_revenue":1376.34,"ga4_revenue":601.9,"roas_fp":43.03,"roas_lc":18.82},{"date":"2026-07-26","cost":34.04,"sessions":119,"clicks":119,"target_roas":19.5,"fp_revenue":326.73,"ga4_revenue":0.0,"roas_fp":9.6,"roas_lc":0.0},{"date":"2026-07-27","cost":43.31,"sessions":125,"clicks":138,"target_roas":19.5,"fp_revenue":915.88,"ga4_revenue":1040.01,"roas_fp":21.15,"roas_lc":24.01},{"date":"2026-07-28","cost":51.5,"sessions":122,"clicks":136,"target_roas":19.5,"fp_revenue":47.49,"ga4_revenue":0.0,"roas_fp":0.92,"roas_lc":0.0},{"date":"2026-07-29","cost":56.1,"sessions":139,"clicks":159,"target_roas":19.5,"fp_revenue":871.2,"ga4_revenue":539.48,"roas_fp":15.53,"roas_lc":9.62},{"date":"2026-07-30","cost":45.04,"sessions":121,"clicks":131,"target_roas":19.5,"fp_revenue":651.78,"ga4_revenue":1638.79,"roas_fp":14.47,"roas_lc":36.38},{"date":"2026-07-31","cost":39.18,"sessions":105,"clicks":107,"target_roas":19.5,"fp_revenue":1471.46,"ga4_revenue":493.68,"roas_fp":37.56,"roas_lc":12.6},{"date":"2026-08-01","cost":48.52,"sessions":108,"clicks":136,"target_roas":19.5,"fp_revenue":827.95,"ga4_revenue":0.0,"roas_fp":17.06,"roas_lc":0.0},{"date":"2026-08-02","cost":67.98,"sessions":153,"clicks":186,"target_roas":19.5,"fp_revenue":2331.92,"ga4_revenue":2155.33,"roas_fp":34.3,"roas_lc":31.71},{"date":"2026-08-03","cost":79.26,"sessions":158,"clicks":203,"target_roas":19.25,"fp_revenue":1990.04,"ga4_revenue":657.61,"roas_fp":25.11,"roas_lc":8.3},{"date":"2026-08-04","cost":71.69,"sessions":144,"clicks":182,"target_roas":19.25,"fp_revenue":409.44,"ga4_revenue":282.47,"roas_fp":5.71,"roas_lc":3.94},{"date":"2026-08-05","cost":59.74,"sessions":114,"clicks":148,"target_roas":19.25,"fp_revenue":798.71,"ga4_revenue":640.95,"roas_fp":13.37,"roas_lc":10.73},{"date":"2026-08-06","cost":60.4,"sessions":132,"clicks":132,"target_roas":19.25,"fp_revenue":99.73,"ga4_revenue":45.97,"roas_fp":1.65,"roas_lc":0.76},{"date":"2026-08-07","cost":60.82,"sessions":104,"clicks":119,"target_roas":19.25,"fp_revenue":437.43,"ga4_revenue":2337.34,"roas_fp":7.19,"roas_lc":38.43},{"date":"2026-08-08","cost":53.65,"sessions":102,"clicks":137,"target_roas":19.25,"fp_revenue":735.53,"ga4_revenue":336.92,"roas_fp":13.71,"roas_lc":6.28},{"date":"2026-08-09","cost":50.36,"sessions":106,"clicks":135,"target_roas":19.25,"fp_revenue":2198.74,"ga4_revenue":540.33,"roas_fp":43.66,"roas_lc":10.73},{"date":"2026-08-10","cost":53.32,"sessions":120,"clicks":138,"target_roas":19,"fp_revenue":313.02,"ga4_revenue":361.86,"roas_fp":5.87,"roas_lc":6.79},{"date":"2026-08-11","cost":0.0,"sessions":3,"clicks":0,"target_roas":19,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":24.89,"sessions":54,"clicks":57,"target_roas":17,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":49.66,"sessions":89,"clicks":92,"target_roas":16.5,"fp_revenue":429.91,"ga4_revenue":348.92,"roas_fp":8.66,"roas_lc":7.03},{"date":"2026-08-14","cost":42.32,"sessions":82,"clicks":91,"target_roas":13,"fp_revenue":335.02,"ga4_revenue":269.99,"roas_fp":7.92,"roas_lc":6.38},{"date":"2026-08-15","cost":20.09,"sessions":13,"clicks":42,"target_roas":10.5,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}]},"budgets":{"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_strong":2800,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_ontario_weak":1500,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_quebec_strong":800,"always-on_revco_search_google-ads_canada_en_dtp_generic_all":275,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_weak":700,"always-on_revco_search_google-ads_canada_fr_dtp_performancemax_quebec_strong":300,"Target CPA Experiment - Super ATV":150,"always-on_revco_search_google-ads_canada_en_dtp_generic_all broad-match":275},"current_target_roas":{"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_strong":10.25,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_ontario_weak":10,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_quebec_strong":10,"always-on_revco_search_google-ads_canada_en_dtp_generic_all":13.5,"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_weak":10,"always-on_revco_search_google-ads_canada_fr_dtp_performancemax_quebec_strong":10,"Target CPA Experiment - Super ATV":null,"always-on_revco_search_google-ads_canada_en_dtp_generic_all broad-match":13},"campaign_ids":{"always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_strong":"21880206876","always-on_revco_search_google-ads_canada_en_dtp_performancemax_ontario_weak":"21880206870","always-on_revco_search_google-ads_canada_en_dtp_performancemax_quebec_strong":"21880206699","always-on_revco_search_google-ads_canada_en_dtp_generic_all":"14722234014","always-on_revco_search_google-ads_canada_en_dtp_performancemax_roc_weak":"21880206873","always-on_revco_search_google-ads_canada_fr_dtp_performancemax_quebec_strong":"21880206879","Target CPA Experiment - Super ATV":"1036319497","always-on_revco_search_google-ads_canada_en_dtp_generic_all broad-match":"22687859210"}},"club_piscine":{"daily":[{"date":"2026-07-19","clicks":6261,"sessions":8367,"c2s":0.748,"cost":2071.9,"cps":0.25,"fp_revenue":8526.85,"ga4_revenue":4568.39,"roas_fp":4.12,"roas_lc":2.2,"avg_target_roas":5.583,"sem_paid":321.96,"sem_total":10772.83},{"date":"2026-07-20","clicks":6045,"sessions":8563,"c2s":0.706,"cost":2078.0,"cps":0.24,"fp_revenue":4971.84,"ga4_revenue":6162.85,"roas_fp":2.39,"roas_lc":2.97,"avg_target_roas":5.583,"sem_paid":924.91,"sem_total":10595.58},{"date":"2026-07-21","clicks":5251,"sessions":7810,"c2s":0.672,"cost":1638.71,"cps":0.21,"fp_revenue":5368.99,"ga4_revenue":5321.26,"roas_fp":3.28,"roas_lc":3.25,"avg_target_roas":5.583,"sem_paid":1643.88,"sem_total":19047.17},{"date":"2026-07-22","clicks":4820,"sessions":6967,"c2s":0.692,"cost":1650.98,"cps":0.24,"fp_revenue":12729.2,"ga4_revenue":9082.86,"roas_fp":7.71,"roas_lc":5.5,"avg_target_roas":5.333,"sem_paid":2448.1,"sem_total":22492.59},{"date":"2026-07-23","clicks":4829,"sessions":6912,"c2s":0.699,"cost":1573.74,"cps":0.23,"fp_revenue":8101.74,"ga4_revenue":6933.67,"roas_fp":5.15,"roas_lc":4.41,"avg_target_roas":5.333,"sem_paid":1545.88,"sem_total":15008.1},{"date":"2026-07-24","clicks":5463,"sessions":7631,"c2s":0.716,"cost":1793.56,"cps":0.24,"fp_revenue":5840.09,"ga4_revenue":7083.59,"roas_fp":3.26,"roas_lc":3.95,"avg_target_roas":5.333,"sem_paid":1770.86,"sem_total":12429.44},{"date":"2026-07-25","clicks":7373,"sessions":9525,"c2s":0.774,"cost":2526.07,"cps":0.27,"fp_revenue":11205.05,"ga4_revenue":13074.42,"roas_fp":4.44,"roas_lc":5.18,"avg_target_roas":5.333,"sem_paid":3604.9,"sem_total":21315.94},{"date":"2026-07-26","clicks":8622,"sessions":11468,"c2s":0.752,"cost":2883.24,"cps":0.25,"fp_revenue":11161.4,"ga4_revenue":9786.2,"roas_fp":3.87,"roas_lc":3.39,"avg_target_roas":5.333,"sem_paid":2130.66,"sem_total":19695.6},{"date":"2026-07-27","clicks":7060,"sessions":10499,"c2s":0.672,"cost":2383.33,"cps":0.23,"fp_revenue":16101.34,"ga4_revenue":13969.45,"roas_fp":6.76,"roas_lc":5.86,"avg_target_roas":5.333,"sem_paid":1358.89,"sem_total":23288.64},{"date":"2026-07-28","clicks":5417,"sessions":9915,"c2s":0.546,"cost":1821.32,"cps":0.18,"fp_revenue":8533.35,"ga4_revenue":5929.26,"roas_fp":4.69,"roas_lc":3.26,"avg_target_roas":5.333,"sem_paid":1601.81,"sem_total":17143.47},{"date":"2026-07-29","clicks":4708,"sessions":8863,"c2s":0.531,"cost":1647.87,"cps":0.19,"fp_revenue":8078.64,"ga4_revenue":13710.76,"roas_fp":4.9,"roas_lc":8.32,"avg_target_roas":5.333,"sem_paid":2519.91,"sem_total":18854.31},{"date":"2026-07-30","clicks":4733,"sessions":8886,"c2s":0.533,"cost":1724.49,"cps":0.19,"fp_revenue":7779.23,"ga4_revenue":7969.28,"roas_fp":4.51,"roas_lc":4.62,"avg_target_roas":5.333,"sem_paid":1875.94,"sem_total":11410.05},{"date":"2026-07-31","clicks":5009,"sessions":9098,"c2s":0.551,"cost":1650.69,"cps":0.18,"fp_revenue":6662.8,"ga4_revenue":6382.55,"roas_fp":4.04,"roas_lc":3.87,"avg_target_roas":5.333,"sem_paid":1271.9,"sem_total":8935.76},{"date":"2026-08-01","clicks":5636,"sessions":10323,"c2s":0.546,"cost":1933.22,"cps":0.19,"fp_revenue":6085.74,"ga4_revenue":4314.33,"roas_fp":3.15,"roas_lc":2.23,"avg_target_roas":5.333,"sem_paid":1449.95,"sem_total":9524.57},{"date":"2026-08-02","clicks":5535,"sessions":9618,"c2s":0.575,"cost":1815.25,"cps":0.19,"fp_revenue":8696.37,"ga4_revenue":7202.2,"roas_fp":4.79,"roas_lc":3.97,"avg_target_roas":5.333,"sem_paid":1880.43,"sem_total":13738.91},{"date":"2026-08-03","clicks":3054,"sessions":5733,"c2s":0.533,"cost":1040.44,"cps":0.18,"fp_revenue":4211.61,"ga4_revenue":8354.31,"roas_fp":4.05,"roas_lc":8.03,"avg_target_roas":5.583,"sem_paid":1707.89,"sem_total":14599.28},{"date":"2026-08-04","clicks":3659,"sessions":6229,"c2s":0.587,"cost":1197.42,"cps":0.19,"fp_revenue":8956.32,"ga4_revenue":6323.83,"roas_fp":7.48,"roas_lc":5.28,"avg_target_roas":5.583,"sem_paid":245.98,"sem_total":16540.45},{"date":"2026-08-05","clicks":3922,"sessions":6823,"c2s":0.575,"cost":1329.42,"cps":0.19,"fp_revenue":5354.63,"ga4_revenue":5515.78,"roas_fp":4.03,"roas_lc":4.15,"avg_target_roas":5.583,"sem_paid":952.93,"sem_total":12265.51},{"date":"2026-08-06","clicks":4047,"sessions":6819,"c2s":0.593,"cost":1301.77,"cps":0.19,"fp_revenue":6345.19,"ga4_revenue":6064.21,"roas_fp":4.87,"roas_lc":4.66,"avg_target_roas":5.583,"sem_paid":300.93,"sem_total":12135.62},{"date":"2026-08-07","clicks":4302,"sessions":7833,"c2s":0.549,"cost":1325.77,"cps":0.17,"fp_revenue":6188.02,"ga4_revenue":5727.61,"roas_fp":4.67,"roas_lc":4.32,"avg_target_roas":5.583,"sem_paid":1989.97,"sem_total":13314.08},{"date":"2026-08-08","clicks":4840,"sessions":13132,"c2s":0.369,"cost":1462.63,"cps":0.11,"fp_revenue":3642.07,"ga4_revenue":4300.76,"roas_fp":2.49,"roas_lc":2.94,"avg_target_roas":5.583,"sem_paid":100.94,"sem_total":8764.52},{"date":"2026-08-09","clicks":5323,"sessions":12469,"c2s":0.427,"cost":1646.42,"cps":0.13,"fp_revenue":5936.37,"ga4_revenue":4869.02,"roas_fp":3.61,"roas_lc":2.96,"avg_target_roas":5.583,"sem_paid":771.96,"sem_total":12643.1},{"date":"2026-08-10","clicks":3337,"sessions":9545,"c2s":0.35,"cost":910.72,"cps":0.1,"fp_revenue":5652.55,"ga4_revenue":3740.78,"roas_fp":6.21,"roas_lc":4.11,"avg_target_roas":6.167,"sem_paid":441.98,"sem_total":19919.93},{"date":"2026-08-11","clicks":3033,"sessions":8467,"c2s":0.358,"cost":751.86,"cps":0.09,"fp_revenue":7094.37,"ga4_revenue":5650.43,"roas_fp":9.44,"roas_lc":7.52,"avg_target_roas":6.35,"sem_paid":1119.98,"sem_total":11704.7},{"date":"2026-08-12","clicks":2908,"sessions":5615,"c2s":0.518,"cost":720.6,"cps":0.13,"fp_revenue":3970.3,"ga4_revenue":2867.89,"roas_fp":5.51,"roas_lc":3.98,"avg_target_roas":6.433,"sem_paid":1241.98,"sem_total":16747.07},{"date":"2026-08-13","clicks":2990,"sessions":5741,"c2s":0.521,"cost":800.09,"cps":0.14,"fp_revenue":6150.67,"ga4_revenue":6043.3,"roas_fp":7.69,"roas_lc":7.55,"avg_target_roas":6.083,"sem_paid":329.98,"sem_total":12249.99},{"date":"2026-08-14","clicks":3258,"sessions":6126,"c2s":0.532,"cost":798.63,"cps":0.13,"fp_revenue":3411.85,"ga4_revenue":4292.81,"roas_fp":4.27,"roas_lc":5.38,"avg_target_roas":5.883,"sem_paid":774.96,"sem_total":8602.82},{"date":"2026-08-15","clicks":2241,"sessions":1599,"c2s":1.402,"cost":776.17,"cps":0.49,"fp_revenue":1816.85,"ga4_revenue":551.97,"roas_fp":2.34,"roas_lc":0.71,"avg_target_roas":5.883,"sem_paid":446.98,"sem_total":5495.93}],"campaigns":["001 - Pmax - eCom - High Implication - Qc/Fr","001 - Pmax - eCom - Low Implication - Qc/Fr","001 - Pmax Naked - All products - QC/ON - FR/EN","001_leo_search_bbq_qc/on_fr","001_manual_shopping_all","002 - Pmax - Soumissions - FR","002_leo_search_gazebos_pergolas_qc_fr","002_leo_search_soumissions_piscines_qc_fr","003_leo_search_brand_qc_fr","leo_search_liquidation_mobilier_jardin_qc_fr"],"per_campaign_daily":{"001 - Pmax - eCom - High Implication - Qc/Fr":[{"date":"2026-07-19","cost":118.18,"sessions":949,"clicks":537,"target_roas":5.75,"fp_revenue":199.99,"ga4_revenue":199.99,"roas_fp":1.69,"roas_lc":1.69},{"date":"2026-07-20","cost":120.83,"sessions":884,"clicks":537,"target_roas":5.75,"fp_revenue":843.44,"ga4_revenue":1655.39,"roas_fp":6.98,"roas_lc":13.7},{"date":"2026-07-21","cost":171.07,"sessions":1016,"clicks":735,"target_roas":5.75,"fp_revenue":1270.0,"ga4_revenue":1374.99,"roas_fp":7.42,"roas_lc":8.04},{"date":"2026-07-22","cost":585.3,"sessions":1633,"clicks":1573,"target_roas":5.2,"fp_revenue":7231.38,"ga4_revenue":1278.94,"roas_fp":12.35,"roas_lc":2.19},{"date":"2026-07-23","cost":658.92,"sessions":2127,"clicks":2016,"target_roas":5.2,"fp_revenue":3159.16,"ga4_revenue":2112.91,"roas_fp":4.79,"roas_lc":3.21},{"date":"2026-07-24","cost":825.7,"sessions":2801,"clicks":2499,"target_roas":5.2,"fp_revenue":2765.4,"ga4_revenue":1411.93,"roas_fp":3.35,"roas_lc":1.71},{"date":"2026-07-25","cost":1374.38,"sessions":3919,"clicks":3653,"target_roas":5.2,"fp_revenue":4733.47,"ga4_revenue":3861.63,"roas_fp":3.44,"roas_lc":2.81},{"date":"2026-07-26","cost":1565.5,"sessions":4643,"clicks":4041,"target_roas":5.2,"fp_revenue":7309.85,"ga4_revenue":5302.69,"roas_fp":4.67,"roas_lc":3.39},{"date":"2026-07-27","cost":1298.79,"sessions":4278,"clicks":3374,"target_roas":5.2,"fp_revenue":8415.98,"ga4_revenue":7063.8,"roas_fp":6.48,"roas_lc":5.44},{"date":"2026-07-28","cost":968.46,"sessions":4174,"clicks":2515,"target_roas":5.2,"fp_revenue":2411.98,"ga4_revenue":2747.49,"roas_fp":2.49,"roas_lc":2.84},{"date":"2026-07-29","cost":814.22,"sessions":3654,"clicks":2194,"target_roas":5.2,"fp_revenue":1257.02,"ga4_revenue":6615.92,"roas_fp":1.54,"roas_lc":8.13},{"date":"2026-07-30","cost":800.41,"sessions":3527,"clicks":2075,"target_roas":5.2,"fp_revenue":2723.16,"ga4_revenue":1765.92,"roas_fp":3.4,"roas_lc":2.21},{"date":"2026-07-31","cost":509.87,"sessions":2975,"clicks":1649,"target_roas":5.2,"fp_revenue":1742.94,"ga4_revenue":2304.84,"roas_fp":3.42,"roas_lc":4.52},{"date":"2026-08-01","cost":456.76,"sessions":3164,"clicks":1614,"target_roas":5.2,"fp_revenue":1322.77,"ga4_revenue":1021.69,"roas_fp":2.9,"roas_lc":2.24},{"date":"2026-08-02","cost":568.4,"sessions":2749,"clicks":1750,"target_roas":5.2,"fp_revenue":5769.59,"ga4_revenue":3706.38,"roas_fp":10.15,"roas_lc":6.52},{"date":"2026-08-03","cost":254.51,"sessions":1680,"clicks":963,"target_roas":5.5,"fp_revenue":885.89,"ga4_revenue":4348.47,"roas_fp":3.48,"roas_lc":17.09},{"date":"2026-08-04","cost":355.57,"sessions":1812,"clicks":1195,"target_roas":5.5,"fp_revenue":6235.56,"ga4_revenue":4200.92,"roas_fp":17.54,"roas_lc":11.81},{"date":"2026-08-05","cost":424.52,"sessions":2207,"clicks":1368,"target_roas":5.5,"fp_revenue":2540.04,"ga4_revenue":2550.96,"roas_fp":5.98,"roas_lc":6.01},{"date":"2026-08-06","cost":496.7,"sessions":2421,"clicks":1531,"target_roas":5.5,"fp_revenue":1728.68,"ga4_revenue":1238.92,"roas_fp":3.48,"roas_lc":2.49},{"date":"2026-08-07","cost":543.57,"sessions":2716,"clicks":1618,"target_roas":5.5,"fp_revenue":1832.37,"ga4_revenue":1615.87,"roas_fp":3.37,"roas_lc":2.97},{"date":"2026-08-08","cost":511.67,"sessions":4493,"clicks":1718,"target_roas":5.5,"fp_revenue":1379.85,"ga4_revenue":1086.93,"roas_fp":2.7,"roas_lc":2.12},{"date":"2026-08-09","cost":602.2,"sessions":4378,"clicks":1963,"target_roas":5.5,"fp_revenue":3082.93,"ga4_revenue":2629.86,"roas_fp":5.12,"roas_lc":4.37},{"date":"2026-08-10","cost":182.67,"sessions":2649,"clicks":743,"target_roas":6.5,"fp_revenue":431.95,"ga4_revenue":974.97,"roas_fp":2.36,"roas_lc":5.34},{"date":"2026-08-11","cost":96.76,"sessions":2136,"clicks":549,"target_roas":6.75,"fp_revenue":1939.48,"ga4_revenue":1019.46,"roas_fp":20.04,"roas_lc":10.54},{"date":"2026-08-12","cost":127.48,"sessions":1081,"clicks":522,"target_roas":6.75,"fp_revenue":1076.78,"ga4_revenue":513.98,"roas_fp":8.45,"roas_lc":4.03},{"date":"2026-08-13","cost":82.25,"sessions":909,"clicks":437,"target_roas":6.25,"fp_revenue":0.0,"ga4_revenue":252.98,"roas_fp":0.0,"roas_lc":3.08},{"date":"2026-08-14","cost":122.55,"sessions":984,"clicks":517,"target_roas":6.15,"fp_revenue":269.99,"ga4_revenue":1479.97,"roas_fp":2.2,"roas_lc":12.08},{"date":"2026-08-15","cost":104.02,"sessions":290,"clicks":337,"target_roas":6.15,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"001 - Pmax - eCom - Low Implication - Qc/Fr":[{"date":"2026-07-19","cost":253.37,"sessions":902,"clicks":683,"target_roas":5.5,"fp_revenue":521.07,"ga4_revenue":110.49,"roas_fp":2.06,"roas_lc":0.44},{"date":"2026-07-20","cost":309.45,"sessions":1021,"clicks":802,"target_roas":5.5,"fp_revenue":160.97,"ga4_revenue":141.99,"roas_fp":0.52,"roas_lc":0.46},{"date":"2026-07-21","cost":223.04,"sessions":884,"clicks":635,"target_roas":5.5,"fp_revenue":415.76,"ga4_revenue":531.72,"roas_fp":1.86,"roas_lc":2.38},{"date":"2026-07-22","cost":97.62,"sessions":549,"clicks":266,"target_roas":5.55,"fp_revenue":12.46,"ga4_revenue":203.98,"roas_fp":0.13,"roas_lc":2.09},{"date":"2026-07-23","cost":71.37,"sessions":387,"clicks":177,"target_roas":5.55,"fp_revenue":0.0,"ga4_revenue":199.99,"roas_fp":0.0,"roas_lc":2.8},{"date":"2026-07-24","cost":43.71,"sessions":339,"clicks":170,"target_roas":5.55,"fp_revenue":529.98,"ga4_revenue":529.98,"roas_fp":12.13,"roas_lc":12.13},{"date":"2026-07-25","cost":70.9,"sessions":349,"clicks":233,"target_roas":5.55,"fp_revenue":391.44,"ga4_revenue":554.92,"roas_fp":5.52,"roas_lc":7.83},{"date":"2026-07-26","cost":93.82,"sessions":454,"clicks":278,"target_roas":5.55,"fp_revenue":0.0,"ga4_revenue":319.98,"roas_fp":0.0,"roas_lc":3.41},{"date":"2026-07-27","cost":60.33,"sessions":384,"clicks":204,"target_roas":5.55,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":52.04,"sessions":308,"clicks":148,"target_roas":5.55,"fp_revenue":1023.73,"ga4_revenue":399.99,"roas_fp":19.67,"roas_lc":7.69},{"date":"2026-07-29","cost":20.64,"sessions":215,"clicks":94,"target_roas":5.55,"fp_revenue":73.33,"ga4_revenue":0.0,"roas_fp":3.55,"roas_lc":0.0},{"date":"2026-07-30","cost":18.83,"sessions":249,"clicks":89,"target_roas":5.55,"fp_revenue":203.34,"ga4_revenue":0.0,"roas_fp":10.8,"roas_lc":0.0},{"date":"2026-07-31","cost":23.44,"sessions":265,"clicks":115,"target_roas":5.55,"fp_revenue":0.0,"ga4_revenue":159.0,"roas_fp":0.0,"roas_lc":6.78},{"date":"2026-08-01","cost":24.94,"sessions":273,"clicks":116,"target_roas":5.55,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":28.46,"sessions":241,"clicks":131,"target_roas":5.55,"fp_revenue":199.99,"ga4_revenue":0.0,"roas_fp":7.03,"roas_lc":0.0},{"date":"2026-08-03","cost":22.48,"sessions":167,"clicks":103,"target_roas":5.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":19.55,"sessions":221,"clicks":114,"target_roas":5.75,"fp_revenue":0.0,"ga4_revenue":99.99,"roas_fp":0.0,"roas_lc":5.11},{"date":"2026-08-05","cost":17.48,"sessions":200,"clicks":115,"target_roas":5.75,"fp_revenue":65.99,"ga4_revenue":65.99,"roas_fp":3.78,"roas_lc":3.78},{"date":"2026-08-06","cost":24.12,"sessions":240,"clicks":115,"target_roas":5.75,"fp_revenue":0.0,"ga4_revenue":1198.0,"roas_fp":0.0,"roas_lc":49.66},{"date":"2026-08-07","cost":20.51,"sessions":232,"clicks":118,"target_roas":5.75,"fp_revenue":187.98,"ga4_revenue":187.98,"roas_fp":9.17,"roas_lc":9.17},{"date":"2026-08-08","cost":20.63,"sessions":342,"clicks":128,"target_roas":5.75,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":23.32,"sessions":300,"clicks":138,"target_roas":5.75,"fp_revenue":129.99,"ga4_revenue":129.99,"roas_fp":5.57,"roas_lc":5.57},{"date":"2026-08-10","cost":141.58,"sessions":846,"clicks":564,"target_roas":5.75,"fp_revenue":2004.74,"ga4_revenue":62.99,"roas_fp":14.16,"roas_lc":0.44},{"date":"2026-08-11","cost":165.88,"sessions":928,"clicks":621,"target_roas":6,"fp_revenue":1020.63,"ga4_revenue":1205.09,"roas_fp":6.15,"roas_lc":7.26},{"date":"2026-08-12","cost":175.02,"sessions":999,"clicks":644,"target_roas":6.25,"fp_revenue":584.48,"ga4_revenue":683.95,"roas_fp":3.34,"roas_lc":3.91},{"date":"2026-08-13","cost":65.18,"sessions":555,"clicks":222,"target_roas":6.25,"fp_revenue":816.96,"ga4_revenue":1091.95,"roas_fp":12.53,"roas_lc":16.75},{"date":"2026-08-14","cost":36.86,"sessions":465,"clicks":154,"target_roas":6,"fp_revenue":141.99,"ga4_revenue":0.0,"roas_fp":3.85,"roas_lc":0.0},{"date":"2026-08-15","cost":58.35,"sessions":188,"clicks":84,"target_roas":6,"fp_revenue":0.0,"ga4_revenue":104.99,"roas_fp":0.0,"roas_lc":1.8}],"001 - Pmax Naked - All products - QC/ON - FR/EN":[{"date":"2026-07-19","cost":1382.07,"sessions":3191,"clicks":3032,"target_roas":5.5,"fp_revenue":7325.79,"ga4_revenue":3935.95,"roas_fp":5.3,"roas_lc":2.85},{"date":"2026-07-20","cost":1409.74,"sessions":3505,"clicks":2932,"target_roas":5.5,"fp_revenue":3917.44,"ga4_revenue":3440.56,"roas_fp":2.78,"roas_lc":2.44},{"date":"2026-07-21","cost":1012.6,"sessions":2805,"clicks":2201,"target_roas":5.5,"fp_revenue":2644.33,"ga4_revenue":1740.68,"roas_fp":2.61,"roas_lc":1.72},{"date":"2026-07-22","cost":720.68,"sessions":2120,"clicks":1501,"target_roas":5.25,"fp_revenue":4874.23,"ga4_revenue":5151.84,"roas_fp":6.76,"roas_lc":7.15},{"date":"2026-07-23","cost":594.5,"sessions":1644,"clicks":1090,"target_roas":5.25,"fp_revenue":4241.63,"ga4_revenue":3074.89,"roas_fp":7.13,"roas_lc":5.17},{"date":"2026-07-24","cost":612.24,"sessions":1455,"clicks":1058,"target_roas":5.25,"fp_revenue":933.83,"ga4_revenue":3370.82,"roas_fp":1.53,"roas_lc":5.51},{"date":"2026-07-25","cost":780.2,"sessions":1687,"clicks":1396,"target_roas":5.25,"fp_revenue":2289.37,"ga4_revenue":5052.97,"roas_fp":2.93,"roas_lc":6.48},{"date":"2026-07-26","cost":930.61,"sessions":1938,"clicks":1730,"target_roas":5.25,"fp_revenue":3239.4,"ga4_revenue":2032.87,"roas_fp":3.48,"roas_lc":2.18},{"date":"2026-07-27","cost":794.36,"sessions":1913,"clicks":1404,"target_roas":5.25,"fp_revenue":6740.22,"ga4_revenue":5546.76,"roas_fp":8.49,"roas_lc":6.98},{"date":"2026-07-28","cost":571.25,"sessions":1683,"clicks":1025,"target_roas":5.25,"fp_revenue":2897.7,"ga4_revenue":1479.96,"roas_fp":5.07,"roas_lc":2.59},{"date":"2026-07-29","cost":599.16,"sessions":1551,"clicks":928,"target_roas":5.25,"fp_revenue":5479.34,"ga4_revenue":4635.92,"roas_fp":9.14,"roas_lc":7.74},{"date":"2026-07-30","cost":653.22,"sessions":1748,"clicks":1053,"target_roas":5.25,"fp_revenue":4041.77,"ga4_revenue":4127.43,"roas_fp":6.19,"roas_lc":6.32},{"date":"2026-07-31","cost":892.3,"sessions":2370,"clicks":1676,"target_roas":5.25,"fp_revenue":3689.05,"ga4_revenue":2646.81,"roas_fp":4.13,"roas_lc":2.97},{"date":"2026-08-01","cost":1133.85,"sessions":2670,"clicks":1939,"target_roas":5.25,"fp_revenue":3982.99,"ga4_revenue":1842.69,"roas_fp":3.51,"roas_lc":1.63},{"date":"2026-08-02","cost":904.0,"sessions":2632,"clicks":1654,"target_roas":5.25,"fp_revenue":2257.32,"ga4_revenue":1227.36,"roas_fp":2.5,"roas_lc":1.36},{"date":"2026-08-03","cost":656.53,"sessions":2079,"clicks":1296,"target_roas":5.5,"fp_revenue":2125.73,"ga4_revenue":2468.36,"roas_fp":3.24,"roas_lc":3.76},{"date":"2026-08-04","cost":653.98,"sessions":2138,"clicks":1396,"target_roas":5.5,"fp_revenue":2474.78,"ga4_revenue":1776.94,"roas_fp":3.78,"roas_lc":2.72},{"date":"2026-08-05","cost":749.55,"sessions":2409,"clicks":1547,"target_roas":5.5,"fp_revenue":2335.67,"ga4_revenue":2685.89,"roas_fp":3.12,"roas_lc":3.58},{"date":"2026-08-06","cost":620.12,"sessions":2177,"clicks":1465,"target_roas":5.5,"fp_revenue":4511.52,"ga4_revenue":3326.36,"roas_fp":7.28,"roas_lc":5.36},{"date":"2026-08-07","cost":601.58,"sessions":2292,"clicks":1366,"target_roas":5.5,"fp_revenue":4167.67,"ga4_revenue":1933.79,"roas_fp":6.93,"roas_lc":3.21},{"date":"2026-08-08","cost":735.33,"sessions":3878,"clicks":1677,"target_roas":5.5,"fp_revenue":1952.28,"ga4_revenue":2903.89,"roas_fp":2.65,"roas_lc":3.95},{"date":"2026-08-09","cost":835.26,"sessions":3625,"clicks":1857,"target_roas":5.5,"fp_revenue":2613.46,"ga4_revenue":1599.19,"roas_fp":3.13,"roas_lc":1.91},{"date":"2026-08-10","cost":451.0,"sessions":2682,"clicks":1080,"target_roas":6.25,"fp_revenue":2973.87,"ga4_revenue":2260.84,"roas_fp":6.59,"roas_lc":5.01},{"date":"2026-08-11","cost":342.3,"sessions":2283,"clicks":910,"target_roas":6.3,"fp_revenue":3014.28,"ga4_revenue":2305.9,"roas_fp":8.81,"roas_lc":6.74},{"date":"2026-08-12","cost":284.44,"sessions":1404,"clicks":801,"target_roas":6.3,"fp_revenue":929.06,"ga4_revenue":439.97,"roas_fp":3.27,"roas_lc":1.55},{"date":"2026-08-13","cost":506.04,"sessions":1976,"clicks":1302,"target_roas":5.75,"fp_revenue":4356.76,"ga4_revenue":4368.39,"roas_fp":8.61,"roas_lc":8.63},{"date":"2026-08-14","cost":491.63,"sessions":2171,"clicks":1409,"target_roas":5.5,"fp_revenue":2199.91,"ga4_revenue":2037.88,"roas_fp":4.47,"roas_lc":4.15},{"date":"2026-08-15","cost":500.89,"sessions":482,"clicks":1009,"target_roas":5.5,"fp_revenue":1648.91,"ga4_revenue":0.0,"roas_fp":3.29,"roas_lc":0.0}],"001_leo_search_bbq_qc/on_fr":[{"date":"2026-07-19","cost":26.12,"sessions":27,"clicks":20,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":22.91,"sessions":23,"clicks":18,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":17.27,"sessions":17,"clicks":15,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":25.34,"sessions":22,"clicks":21,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":22.49,"sessions":16,"clicks":19,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":22.98,"sessions":28,"clicks":18,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":29.09,"sessions":30,"clicks":22,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":24.69,"sessions":27,"clicks":20,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":22.3,"sessions":24,"clicks":18,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":21.97,"sessions":40,"clicks":17,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":23.1,"sessions":26,"clicks":17,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":21.88,"sessions":0,"clicks":17,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":20.29,"sessions":22,"clicks":17,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":25.09,"sessions":24,"clicks":19,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":26.77,"sessions":31,"clicks":23,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":4.31,"sessions":10,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":5.93,"sessions":9,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":6.01,"sessions":8,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":5.31,"sessions":5,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":4.67,"sessions":7,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":5.87,"sessions":12,"clicks":8,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":5.62,"sessions":18,"clicks":8,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":4.98,"sessions":22,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":4.55,"sessions":7,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":3.17,"sessions":9,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":6.56,"sessions":9,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":5.49,"sessions":6,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":1.97,"sessions":1,"clicks":2,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"001_manual_shopping_all":[{"date":"2026-07-19","cost":27.29,"sessions":0,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":24.12,"sessions":0,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":24.64,"sessions":0,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":25.64,"sessions":0,"clicks":6,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":24.79,"sessions":0,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":23.23,"sessions":0,"clicks":8,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":24.59,"sessions":0,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":24.3,"sessions":0,"clicks":8,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":10.13,"sessions":0,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":14.47,"sessions":0,"clicks":5,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":11.77,"sessions":0,"clicks":4,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":12.52,"sessions":0,"clicks":3,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":10.85,"sessions":0,"clicks":8,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":30.05,"sessions":0,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":29.82,"sessions":0,"clicks":7,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":3.07,"sessions":0,"clicks":2,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"002 - Pmax - Soumissions - FR":[{"date":"2026-07-19","cost":113.46,"sessions":459,"clicks":297,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":86.2,"sessions":399,"clicks":252,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":86.17,"sessions":413,"clicks":231,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":29.99,"roas_fp":0.0,"roas_lc":0.35},{"date":"2026-07-22","cost":92.01,"sessions":353,"clicks":214,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":64.69,"sessions":303,"clicks":223,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":135.77,"sessions":444,"clicks":300,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":122.83,"sessions":522,"clicks":339,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":113.8,"sessions":634,"clicks":383,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":80.03,"sessions":595,"clicks":309,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":77.24,"sessions":567,"clicks":267,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":64.63,"sessions":496,"clicks":228,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":103.81,"sessions":501,"clicks":254,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":199.99,"roas_fp":0.0,"roas_lc":1.93},{"date":"2026-07-31","cost":89.53,"sessions":532,"clicks":279,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":112.82,"sessions":667,"clicks":332,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":106.91,"sessions":645,"clicks":356,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":499.0,"roas_fp":0.0,"roas_lc":4.67},{"date":"2026-08-03","cost":63.71,"sessions":458,"clicks":252,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":130.1,"sessions":535,"clicks":321,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":94.49,"sessions":502,"clicks":257,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":97.76,"sessions":467,"clicks":252,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":101.26,"sessions":651,"clicks":319,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":127.86,"sessions":1181,"clicks":375,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":118.64,"sessions":1128,"clicks":438,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":85.41,"sessions":875,"clicks":299,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":97.66,"sessions":784,"clicks":263,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":84.66,"sessions":542,"clicks":247,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":90.85,"sessions":523,"clicks":247,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":89.15,"sessions":526,"clicks":256,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":74.93,"sessions":155,"clicks":195,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"002_leo_search_gazebos_pergolas_qc_fr":[{"date":"2026-07-19","cost":30.96,"sessions":79,"clicks":70,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":21.27,"sessions":79,"clicks":56,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":19.66,"sessions":82,"clicks":54,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":19.42,"sessions":61,"clicks":47,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":30.15,"sessions":77,"clicks":58,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":27.31,"sessions":70,"clicks":59,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":23.91,"sessions":86,"clicks":59,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":31.54,"sessions":83,"clicks":70,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":22.12,"sessions":76,"clicks":55,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":22.17,"sessions":87,"clicks":52,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":21.36,"sessions":72,"clicks":47,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":22.58,"sessions":80,"clicks":42,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":22.05,"sessions":89,"clicks":41,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":28.49,"sessions":108,"clicks":64,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":27.56,"sessions":107,"clicks":60,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":11.19,"sessions":48,"clicks":27,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":10.38,"sessions":57,"clicks":30,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":8.98,"sessions":53,"clicks":30,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":9.5,"sessions":57,"clicks":30,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":12.98,"sessions":39,"clicks":38,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":12.8,"sessions":94,"clicks":45,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":13.69,"sessions":77,"clicks":46,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":9.28,"sessions":60,"clicks":33,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":8.79,"sessions":74,"clicks":39,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":8.53,"sessions":58,"clicks":31,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":8.62,"sessions":55,"clicks":32,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":8.91,"sessions":49,"clicks":35,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":8.09,"sessions":13,"clicks":23,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"002_leo_search_soumissions_piscines_qc_fr":[{"date":"2026-07-19","cost":61.75,"sessions":219,"clicks":155,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":41.96,"sessions":151,"clicks":103,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":42.71,"sessions":182,"clicks":114,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":44.9,"sessions":153,"clicks":117,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":50.75,"sessions":153,"clicks":108,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":47.83,"sessions":143,"clicks":93,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":52.99,"sessions":225,"clicks":175,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":49.8,"sessions":324,"clicks":235,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":51.87,"sessions":280,"clicks":177,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":48.39,"sessions":292,"clicks":155,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":47.82,"sessions":247,"clicks":127,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":47.52,"sessions":244,"clicks":122,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":38.28,"sessions":193,"clicks":88,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":60.03,"sessions":286,"clicks":171,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":58.02,"sessions":297,"clicks":180,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":11.82,"sessions":112,"clicks":50,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":11.11,"sessions":102,"clicks":63,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":9.25,"sessions":161,"clicks":89,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":9.01,"sessions":103,"clicks":62,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":8.92,"sessions":127,"clicks":64,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":14.39,"sessions":269,"clicks":109,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":12.92,"sessions":228,"clicks":99,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":8.52,"sessions":172,"clicks":58,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":8.43,"sessions":141,"clicks":54,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":8.09,"sessions":81,"clicks":51,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":10.03,"sessions":92,"clicks":51,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":11.01,"sessions":106,"clicks":53,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":6.83,"sessions":31,"clicks":28,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}],"003_leo_search_brand_qc_fr":[{"date":"2026-07-19","cost":58.7,"sessions":2541,"clicks":1461,"target_roas":null,"fp_revenue":480.0,"ga4_revenue":321.96,"roas_fp":8.18,"roas_lc":5.48},{"date":"2026-07-20","cost":41.52,"sessions":2501,"clicks":1338,"target_roas":null,"fp_revenue":49.99,"ga4_revenue":924.91,"roas_fp":1.2,"roas_lc":22.27},{"date":"2026-07-21","cost":41.55,"sessions":2411,"clicks":1259,"target_roas":null,"fp_revenue":1038.9,"ga4_revenue":1643.88,"roas_fp":25.01,"roas_lc":39.57},{"date":"2026-07-22","cost":40.07,"sessions":2076,"clicks":1075,"target_roas":null,"fp_revenue":611.13,"ga4_revenue":2448.1,"roas_fp":15.25,"roas_lc":61.09},{"date":"2026-07-23","cost":56.08,"sessions":2205,"clicks":1133,"target_roas":null,"fp_revenue":700.95,"ga4_revenue":1545.88,"roas_fp":12.5,"roas_lc":27.57},{"date":"2026-07-24","cost":54.79,"sessions":2351,"clicks":1258,"target_roas":null,"fp_revenue":1610.88,"ga4_revenue":1770.86,"roas_fp":29.4,"roas_lc":32.32},{"date":"2026-07-25","cost":47.18,"sessions":2707,"clicks":1491,"target_roas":null,"fp_revenue":3790.77,"ga4_revenue":3604.9,"roas_fp":80.35,"roas_lc":76.41},{"date":"2026-07-26","cost":49.18,"sessions":3365,"clicks":1857,"target_roas":null,"fp_revenue":612.15,"ga4_revenue":2130.66,"roas_fp":12.45,"roas_lc":43.32},{"date":"2026-07-27","cost":43.4,"sessions":2949,"clicks":1515,"target_roas":null,"fp_revenue":945.14,"ga4_revenue":1358.89,"roas_fp":21.78,"roas_lc":31.31},{"date":"2026-07-28","cost":45.33,"sessions":2764,"clicks":1233,"target_roas":null,"fp_revenue":2199.94,"ga4_revenue":1301.82,"roas_fp":48.53,"roas_lc":28.72},{"date":"2026-07-29","cost":45.17,"sessions":2602,"clicks":1069,"target_roas":null,"fp_revenue":1268.95,"ga4_revenue":2458.92,"roas_fp":28.09,"roas_lc":54.44},{"date":"2026-07-30","cost":43.72,"sessions":2537,"clicks":1078,"target_roas":null,"fp_revenue":810.96,"ga4_revenue":1875.94,"roas_fp":18.55,"roas_lc":42.91},{"date":"2026-07-31","cost":44.08,"sessions":2652,"clicks":1136,"target_roas":null,"fp_revenue":1230.81,"ga4_revenue":1271.9,"roas_fp":27.92,"roas_lc":28.85},{"date":"2026-08-01","cost":61.19,"sessions":3131,"clicks":1374,"target_roas":null,"fp_revenue":779.98,"ga4_revenue":1449.95,"roas_fp":12.75,"roas_lc":23.7},{"date":"2026-08-02","cost":65.31,"sessions":2916,"clicks":1374,"target_roas":null,"fp_revenue":469.47,"ga4_revenue":1769.46,"roas_fp":7.19,"roas_lc":27.09},{"date":"2026-08-03","cost":12.82,"sessions":1179,"clicks":357,"target_roas":null,"fp_revenue":1199.99,"ga4_revenue":1537.48,"roas_fp":93.64,"roas_lc":119.97},{"date":"2026-08-04","cost":10.8,"sessions":1355,"clicks":535,"target_roas":null,"fp_revenue":245.98,"ga4_revenue":245.98,"roas_fp":22.78,"roas_lc":22.78},{"date":"2026-08-05","cost":8.27,"sessions":1204,"clicks":463,"target_roas":null,"fp_revenue":412.93,"ga4_revenue":212.94,"roas_fp":49.93,"roas_lc":25.75},{"date":"2026-08-06","cost":8.27,"sessions":1133,"clicks":457,"target_roas":null,"fp_revenue":104.99,"ga4_revenue":300.93,"roas_fp":12.7,"roas_lc":36.39},{"date":"2026-08-07","cost":12.82,"sessions":1607,"clicks":694,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":1989.97,"roas_fp":0.0,"roas_lc":155.18},{"date":"2026-08-08","cost":12.31,"sessions":2522,"clicks":674,"target_roas":null,"fp_revenue":309.94,"ga4_revenue":309.94,"roas_fp":25.18,"roas_lc":25.18},{"date":"2026-08-09","cost":12.04,"sessions":2427,"clicks":659,"target_roas":null,"fp_revenue":109.99,"ga4_revenue":509.98,"roas_fp":9.13,"roas_lc":42.35},{"date":"2026-08-10","cost":8.22,"sessions":1999,"clicks":463,"target_roas":null,"fp_revenue":241.99,"ga4_revenue":441.98,"roas_fp":29.43,"roas_lc":53.75},{"date":"2026-08-11","cost":8.22,"sessions":1774,"clicks":448,"target_roas":null,"fp_revenue":1119.98,"ga4_revenue":1119.98,"roas_fp":136.24,"roas_lc":136.24},{"date":"2026-08-12","cost":8.3,"sessions":1153,"clicks":456,"target_roas":null,"fp_revenue":1379.98,"ga4_revenue":1229.99,"roas_fp":166.28,"roas_lc":148.2},{"date":"2026-08-13","cost":10.23,"sessions":1358,"clicks":555,"target_roas":null,"fp_revenue":976.95,"ga4_revenue":329.98,"roas_fp":95.46,"roas_lc":32.24},{"date":"2026-08-14","cost":12.97,"sessions":1566,"clicks":686,"target_roas":null,"fp_revenue":799.96,"ga4_revenue":774.96,"roas_fp":61.7,"roas_lc":59.77},{"date":"2026-08-15","cost":8.91,"sessions":355,"clicks":471,"target_roas":null,"fp_revenue":167.94,"ga4_revenue":446.98,"roas_fp":18.84,"roas_lc":50.16}],"leo_search_liquidation_mobilier_jardin_qc_fr":[{"date":"2026-07-19","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-20","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-21","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-22","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-23","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-24","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-25","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-26","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-27","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-28","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-29","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-30","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-07-31","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-01","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-02","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-03","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-04","cost":0.0,"sessions":0,"clicks":0,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-05","cost":10.87,"sessions":79,"clicks":47,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-06","cost":30.98,"sessions":216,"clicks":129,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-07","cost":19.46,"sessions":162,"clicks":80,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-08","cost":21.77,"sessions":341,"clicks":106,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-09","cost":22.73,"sessions":288,"clicks":115,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-10","cost":19.06,"sessions":240,"clicks":90,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-11","cost":19.27,"sessions":340,"clicks":143,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-12","cost":20.91,"sessions":288,"clicks":152,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-13","cost":20.33,"sessions":264,"clicks":138,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-14","cost":20.06,"sessions":253,"clicks":143,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0},{"date":"2026-08-15","cost":12.18,"sessions":84,"clicks":92,"target_roas":null,"fp_revenue":0.0,"ga4_revenue":0.0,"roas_fp":0.0,"roas_lc":0.0}]},"budgets":{"001 - Pmax Naked - All products - QC/ON - FR/EN":6500,"001 - Pmax - eCom - High Implication - Qc/Fr":5000,"002 - Pmax - Soumissions - FR":100,"001 - Pmax - eCom - Low Implication - Qc/Fr":1500,"002_leo_search_soumissions_piscines_qc_fr":10,"003_leo_search_brand_qc_fr":10,"002_leo_search_gazebos_pergolas_qc_fr":10,"001_leo_search_bbq_qc/on_fr":5,"leo_search_liquidation_mobilier_jardin_qc_fr":20},"current_target_roas":{"001 - Pmax Naked - All products - QC/ON - FR/EN":5.5,"001 - Pmax - eCom - High Implication - Qc/Fr":6.15,"002 - Pmax - Soumissions - FR":null,"001 - Pmax - eCom - Low Implication - Qc/Fr":6,"002_leo_search_soumissions_piscines_qc_fr":null,"003_leo_search_brand_qc_fr":null,"002_leo_search_gazebos_pergolas_qc_fr":null,"001_leo_search_bbq_qc/on_fr":null,"leo_search_liquidation_mobilier_jardin_qc_fr":null},"campaign_ids":{"001 - Pmax Naked - All products - QC/ON - FR/EN":"22185952305","001 - Pmax - eCom - High Implication - Qc/Fr":"22259267985","002 - Pmax - Soumissions - FR":"22239122333","001 - Pmax - eCom - Low Implication - Qc/Fr":"22258721496","002_leo_search_soumissions_piscines_qc_fr":"23892278138","003_leo_search_brand_qc_fr":"23844764147","002_leo_search_gazebos_pergolas_qc_fr":"23910544699","001_leo_search_bbq_qc/on_fr":"23978885467","leo_search_liquidation_mobilier_jardin_qc_fr":"24112451464"}}};
+
+const MCP_SERVER = 'GOOGLE_ADS_DISTANT';
+
+const PROFILES = [
+  { key: 'royal-distributing', label: 'Royal Distributing' },
+  { key: 'revco', label: 'Revco' },
+  { key: 'club_piscine', label: 'Club Piscine' },
+];
+
+const state = {
+  profile: 'royal-distributing', campaign: 'ALL', campDay: 'PERIOD',
+  campSort: { key: 'cost', dir: 'desc' }, campSearch: '',
+  pendingPublish: null, // { cname, campaignId, val, previous, next, updated }
+};
+const shortNameCache = {};
+const liveState = {}; // profile -> { fetchedAt, byCampaign: { [name]: {target_roas, budget} } }
+
+const fmtMoney = (v) => v == null ? '—' : '$' + Math.round(v).toLocaleString('fr-CA');
+const fmtMoney2 = (v) => v == null ? '—' : '$' + v.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtNum = (v) => v == null ? '—' : Math.round(v).toLocaleString('fr-CA');
+const fmtRatio = (v) => v == null ? '—' : v.toLocaleString('fr-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (v) => v == null ? '—' : (v * 100).toLocaleString('fr-CA', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const fmtDate = (iso) => { const d = new Date(iso + 'T00:00:00'); return d.toLocaleDateString('fr-CA', { day: '2-digit', month: 'short' }); };
+const fmtTime = (ms) => new Date(ms).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' });
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+function shortenOne(profile, name, allNames) {
+  if (name.includes('performance-max_')) return name.split('performance-max_').pop();
+  if (name.includes('performancemax_')) {
+    const langMatch = name.match(/_(en|fr)_/);
+    const lang = langMatch ? langMatch[1] : '';
+    const suffix = name.split('performancemax_').pop();
+    return (lang ? lang + '_' : '') + suffix;
+  }
+  if (allNames && allNames.length > 1) {
+    let prefix = allNames[0];
+    for (const n of allNames) {
+      while (prefix && !n.startsWith(prefix)) prefix = prefix.slice(0, -1);
+      if (!prefix) break;
+    }
+    const m = prefix.match(/^(.*[\s\-_])/);
+    const trimmed = m ? m[1] : '';
+    if (trimmed.length > 3 && name.startsWith(trimmed) && name.length - trimmed.length > 3) return name.slice(trimmed.length);
+  }
+  return name;
+}
+
+function shortNames(profile) {
+  if (shortNameCache[profile]) return shortNameCache[profile];
+  const names = DATA[profile].campaigns;
+  const map = {};
+  names.forEach(n => { map[n] = shortenOne(profile, n, names); });
+  shortNameCache[profile] = map;
+  return map;
+}
+
+/* ---------- live MCP ---------- */
+
+let mcpNS = null;
+async function initMcp() {
+  if (typeof claude === 'undefined' || !claude.use) return;
+  try { mcpNS = await claude.use('mcp'); } catch (e) { mcpNS = null; }
+  document.getElementById('refreshBtn').disabled = !mcpNS;
+  if (!mcpNS) document.getElementById('refreshBtn').title = 'Rafraîchissement live indisponible dans ce contexte';
+}
+
+function mcpErrorMessage(err) {
+  const code = err && err.code;
+  const map = {
+    needs_reauth: `Reconnecte ${MCP_SERVER} dans claude.ai → Réglages → Connecteurs.`,
+    server_not_connected: `Ajoute ${MCP_SERVER} dans claude.ai → Réglages → Connecteurs.`,
+    selection_required: `Plusieurs connecteurs ${MCP_SERVER} trouvés — choisis-en un dans la fenêtre de claude.ai.`,
+    not_in_manifest: 'Cet appel n’est pas autorisé pour cette page.',
+    blocked_by_policy: 'Bloqué par la politique de ton organisation.',
+    approval_required: 'Cet appel nécessite une approbation côté connecteur.',
+    server_unavailable: 'Serveur temporairement indisponible — réessaie dans un instant.',
+    tool_error: 'Le serveur Google Ads a renvoyé une erreur pour cet appel.',
+  };
+  return map[code] || ('Échec (' + (code || 'erreur inconnue') + ').');
+}
+
+async function refreshLive() {
+  if (!mcpNS) { showToast('MCP indisponible dans ce contexte — ouvre cet artifact dans claude.ai pour le rafraîchissement live.'); return; }
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⟳</span> Rafraîchissement…';
+  try {
+    const result = await mcpNS.callTool(
+      MCP_SERVER, 'get_campaign_status',
+      { profile: state.profile, days: 1, active_only: false },
+      { cache: { refresh: true } }
+    );
+    const rows = Array.isArray(result.payload) ? result.payload : [];
+    const byCampaign = {};
+    rows.forEach(r => { byCampaign[r.campaign_name] = { target_roas: r.target_roas, budget: r.budget }; });
+    liveState[state.profile] = { fetchedAt: Date.now(), byCampaign };
+
+    const acc = DATA[state.profile];
+    rows.forEach(r => {
+      if (r.campaign_name in acc.current_target_roas) acc.current_target_roas[r.campaign_name] = r.target_roas;
+      if (r.campaign_name in acc.budgets) acc.budgets[r.campaign_name] = r.budget;
+      const series = acc.per_campaign_daily[r.campaign_name];
+      if (series && series.length) series[series.length - 1].target_roas = r.target_roas;
+    });
+
+    document.getElementById('liveBadge').hidden = false;
+    document.getElementById('liveBadge').textContent = 'Live ' + fmtTime(liveState[state.profile].fetchedAt);
+    showToast(`Rafraîchi — Target ROAS et budget à jour pour ${PROFILES.find(p => p.key === state.profile).label} (${rows.length} campagnes).`);
+    renderCampaignTable(); renderAdjustTable(); renderDailyTable();
+  } catch (err) {
+    showToast(mcpErrorMessage(err));
+  } finally {
+    btn.disabled = !mcpNS;
+    btn.innerHTML = '⟳ Rafraîchir';
+  }
+}
+
+async function startPublish(cname, campaignId, val) {
+  if (!mcpNS) { showToast('MCP indisponible ici — ouvre cet artifact dans claude.ai.'); return; }
+  if (!campaignId) { showToast('ID de campagne introuvable — clique "⟳ Rafraîchir" d’abord.'); return; }
+  showToast('Validation en cours (dry-run, rien n’est appliqué)…');
+  try {
+    const result = await mcpNS.callTool(MCP_SERVER, 'update_campaign_target_roas',
+      { profile: state.profile, campaign_id: campaignId, target_roas: val, dry_run: true });
+    const p = result.payload;
+    state.pendingPublish = {
+      cname, campaignId, val,
+      previous: p.previous_target_roas, next: p.new_target_roas, updated: p.updated || '',
+    };
+    renderAdjustTable();
+  } catch (err) {
+    showToast(mcpErrorMessage(err));
+  }
+}
+
+async function confirmPublish() {
+  const pending = state.pendingPublish;
+  if (!pending || !mcpNS) return;
+  showToast('Publication en cours…');
+  try {
+    const result = await mcpNS.callTool(MCP_SERVER, 'update_campaign_target_roas',
+      { profile: state.profile, campaign_id: pending.campaignId, target_roas: pending.val, dry_run: false });
+    const p = result.payload;
+    const acc = DATA[state.profile];
+    acc.current_target_roas[pending.cname] = p.new_target_roas;
+    const series = acc.per_campaign_daily[pending.cname];
+    if (series && series.length) series[series.length - 1].target_roas = p.new_target_roas;
+    const shortName = shortNames(state.profile)[pending.cname] || pending.cname;
+    showToast(`Publié — ${shortName} : ${fmtRatio(p.previous_target_roas)} → ${fmtRatio(p.new_target_roas)}.`);
+    state.pendingPublish = null;
+    renderCampaignTable(); renderAdjustTable(); renderDailyTable();
+  } catch (err) {
+    showToast(mcpErrorMessage(err));
+    state.pendingPublish = null;
+    renderAdjustTable();
+  }
+}
+
+function cancelPublish() {
+  state.pendingPublish = null;
+  renderAdjustTable();
+}
+
+/* ---------- account / filters ---------- */
+
+function buildAccountSwitch() {
+  const el = document.getElementById('accountSwitch');
+  el.innerHTML = '';
+  PROFILES.forEach(p => {
+    const btn = document.createElement('button');
+    btn.textContent = p.label;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-pressed', String(p.key === state.profile));
+    btn.addEventListener('click', () => {
+      state.profile = p.key; state.campaign = 'ALL'; state.campDay = 'PERIOD'; state.campSearch = ''; state.pendingPublish = null;
+      document.getElementById('campSearch').value = '';
+      const lb = document.getElementById('liveBadge');
+      if (liveState[p.key]) { lb.hidden = false; lb.textContent = 'Live ' + fmtTime(liveState[p.key].fetchedAt); }
+      else { lb.hidden = true; }
+      render();
+    });
+    el.appendChild(btn);
+  });
+}
+
+function buildCampaignFilter() {
+  const sel = document.getElementById('campaignFilter');
+  const campaigns = DATA[state.profile].campaigns;
+  const names = shortNames(state.profile);
+  sel.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = 'ALL'; optAll.textContent = 'Toutes les campagnes';
+  sel.appendChild(optAll);
+  campaigns.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = names[c];
+    sel.appendChild(opt);
+  });
+  sel.value = state.campaign;
+  sel.onchange = () => { state.campaign = sel.value; renderChart(); renderCampaignTable(); renderDailyTable(); };
+}
+
+function buildCampDaySelect() {
+  const sel = document.getElementById('campDaySelect');
+  const daily = DATA[state.profile].daily;
+  sel.innerHTML = '';
+  const optPeriod = document.createElement('option');
+  optPeriod.value = 'PERIOD'; optPeriod.textContent = 'Période (27j, aujourd’hui exclu)';
+  sel.appendChild(optPeriod);
+  [...daily].reverse().forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.date; opt.textContent = fmtDate(d.date);
+    sel.appendChild(opt);
+  });
+  sel.value = state.campDay;
+  sel.onchange = () => { state.campDay = sel.value; renderDailyTable(); renderCampaignTable(); renderAdjustTable(); };
+}
+
+function currentSeries() {
+  const acc = DATA[state.profile];
+  if (state.campaign === 'ALL') {
+    return acc.daily.map(d => ({ date: d.date, cost: d.cost, target_roas: d.avg_target_roas, roas_fp: d.roas_fp, roas_lc: d.roas_lc }));
+  }
+  return acc.per_campaign_daily[state.campaign];
+}
+
+function renderKpis() {
+  const daily = DATA[state.profile].daily;
+  const last = daily[daily.length - 1];
+  const period = daily.slice(0, daily.length - 1);
+  const totCost = period.reduce((s, d) => s + d.cost, 0);
+  const totFp = period.reduce((s, d) => s + d.fp_revenue, 0);
+  const totGa4 = period.reduce((s, d) => s + d.ga4_revenue, 0);
+  const roasFp = totCost ? totFp / totCost : null;
+  const roasLc = totCost ? totGa4 / totCost : null;
+  const avgTarget = (() => {
+    const vals = period.map(d => d.avg_target_roas).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  })();
+  const lcVsTarget = (roasLc != null && avgTarget != null) ? roasLc - avgTarget : null;
+
+  const kpis = [
+    { label: 'Dépense (27j)', value: fmtMoney(totCost) },
+    { label: 'Revenu GA4 (27j)', value: fmtMoney(totGa4) },
+    { label: 'Target ROAS (moy.)', value: fmtRatio(avgTarget), cls: 'accent-target' },
+    { label: 'ROAS_FP (27j)', value: fmtRatio(roasFp), cls: 'accent-fp' },
+    { label: 'ROAS_LC (27j)', value: fmtRatio(roasLc), cls: 'accent-lc',
+      delta: lcVsTarget == null ? null : { up: lcVsTarget >= 0, text: (lcVsTarget >= 0 ? '+' : '') + lcVsTarget.toFixed(2) + ' vs cible' } },
+  ];
+
+  const el = document.getElementById('kpis');
+  el.innerHTML = '';
+  kpis.forEach(k => {
+    const div = document.createElement('div');
+    div.className = 'kpi';
+    div.innerHTML = `
+      <div class="label">${k.label}</div>
+      <div class="value tnum ${k.cls || ''}">${k.value}</div>
+      ${k.delta ? `<span class="delta ${k.delta.up ? 'up' : 'down'}">${k.delta.up ? '▲' : '▼'} ${k.delta.text}</span>` : ''}
+    `;
+    el.appendChild(div);
+  });
+
+  document.getElementById('rangeNote').textContent = `${fmtDate(daily[0].date)} → ${fmtDate(last.date)} (aujourd'hui, partiel)`;
+}
+
+function renderDailyTable() {
+  const daily = DATA[state.profile].daily;
+  const badge = document.getElementById('dailyCampaignBadge');
+  let rows;
+  if (state.campaign === 'ALL') {
+    badge.hidden = true;
+    rows = daily.map(d => ({
+      date: d.date, clicks: d.clicks, sessions: d.sessions, c2s: d.c2s, cost: d.cost, cps: d.cps,
+      target_roas: d.avg_target_roas, fp_revenue: d.fp_revenue, roas_fp: d.roas_fp,
+      ga4_revenue: d.ga4_revenue, roas_lc: d.roas_lc,
+      sem: d.sem_total ? d.sem_paid / d.sem_total : null,
+    }));
+  } else {
+    badge.hidden = false;
+    badge.textContent = shortNames(state.profile)[state.campaign];
+    badge.title = state.campaign;
+    const series = DATA[state.profile].per_campaign_daily[state.campaign];
+    rows = series.map(row => {
+      const semRow = daily.find(d => d.date === row.date);
+      return {
+        date: row.date, clicks: row.clicks, sessions: row.sessions,
+        c2s: row.sessions ? row.clicks / row.sessions : null,
+        cost: row.cost, cps: row.sessions ? row.cost / row.sessions : null,
+        target_roas: row.target_roas, fp_revenue: row.fp_revenue, roas_fp: row.roas_fp,
+        ga4_revenue: row.ga4_revenue, roas_lc: row.roas_lc,
+        sem: semRow && semRow.sem_total ? semRow.sem_paid / semRow.sem_total : null,
+      };
+    });
+  }
+
+  const body = document.getElementById('dailyBody');
+  body.innerHTML = '';
+  const todayIso = daily[daily.length - 1].date;
+  [...rows].reverse().forEach(d => {
+    const tr = document.createElement('tr');
+    tr.className = 'day-row' + (d.date === state.campDay ? ' selected' : '');
+    tr.tabIndex = 0;
+    const isToday = d.date === todayIso;
+    tr.innerHTML = `
+      <td class="${isToday ? 'today-row' : ''}">${fmtDate(d.date)}${isToday ? ' •' : ''}</td>
+      <td class="tnum">${fmtNum(d.clicks)}</td>
+      <td class="tnum">${fmtNum(d.sessions)}</td>
+      <td class="tnum">${fmtRatio(d.c2s)}</td>
+      <td class="tnum">${fmtMoney(d.cost)}</td>
+      <td class="tnum">${fmtMoney2(d.cps)}</td>
+      <td class="tnum target-roas">${fmtRatio(d.target_roas)}</td>
+      <td class="tnum">${fmtMoney(d.fp_revenue)}</td>
+      <td class="tnum roas-fp">${fmtRatio(d.roas_fp)}</td>
+      <td class="tnum">${fmtMoney(d.ga4_revenue)}</td>
+      <td class="tnum roas-lc">${fmtRatio(d.roas_lc)}</td>
+      <td class="tnum">${fmtPct(d.sem)}</td>
+    `;
+    const toggle = () => {
+      state.campDay = (state.campDay === d.date) ? 'PERIOD' : d.date;
+      document.getElementById('campDaySelect').value = state.campDay;
+      renderDailyTable(); renderCampaignTable(); renderAdjustTable();
+    };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    body.appendChild(tr);
+  });
+}
+
+function periodAggForCampaign(cname) {
+  const series = DATA[state.profile].per_campaign_daily[cname];
+  const period = series.slice(0, series.length - 1);
+  const cost = period.reduce((s, d) => s + d.cost, 0);
+  const clicks = period.reduce((s, d) => s + d.clicks, 0);
+  const sessions = period.reduce((s, d) => s + d.sessions, 0);
+  const fp = period.reduce((s, d) => s + d.fp_revenue, 0);
+  const ga4 = period.reduce((s, d) => s + d.ga4_revenue, 0);
+  const last = series[series.length - 1];
+  return {
+    cost, clicks, sessions, fp_revenue: fp, ga4_revenue: ga4,
+    c2s: sessions ? clicks / sessions : null, cps: sessions ? cost / sessions : null,
+    roas_fp: cost ? fp / cost : null, roas_lc: cost ? ga4 / cost : null,
+    target_roas: last.target_roas,
+  };
+}
+
+function dayRowForCampaign(cname, dayIso) {
+  const series = DATA[state.profile].per_campaign_daily[cname];
+  const row = series.find(d => d.date === dayIso);
+  if (!row) return { cost: 0, clicks: 0, sessions: 0, fp_revenue: 0, ga4_revenue: 0, c2s: null, cps: null, roas_fp: null, roas_lc: null, target_roas: null };
+  return {
+    cost: row.cost, clicks: row.clicks, sessions: row.sessions,
+    fp_revenue: row.fp_revenue, ga4_revenue: row.ga4_revenue,
+    c2s: row.sessions ? row.clicks / row.sessions : null, cps: row.sessions ? row.cost / row.sessions : null,
+    roas_fp: row.roas_fp, roas_lc: row.roas_lc, target_roas: row.target_roas,
+  };
+}
+
+function aggForCampaign(cname) {
+  return state.campDay === 'PERIOD' ? periodAggForCampaign(cname) : dayRowForCampaign(cname, state.campDay);
+}
+
+function avgSem7(profile) {
+  const daily = DATA[profile].daily;
+  const win = daily.slice(Math.max(0, daily.length - 8), daily.length - 1);
+  const paid = win.reduce((s, d) => s + d.sem_paid, 0);
+  const total = win.reduce((s, d) => s + d.sem_total, 0);
+  return total ? paid / total : null;
+}
+
+function campaignRows() {
+  const acc = DATA[state.profile];
+  const sem7 = avgSem7(state.profile);
+  return acc.campaigns.map(cname => {
+    const agg = aggForCampaign(cname);
+    const est_lc = (sem7 != null && agg.roas_fp != null) ? agg.roas_fp * sem7 : null;
+    return { cname, short: shortNames(state.profile)[cname], ...agg, est_lc };
+  });
+}
+
+function semForCurrentSelection() {
+  const daily = DATA[state.profile].daily;
+  if (state.campDay === 'PERIOD') {
+    const period = daily.slice(0, daily.length - 1);
+    const paid = period.reduce((s, d) => s + d.sem_paid, 0);
+    const total = period.reduce((s, d) => s + d.sem_total, 0);
+    return total ? paid / total : null;
+  }
+  const row = daily.find(d => d.date === state.campDay);
+  return row && row.sem_total ? row.sem_paid / row.sem_total : null;
+}
+
+function renderCampaignTable() {
+  document.getElementById('campHint').textContent =
+    (state.campDay === 'PERIOD' ? '27 jours (aujourd’hui exclu)' : fmtDate(state.campDay)) + ' · cliquer une ligne pour filtrer le graphique + le détail quotidien';
+
+  const rows = campaignRows();
+  const q = state.campSearch.trim().toLowerCase();
+  let filtered = q ? rows.filter(r => r.short.toLowerCase().includes(q) || r.cname.toLowerCase().includes(q)) : rows.slice();
+
+  const { key, dir } = state.campSort;
+  filtered.sort((a, b) => {
+    let av = key === 'name' ? a.short.toLowerCase() : a[key];
+    let bv = key === 'name' ? b.short.toLowerCase() : b[key];
+    if (av == null) av = key === 'name' ? '' : -Infinity;
+    if (bv == null) bv = key === 'name' ? '' : -Infinity;
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const sem = semForCurrentSelection();
+  const live = liveState[state.profile];
+  const body = document.getElementById('campaignBody');
+  body.innerHTML = '';
+  filtered.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.className = 'camp-row' + (r.cname === state.campaign ? ' active' : '');
+    tr.tabIndex = 0; tr.title = r.cname;
+    const isLiveTarget = live && live.byCampaign[r.cname];
+    tr.innerHTML = `
+      <td>${r.short}</td>
+      <td class="tnum">${fmtNum(r.clicks)}</td>
+      <td class="tnum">${fmtNum(r.sessions)}</td>
+      <td class="tnum">${fmtRatio(r.c2s)}</td>
+      <td class="tnum">${fmtMoney(r.cost)}</td>
+      <td class="tnum">${fmtMoney2(r.cps)}</td>
+      <td class="tnum target-roas${isLiveTarget ? ' is-live' : ''}">${fmtRatio(r.target_roas)}</td>
+      <td class="tnum">${fmtMoney(r.fp_revenue)}</td>
+      <td class="tnum roas-fp">${fmtRatio(r.roas_fp)}</td>
+      <td class="tnum">${fmtMoney(r.ga4_revenue)}</td>
+      <td class="tnum roas-lc">${fmtRatio(r.roas_lc)}</td>
+      <td class="tnum est-lc">${fmtRatio(r.est_lc)}</td>
+      <td class="tnum">${fmtPct(sem)}</td>
+    `;
+    const toggle = () => {
+      state.campaign = (state.campaign === r.cname) ? 'ALL' : r.cname;
+      document.getElementById('campaignFilter').value = state.campaign;
+      renderChart(); renderCampaignTable(); renderDailyTable();
+    };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    body.appendChild(tr);
+  });
+
+  const totCost = rows.reduce((s, r) => s + r.cost, 0);
+  const totClicks = rows.reduce((s, r) => s + r.clicks, 0);
+  const totSessions = rows.reduce((s, r) => s + r.sessions, 0);
+  const totFp = rows.reduce((s, r) => s + r.fp_revenue, 0);
+  const totGa4 = rows.reduce((s, r) => s + r.ga4_revenue, 0);
+  const totTargetVals = rows.map(r => r.target_roas).filter(v => v != null);
+  const totTarget = totTargetVals.length ? totTargetVals.reduce((a, b) => a + b, 0) / totTargetVals.length : null;
+  const totRoasFp = totCost ? totFp / totCost : null;
+  const sem7 = avgSem7(state.profile);
+  const totEstLc = (sem7 != null && totRoasFp != null) ? totRoasFp * sem7 : null;
+  const totRow = document.createElement('tr');
+  totRow.className = 'total-row';
+  totRow.innerHTML = `
+    <td>TOTAL (${rows.length} camp.)</td>
+    <td class="tnum">${fmtNum(totClicks)}</td>
+    <td class="tnum">${fmtNum(totSessions)}</td>
+    <td class="tnum">${fmtRatio(totSessions ? totClicks / totSessions : null)}</td>
+    <td class="tnum">${fmtMoney(totCost)}</td>
+    <td class="tnum">${fmtMoney2(totSessions ? totCost / totSessions : null)}</td>
+    <td class="tnum target-roas">${fmtRatio(totTarget)}</td>
+    <td class="tnum">${fmtMoney(totFp)}</td>
+    <td class="tnum roas-fp">${fmtRatio(totRoasFp)}</td>
+    <td class="tnum">${fmtMoney(totGa4)}</td>
+    <td class="tnum roas-lc">${fmtRatio(totCost ? totGa4 / totCost : null)}</td>
+    <td class="tnum est-lc">${fmtRatio(totEstLc)}</td>
+    <td class="tnum">${fmtPct(sem)}</td>
+  `;
+  body.appendChild(totRow);
+
+  document.querySelectorAll('#campaignTable thead th[data-sort]').forEach(th => {
+    const ind = th.querySelector('.sort-ind');
+    ind.textContent = th.dataset.sort === state.campSort.key ? (state.campSort.dir === 'asc' ? '▲' : '▼') : '';
+  });
+}
+
+function renderAdjustTable() {
+  const acc = DATA[state.profile];
+  const names = shortNames(state.profile);
+  const sem7 = avgSem7(state.profile);
+  const live = liveState[state.profile];
+  const body = document.getElementById('adjustBody');
+  body.innerHTML = '';
+
+  document.getElementById('adjustCostHead').textContent = state.campDay === 'PERIOD' ? 'Dépense (27j)' : 'Dépense (' + fmtDate(state.campDay) + ')';
+  document.getElementById('adjustHint').textContent =
+    (state.campDay === 'PERIOD' ? 'Période : 27 jours (aujourd’hui exclu)' : 'Journée : ' + fmtDate(state.campDay)) +
+    ' · ROAS_LC estimé = ROAS_FP × %SEM moyen des 7 derniers jours (aujourd’hui exclu), fixe quel que soit le filtre';
+
+  const rows = acc.campaigns.map(cname => {
+    const agg = aggForCampaign(cname);
+    const estLc = (sem7 != null && agg.roas_fp != null) ? agg.roas_fp * sem7 : null;
+    return {
+      cname, short: names[cname], budget: acc.budgets[cname], cost: agg.cost, target: agg.target_roas,
+      roasLcReal: agg.roas_lc, estLc, isLive: live && live.byCampaign[cname],
+      campaignId: acc.campaign_ids ? acc.campaign_ids[cname] : null,
+    };
+  }).sort((a, b) => b.cost - a.cost);
+
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const inputId = 'newroas-' + i + '-' + state.profile.replace(/[^a-z]/gi, '');
+    const pending = state.pendingPublish && state.pendingPublish.cname === r.cname ? state.pendingPublish : null;
+
+    let actionCell;
+    if (pending) {
+      const warn = /shared/i.test(pending.updated) ? '<div class="confirm-warn">⚠ Stratégie partagée — affecte d’autres campagnes aussi</div>' : '';
+      actionCell = `
+        <div class="confirm-box">
+          <span class="arrow tnum">${fmtRatio(pending.previous)} → ${fmtRatio(pending.next)}</span>
+          <button class="publish-btn confirm-yes">Confirmer</button>
+          <button class="publish-btn cancel confirm-no">Annuler</button>
+          ${warn}
+        </div>`;
+    } else {
+      actionCell = `<button class="publish-btn" ${mcpNS ? '' : 'disabled'}>Publier nouveau ROAS</button>`;
+    }
+
+    tr.innerHTML = `
+      <td title="${r.cname}">${r.short}</td>
+      <td class="tnum">${fmtMoney(r.cost)}</td>
+      <td class="tnum${r.isLive ? ' is-live' : ''}">${fmtMoney(r.budget)}</td>
+      <td class="tnum target-roas${r.isLive ? ' is-live' : ''}">${fmtRatio(r.target)}</td>
+      <td class="tnum roas-lc">${fmtRatio(r.roasLcReal)}</td>
+      <td class="tnum est-lc">${fmtRatio(r.estLc)}</td>
+      <td><input type="number" step="0.05" min="0" class="roas-input tnum" id="${inputId}" value="${r.target != null ? r.target.toFixed(2) : ''}" ${pending ? 'disabled' : ''} /></td>
+      <td>${actionCell}</td>
+    `;
+    body.appendChild(tr);
+
+    if (pending) {
+      tr.querySelector('.confirm-yes').addEventListener('click', confirmPublish);
+      tr.querySelector('.confirm-no').addEventListener('click', cancelPublish);
+    } else {
+      const btn = tr.querySelector('.publish-btn');
+      btn.addEventListener('click', () => {
+        if (!mcpNS) { showToast('MCP indisponible ici — ouvre cet artifact dans claude.ai.'); return; }
+        const input = document.getElementById(inputId);
+        const val = parseFloat(input.value);
+        if (!val || val <= 0) { showToast('Entre une valeur de Target ROAS valide.'); return; }
+        startPublish(r.cname, r.campaignId, val);
+      });
+    }
+  });
+}
+
+const CHART_W = 920, CHART_H = 340;
+const PAD = { top: 16, right: 46, bottom: 30, left: 44 };
+
+function renderChart() {
+  const badge = document.getElementById('campaignBadge');
+  if (state.campaign === 'ALL') { badge.hidden = true; }
+  else { badge.hidden = false; badge.textContent = shortNames(state.profile)[state.campaign]; badge.title = state.campaign; }
+
+  const series = currentSeries();
+  const svg = document.getElementById('chart');
+  svg.innerHTML = '';
+  const ns = 'http://www.w3.org/2000/svg';
+  const plotW = CHART_W - PAD.left - PAD.right;
+  const plotH = CHART_H - PAD.top - PAD.bottom;
+
+  const roasVals = [];
+  series.forEach(d => { [d.target_roas, d.roas_fp, d.roas_lc].forEach(v => { if (v != null) roasVals.push(v); }); });
+  const leftMax = Math.max(4, ...(roasVals.length ? roasVals : [4])) * 1.12;
+  const costVals = series.map(d => d.cost || 0);
+  const rightMax = Math.max(10, ...costVals) * 1.15;
+
+  const x = (i) => PAD.left + (i / (series.length - 1)) * plotW;
+  const yLeft = (v) => PAD.top + plotH - (v / leftMax) * plotH;
+  const yRight = (v) => PAD.top + plotH - (v / rightMax) * plotH;
+
+  function el(tag, attrs) { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+  const gridSteps = 4;
+  for (let i = 0; i <= gridSteps; i++) {
+    const v = (leftMax / gridSteps) * i;
+    const y = yLeft(v);
+    svg.appendChild(el('line', { x1: PAD.left, x2: CHART_W - PAD.right, y1: y, y2: y, class: 'grid-line' }));
+    const lbl = el('text', { x: PAD.left - 8, y: y + 3, class: 'axis-label', 'text-anchor': 'end' });
+    lbl.textContent = v.toFixed(1); svg.appendChild(lbl);
+    const rv = (rightMax / gridSteps) * i;
+    const rlbl = el('text', { x: CHART_W - PAD.right + 8, y: y + 3, class: 'axis-label', 'text-anchor': 'start' });
+    rlbl.textContent = '$' + Math.round(rv).toLocaleString('fr-CA'); svg.appendChild(rlbl);
+  }
+
+  series.forEach((d, i) => {
+    if (i % 4 === 0 || i === series.length - 1) {
+      const lbl = el('text', { x: x(i), y: CHART_H - PAD.bottom + 16, class: 'axis-label', 'text-anchor': 'middle' });
+      lbl.textContent = fmtDate(d.date); svg.appendChild(lbl);
+    }
+  });
+
+  let spendPath = `M ${x(0)} ${yRight(0)} `;
+  series.forEach((d, i) => { spendPath += `L ${x(i)} ${yRight(d.cost || 0)} `; });
+  spendPath += `L ${x(series.length - 1)} ${yRight(0)} Z`;
+  svg.appendChild(el('path', { d: spendPath, fill: 'var(--spend-fill)', stroke: 'none' }));
+  let spendLine = '';
+  series.forEach((d, i) => { spendLine += (i === 0 ? 'M' : 'L') + ` ${x(i)} ${yRight(d.cost || 0)} `; });
+  svg.appendChild(el('path', { d: spendLine, fill: 'none', stroke: 'var(--spend)', 'stroke-width': 1.4, 'stroke-linejoin': 'round' }));
+
+  function drawLine(key, color, dashed) {
+    let d = ''; let started = false;
+    series.forEach((pt, i) => {
+      const v = pt[key];
+      if (v == null) { started = false; return; }
+      d += (started ? 'L' : 'M') + ` ${x(i)} ${yLeft(v)} `; started = true;
+    });
+    const attrs = { d, fill: 'none', stroke: color, 'stroke-width': 2.2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' };
+    if (dashed) attrs['stroke-dasharray'] = '5 4';
+    svg.appendChild(el('path', attrs));
+    for (let i = series.length - 1; i >= 0; i--) {
+      if (series[i][key] != null) { svg.appendChild(el('circle', { cx: x(i), cy: yLeft(series[i][key]), r: 3.2, fill: color })); break; }
+    }
+  }
+
+  drawLine('target_roas', 'var(--roas-target)', true);
+  drawLine('roas_fp', 'var(--roas-fp)', false);
+  drawLine('roas_lc', 'var(--roas-lc)', false);
+
+  const guide = el('line', { x1: 0, x2: 0, y1: PAD.top, y2: CHART_H - PAD.bottom, class: 'hover-guide' });
+  svg.appendChild(guide);
+  const hoverDots = ['target_roas', 'roas_fp', 'roas_lc'].map(k => {
+    const c = el('circle', { r: 4, class: 'hover-dot', fill: k === 'target_roas' ? 'var(--roas-target)' : (k === 'roas_fp' ? 'var(--roas-fp)' : 'var(--roas-lc)'), stroke: 'var(--surface)', 'stroke-width': 1.5 });
+    svg.appendChild(c); return { key: k, node: c };
+  });
+
+  const hitArea = el('rect', { x: PAD.left, y: PAD.top, width: plotW, height: plotH, fill: 'transparent' });
+  svg.appendChild(hitArea);
+  const tooltip = document.getElementById('tooltip');
+
+  hitArea.addEventListener('mousemove', (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const scaleX = rect.width / CHART_W;
+    const px = (evt.clientX - rect.left) / scaleX;
+    let idx = Math.round((px - PAD.left) / plotW * (series.length - 1));
+    idx = Math.max(0, Math.min(series.length - 1, idx));
+    const d = series[idx];
+    guide.setAttribute('x1', x(idx)); guide.setAttribute('x2', x(idx)); guide.style.opacity = 1;
+    hoverDots.forEach(hd => {
+      const v = d[hd.key];
+      if (v == null) { hd.node.style.opacity = 0; return; }
+      hd.node.setAttribute('cx', x(idx)); hd.node.setAttribute('cy', yLeft(v)); hd.node.style.opacity = 1;
+    });
+    tooltip.innerHTML = `
+      <div class="t-date">${fmtDate(d.date)}</div>
+      <div class="t-row"><span class="k">Target ROAS</span><span class="tnum">${fmtRatio(d.target_roas)}</span></div>
+      <div class="t-row"><span class="k">ROAS_FP</span><span class="tnum">${fmtRatio(d.roas_fp)}</span></div>
+      <div class="t-row"><span class="k">ROAS_LC</span><span class="tnum">${fmtRatio(d.roas_lc)}</span></div>
+      <div class="t-row"><span class="k">Dépense</span><span class="tnum">${fmtMoney(d.cost)}</span></div>
+    `;
+    tooltip.style.opacity = 1;
+    tooltip.style.left = Math.min(evt.clientX + 14, window.innerWidth - 190) + 'px';
+    tooltip.style.top = (evt.clientY + 14) + 'px';
+  });
+  hitArea.addEventListener('mouseleave', () => {
+    guide.style.opacity = 0; hoverDots.forEach(hd => hd.node.style.opacity = 0); tooltip.style.opacity = 0;
+  });
+}
+
+function render() {
+  buildAccountSwitch();
+  buildCampaignFilter();
+  buildCampDaySelect();
+  renderKpis();
+  renderDailyTable();
+  renderCampaignTable();
+  renderAdjustTable();
+  renderChart();
+}
+
+document.querySelectorAll('#campaignTable thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (state.campSort.key === k) state.campSort.dir = state.campSort.dir === 'asc' ? 'desc' : 'asc';
+    else state.campSort = { key: k, dir: k === 'name' ? 'asc' : 'desc' };
+    renderCampaignTable();
+  });
+});
+
+document.getElementById('campSearch').addEventListener('input', (e) => { state.campSearch = e.target.value; renderCampaignTable(); });
+document.getElementById('refreshBtn').addEventListener('click', refreshLive);
+
+document.getElementById('genNote').textContent = 'Généré ' + new Date().toLocaleString('fr-CA');
+render();
+initMcp();
+</script>
+
+</body></html>
+</script>
+</body>
+</html>
