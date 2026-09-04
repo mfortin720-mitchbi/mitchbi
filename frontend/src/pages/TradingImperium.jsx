@@ -1920,6 +1920,198 @@ export default function TradingImperium({ activeTab = 'overview', onTabChange })
           })()}
         </div>
       )}
+
+      {/* ── Architecture : schéma complet du pipeline, statique -- aucun fetch ────────────── */}
+      {activeTab === 'architecture' && (
+        <div>
+          <Card style={{ padding: '12px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 2 }}>Architecture — trading-monitor + mitchbi</div>
+            <div style={{ fontSize: 11.5, color: MUTED }}>
+              7 licences MT5, lues toutes les 5 minutes, écrites dans BigQuery, et servies à Discord et à mitchbi.com. Le vrai chemin des données -- et les deux garde-fous ajoutés après que le cycle se soit figé, deux fois, en une semaine.
+            </div>
+          </Card>
+
+          <Card style={{ padding: 12, marginBottom: 4, overflowX: 'auto' }}>
+            <svg viewBox="0 0 1240 800" style={{ display: 'block', width: '100%', height: 'auto', minWidth: 900 }} role="img" aria-label="Le pipeline part de 7 terminaux MT5 sur le VPS, lus par trading_monitor.py toutes les 5 minutes sous la garde d'un watchdog qui le tue s'il se fige, écrit dans BigQuery, et alimente Discord, mitchbi.com et un dashboard local Flask.">
+              <defs>
+                <marker id="arch-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill="#8b93a5" />
+                </marker>
+                <marker id="arch-arrow-alert" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" fill={RED} />
+                </marker>
+              </defs>
+
+              {/* VPS boundary */}
+              <rect x="20" y="20" width="1200" height="300" fill={BLUE} fillOpacity="0.06" stroke={BLUE} strokeWidth="1.2" strokeDasharray="5 4" rx="14" />
+              <text x="36" y="40" fontSize="10.5" letterSpacing="0.08em" fill={MUTED} fontFamily="monospace">FOREXVPS · WINDOWS SERVER 2022</text>
+
+              {/* MT5 farm */}
+              <rect x="45" y="50" width="1150" height="115" fill="#13151f" stroke={BLUE} strokeWidth="1.4" rx="9" />
+              <text x="65" y="75" fontSize="14.5" fontWeight="600" fill="#fff">7× terminaux MT5</text>
+              <text x="65" y="93" fontSize="11.5" fill={MUTED}>1 processus + 1 EA Imperium attaché, par compte</text>
+              <text x="65" y="114" fontSize="10.5" fill={MUTED} fontFamily="monospace">136795·Hola Prime   134530·Hola Prime   124582·Hola Prime   14178484·FundedNext</text>
+              <text x="65" y="131" fontSize="10.5" fill={MUTED} fontFamily="monospace">2779521·Alpha Capital   2779506·Alpha Capital   2860198·Alpha Capital</text>
+              <text x="65" y="150" fontSize="11" fill={RED}>26571576·The5ers — retiré (breach 2026-08-31, terminal figé sur "Authorization failed")</text>
+
+              {/* Row 2 */}
+              <rect x="45" y="205" width="300" height="95" fill="#13151f" stroke={BLUE} strokeWidth="1.4" rx="9" />
+              <text x="65" y="230" fontSize="13" fontWeight="600" fill="#fff" fontFamily="monospace">discord_listener.py</text>
+              <text x="65" y="248" fontSize="11.5" fill={MUTED}>process continu · depuis 8/23</text>
+              <text x="65" y="264" fontSize="11.5" fill={MUTED}>instance MT5Monitor partagée</text>
+              <text x="65" y="282" fontSize="11.5" fill={MUTED}>commandes /status /positions /sanity…</text>
+
+              <rect x="375" y="205" width="480" height="95" fill="#13151f" stroke={BLUE} strokeWidth="1.4" rx="9" />
+              <text x="395" y="230" fontSize="13" fontWeight="600" fill="#fff" fontFamily="monospace">trading_monitor.py</text>
+              <text x="395" y="248" fontSize="11.5" fill={MUTED}>tâche planifiée · 1 cycle / 5 min · 7 comptes en séquence</text>
+              <text x="395" y="266" fontSize="10.5" fill={MUTED} fontFamily="monospace">mt5_connect_probe.py → sonde isolée, timeout 20s, avant chaque compte</text>
+              <text x="395" y="284" fontSize="11.5" fill={MUTED}>écrit heartbeat après chaque cycle complété</text>
+
+              <rect x="885" y="205" width="310" height="95" fill="#13151f" stroke={BLUE} strokeWidth="1.4" rx="9" />
+              <text x="905" y="230" fontSize="13" fontWeight="600" fill="#fff" fontFamily="monospace">watchdog.py</text>
+              <text x="905" y="248" fontSize="11.5" fill={MUTED}>tâche planifiée · toutes les 10 min</text>
+              <text x="905" y="264" fontSize="11.5" fill={MUTED}>lit le heartbeat</text>
+              <text x="905" y="282" fontSize="11.5" fill={RED}>tue le process + alerte si figé &gt;15 min</text>
+
+              {/* BigQuery */}
+              <rect x="345" y="380" width="550" height="95" fill="#13151f" stroke={GOLD} strokeWidth="1.4" rx="9" />
+              <text x="365" y="405" fontSize="14.5" fontWeight="600" fill="#fff">BigQuery — royaldistributing.trading</text>
+              <text x="365" y="425" fontSize="10.5" fill={MUTED} fontFamily="monospace">accounts_snapshot_v2 · trade_deals · price_bars · ea_config</text>
+              <text x="365" y="441" fontSize="10.5" fill={MUTED} fontFamily="monospace">challenge_phases · trade_mfe · trade_mfe_win</text>
+              <text x="365" y="459" fontSize="11.5" fill={MUTED}>+ vues : latest_accounts_view, trades_view, daily_balance_history_view…</text>
+
+              {/* Discord */}
+              <rect x="45" y="560" width="420" height="130" fill="#13151f" stroke={GREEN} strokeWidth="1.4" rx="9" />
+              <text x="65" y="585" fontSize="14.5" fontWeight="600" fill="#fff">Discord — #trading_ea</text>
+              <text x="65" y="605" fontSize="11.5" fill={MUTED}>notifications : trade ouvert/fermé, breach, alerte watchdog</text>
+              <text x="65" y="623" fontSize="10.5" fill={MUTED} fontFamily="monospace">/status /positions /sanity /refresh</text>
+              <text x="65" y="639" fontSize="10.5" fill={MUTED} fontFamily="monospace">/ea /ask /completed /breached /funded</text>
+              <text x="65" y="659" fontSize="11" fill={MUTED}>canal unique, bot + commandes texte</text>
+
+              {/* Railway / Vercel */}
+              <rect x="525" y="560" width="340" height="85" fill="#13151f" stroke={GREEN} strokeWidth="1.4" rx="9" />
+              <text x="545" y="588" fontSize="14.5" fontWeight="600" fill="#fff">Backend — Railway</text>
+              <text x="545" y="606" fontSize="11.5" fill={MUTED}>Node / Express</text>
+              <text x="545" y="623" fontSize="10.5" fill={MUTED} fontFamily="monospace">routes /api/trading-imperium/*</text>
+
+              <rect x="525" y="690" width="340" height="85" fill="#13151f" stroke={GREEN} strokeWidth="1.4" rx="9" />
+              <text x="545" y="718" fontSize="14.5" fontWeight="600" fill="#fff">mitchbi.com — Vercel</text>
+              <text x="545" y="736" fontSize="11.5" fill={MUTED}>React · auth via Supabase</text>
+              <text x="545" y="753" fontSize="11.5" fill={MUTED}>Overview · Trades · MFE Tracker · Config EA</text>
+
+              {/* Flask / Claude */}
+              <rect x="905" y="560" width="290" height="85" fill="#13151f" stroke={GREEN} strokeWidth="1.4" rx="9" />
+              <text x="925" y="588" fontSize="14.5" fontWeight="600" fill="#fff">Dashboard local — Flask</text>
+              <text x="925" y="606" fontSize="11.5" fill={MUTED}>sur le VPS, usage interne</text>
+              <text x="925" y="623" fontSize="11.5" fill={MUTED}>équité, P&amp;L, positions</text>
+
+              <rect x="905" y="690" width="290" height="85" fill="#13151f" stroke={GREEN} strokeWidth="1.4" rx="9" />
+              <text x="925" y="718" fontSize="14.5" fontWeight="600" fill="#fff">Trading IQ</text>
+              <text x="925" y="736" fontSize="10.5" fill={MUTED} fontFamily="monospace">assistant_agent.py → Claude API</text>
+              <text x="925" y="753" fontSize="11.5" fill={MUTED}>questions en langage naturel</text>
+
+              {/* Arrows */}
+              <line x1="615" y1="165" x2="615" y2="203" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="628" y="188" fontSize="10.5" fill={MUTED}>sonde + lecture</text>
+
+              <line x1="885" y1="252" x2="857" y2="252" stroke={RED} strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arch-arrow-alert)" />
+              <text x="748" y="245" fontSize="10.5" fill={RED} textAnchor="middle">tue si figé</text>
+
+              <line x1="615" y1="300" x2="615" y2="378" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="628" y="343" fontSize="10.5" fill={MUTED}>écrit (7 tables)</text>
+
+              <line x1="195" y1="203" x2="195" y2="167" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="207" y="188" fontSize="10.5" fill={MUTED}>lecture live</text>
+
+              <polyline points="300,300 300,340 400,340 400,378" fill="none" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="330" y="333" fontSize="10.5" fill={MUTED}>lit</text>
+
+              <line x1="195" y1="300" x2="195" y2="558" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="207" y="435" fontSize="10.5" fill={MUTED}>commandes / réponses</text>
+
+              <polyline points="420,300 420,335 280,335 280,558" fill="none" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="286" y="328" fontSize="10.5" fill={MUTED}>notifications</text>
+
+              <polyline points="950,300 950,358 380,358 380,558" fill="none" stroke={RED} strokeWidth="1.5" strokeDasharray="4 3" markerEnd="url(#arch-arrow-alert)" />
+              <text x="660" y="351" fontSize="10.5" fill={RED} textAnchor="middle">alerte watchdog</text>
+
+              <line x1="695" y1="560" x2="695" y2="477" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="708" y="522" fontSize="10.5" fill={MUTED}>lecture SQL</text>
+
+              <line x1="695" y1="690" x2="695" y2="647" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="708" y="672" fontSize="10.5" fill={MUTED}>fetch /api/*</text>
+
+              <polyline points="1050,560 1050,510 850,510 850,477" fill="none" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="945" y="503" fontSize="10.5" fill={MUTED}>lecture</text>
+
+              <line x1="1050" y1="690" x2="1050" y2="647" stroke="#8b93a5" strokeWidth="1.4" opacity="0.75" markerEnd="url(#arch-arrow)" />
+              <text x="1063" y="672" fontSize="10.5" fill={MUTED}>questions</text>
+            </svg>
+          </Card>
+
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 11.5, color: MUTED, margin: '10px 4px 20px' }}>
+            <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: BLUE, marginRight: 6, verticalAlign: 'middle' }} />processus sur le VPS</span>
+            <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: GOLD, marginRight: 6, verticalAlign: 'middle' }} />entrepôt de données</span>
+            <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: GREEN, marginRight: 6, verticalAlign: 'middle' }} />consommateurs (cloud)</span>
+            <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: RED, marginRight: 6, verticalAlign: 'middle' }} />filet de sécurité / alerte</span>
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: BLUE, margin: '20px 0 10px' }}>Le moteur — forexvps · windows</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px,1fr))', gap: 10, marginBottom: 20 }}>
+            {[
+              { t: 'trading_monitor.py', d: 'Tâche planifiée toutes les 5 minutes. Pour chacun des 7 comptes actifs, en séquence : sonde de connexion, lecture du solde/équité/positions, synchronisation des deals, des price bars, de la config EA, et calcul du MFE sur les trades fraîchement fermés.' },
+              { t: 'mt5_connect_probe.py', d: "mt5.initialize() est un appel DLL bloquant qu'aucun timeout Python ne peut interrompre de l'intérieur. La sonde le lance dans un sous-processus jetable et le tue de force au bout de 20s s'il ne répond pas — ajoutée le 2026-09-02." },
+              { t: 'watchdog.py', d: "La sonde protège sa propre tentative de connexion, pas les appels réels qui suivent. Le 2026-09-03, le cycle s'est quand même figé — sur un compte parfaitement sain (hola_3). Le watchdog lit un fichier heartbeat écrit après chaque cycle réussi ; passé 15 minutes de silence, il tue le process bloqué et alerte sur Discord." },
+              { t: 'discord_listener.py', d: 'Process continu (pas une tâche planifiée) qui garde une instance MT5Monitor partagée en mémoire pour répondre aux commandes texte instantanément — certaines lisent BigQuery, d\'autres relisent MT5 en direct.' },
+            ].map(c => (
+              <Card key={c.t} style={{ padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6, fontFamily: 'monospace' }}>{c.t}</div>
+                <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6 }}>{c.d}</div>
+              </Card>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: GOLD, margin: '20px 0 10px' }}>L'entrepôt — google cloud</div>
+          <Card style={{ padding: '14px 16px', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6, fontFamily: 'monospace' }}>royaldistributing.trading</div>
+            <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6, marginBottom: 8 }}>
+              Un projet BigQuery unique. Chaque table est append-only ou tenue à jour par <code>account_id</code> — l'identifiant stable d'une licence à travers ses changements de phase/login, jamais réutilisé.
+            </div>
+            <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6 }}>
+              <code>latest_accounts_view</code> garde la dernière ligne connue de chaque compte pour toujours, même un compte retiré de la liste active — la cause exacte du bug du 4 septembre où une position d'un compte breaché continuait de s'afficher comme ouverte.
+            </div>
+          </Card>
+
+          <div style={{ fontSize: 13, fontWeight: 600, color: GREEN, margin: '20px 0 10px' }}>Les consommateurs — lecture seule</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px,1fr))', gap: 10, marginBottom: 20 }}>
+            {[
+              { t: 'Discord', d: 'Deux chemins distincts vers le même canal : trading_monitor.py pousse ses notifications directement à chaque cycle, pendant que discord_listener.py répond aux commandes en continu, indépendamment du cycle des 5 minutes.' },
+              { t: 'mitchbi.com', d: 'Vercel (React) appelle Railway (Node) via /api/trading-imperium/* ; Railway seul a les identifiants BigQuery. L\'authentification passe par Supabase — chaque appel porte un jeton de session.' },
+              { t: 'Dashboard local + Trading IQ', d: 'Un Flask minimal sur le VPS même, pour un accès rapide sans passer par le web. Le panneau Trading IQ délègue les questions en langage naturel à Claude via assistant_agent.py.' },
+            ].map(c => (
+              <Card key={c.t} style={{ padding: '14px 16px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6 }}>{c.t}</div>
+                <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.6 }}>{c.d}</div>
+              </Card>
+            ))}
+          </div>
+
+          <Card style={{ padding: '16px 18px', border: `0.5px solid ${RED}55`, background: '#1a1113' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: RED, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>Historique récent — ce que le schéma ne montre pas</div>
+            {[
+              ['2026-08-31', 'The5ers 26571576 breach ; son terminal se met à refuser l\'authentification.'],
+              ['2026-09-01→03', 'mt5.initialize() se fige indéfiniment sur ce terminal, bloquant tout le cycle derrière lui pendant 19h+ d\'affilée — deux fois. mt5_connect_probe.py ajouté le 09-02, mais le 09-03 le gel a re-frappé sur hola_3, un compte sain : la sonde protège sa propre tentative, pas les appels réels qui suivent.'],
+              ['2026-09-03', 'watchdog.py ajouté comme filet de sécurité externe : peu importe où ça gèle dans le cycle, le temps de récupération reste borné à ~15 min.'],
+              ['2026-09-04', '/positions corrigé pour ne lire que les comptes actifs — la position fantôme de The5ers ne peut plus s\'afficher comme "ouverte" indéfiniment.'],
+            ].map(([date, text]) => (
+              <div key={date} style={{ display: 'flex', gap: 12, fontSize: 12.5, color: '#ccc', marginBottom: 10, lineHeight: 1.6 }}>
+                <span style={{ fontFamily: 'monospace', color: RED, flexShrink: 0, fontSize: 11.5, paddingTop: 1 }}>{date}</span>
+                <span>{text}</span>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

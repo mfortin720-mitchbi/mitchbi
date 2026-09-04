@@ -11,6 +11,7 @@ const MENU_ITEMS = [
       { id: 'trading-imperium-events', label: 'Événements' },
       { id: 'trading-imperium-config', label: 'Config' },
       { id: 'trading-imperium-analyse', label: 'MFE Tracker', title: 'Maximum Favorable Excursion' },
+      { id: 'trading-imperium-architecture', label: 'Architecture' },
     ]
   },
   { id: 'assistant',  icon: '✦',  label: 'Assistant' },

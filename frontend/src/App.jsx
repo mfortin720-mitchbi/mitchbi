@@ -18,11 +18,12 @@ const TI_TAB_BY_ID = {
   'trading-imperium-events': 'events',
   'trading-imperium-config': 'config',
   'trading-imperium-analyse': 'analyse',
+  'trading-imperium-architecture': 'architecture',
 };
 const TI_ID_BY_TAB = {
   overview: 'trading-imperium', trades: 'trading-imperium-trades',
   events: 'trading-imperium-events', config: 'trading-imperium-config',
-  analyse: 'trading-imperium-analyse',
+  analyse: 'trading-imperium-analyse', architecture: 'trading-imperium-architecture',
 };
 
 const EP_TAB_BY_ID = {
@@ -104,6 +105,7 @@ export default function App() {
       case 'trading-imperium-events':
       case 'trading-imperium-config':
       case 'trading-imperium-analyse':
+      case 'trading-imperium-architecture':
         return (
           <TradingImperium
             activeTab={TI_TAB_BY_ID[active]}
